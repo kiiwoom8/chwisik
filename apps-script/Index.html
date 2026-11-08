@@ -513,26 +513,41 @@ button.srow { cursor: pointer; }
     var who = curWho();
     var byDate = {};
     S.shifts.forEach(function (s) { if (s[2].slice(0, 7) === S.month && (!who || s[3] === who)) (byDate[s[2]] = byDate[s[2]] || []).push(s); });
+    // 자정 넘긴 근무: 다음 날에도 00:00부터 이어지는 줄로 보여 줌
+    var carry = {}, today = todayStr();
+    S.shifts.forEach(function (s) {
+      if (who && s[3] !== who) return;
+      var sp = span(s, nowM), d = addDays(s[2], 1);
+      if (sp.open && !sp.live) return;
+      if (d.slice(0, 7) !== S.month || d > today || sp.e <= toMin(d, "00:00")) return;
+      (carry[d] = carry[d] || []).push(s);
+    });
     var gapsBy = {}, gapDays = 0;
     if (!who) checkDays().forEach(function (d) { var g = gapsOf(d, nowM); if (g.length) { gapsBy[d] = g; gapDays++; } });
     if (gapDays) {
       var nt = mk("div", "gapnote", "지난 " + gapDays + "일에 아무도 기록하지 않은 시간이 있어요. 그때 근무했으면 ‘내가 근무했어요’를 눌러 적어 주세요.");
       box.appendChild(nt);
     }
-    var dates = Object.keys(byDate).concat(Object.keys(gapsBy).filter(function (d) { return !byDate[d]; })).sort().reverse();
+    var dateSet = {};
+    [byDate, gapsBy, carry].forEach(function (o) { Object.keys(o).forEach(function (d) { dateSet[d] = 1; }); });
+    var dates = Object.keys(dateSet).sort().reverse();
     dates.forEach(function (d) {
       var list = (byDate[d] || []).sort(function (a, b) { return a[4] < b[4] ? -1 : a[4] > b[4] ? 1 : 0; });
       var sec = mk("section", "day");
       var head = mk("div", "day-head");
-      var total = 0;
-      list.forEach(function (s) { var sp = span(s, nowM); if (!sp.open) total += sp.b - sp.a; });
+      var prevs = (carry[d] || []).sort(function (a, b) { return span(a, nowM).a - span(b, nowM).a; });
+      var total = 0, ppl = {};
+      list.forEach(function (s) { var sp = span(s, nowM); if (!sp.open) total += sp.b - sp.a; ppl[s[3]] = 1; });
+      prevs.forEach(function (s) { ppl[s[3]] = 1; });
+      var np = Object.keys(ppl).length;
       head.appendChild(dayEl(d));
-      head.appendChild(mk("span", "num", list.length ? list.length + "명" + (total ? " · " + dur(total) : "") : "기록 없음"));
+      head.appendChild(mk("span", "num", np ? np + "명" + (total ? " · " + dur(total) : "") : "기록 없음"));
       sec.appendChild(head);
       if (gapsBy[d]) sec.appendChild(gapEl(d, gapsBy[d]));
-      if (list.length) {
+      if (list.length || prevs.length) {
         var rows = mk("div", "rows");
-        list.forEach(function (s) { rows.appendChild(shiftEl(s, nowM)); });
+        prevs.forEach(function (s) { rows.appendChild(shiftEl(s, nowM, d)); });
+        list.forEach(function (s) { rows.appendChild(shiftEl(s, nowM, d)); });
         sec.appendChild(rows);
       }
       box.appendChild(sec);
@@ -560,31 +575,36 @@ button.srow { cursor: pointer; }
     return box;
   }
 
-  function shiftEl(s, nowM) {
+  /** One shift row on day d. If the shift started the day before (자정 넘김), only its part on day d is drawn. */
+  function shiftEl(s, nowM, d) {
+    d = d || s[2];
+    var cont = d !== s[2];
     var mine = s[3] === S.me;
     var el = mk(mine ? "button" : "div", "srow" + (mine ? " me" : ""));
     if (mine) { el.type = "button"; el.addEventListener("click", function () { openEditor(s); }); el.setAttribute("aria-label", s[2] + " " + s[4] + " 근무 기록 고치기"); }
     var sp = span(s, nowM);
     var left = mk("div");
     left.appendChild(mk("div", "who", s[3]));
-    var sub = [s[6] || ""];
+    var sub = [cont ? "전날 " + s[4] + " 출근" : "", s[6] || ""];
     if (mine) sub.push("눌러서 고치기");
     var subEl = mk("div", "sub" + (mine && !s[6] ? " edit" : ""), sub.filter(Boolean).join(" · "));
     if (sub.filter(Boolean).length) left.appendChild(subEl);
     var right = mk("div");
-    right.appendChild(mk("div", "tm num", s[4] + " – " + (s[5] ? s[5] + (sp.b - sp.a > 0 && toMin(s[2], s[5]) < sp.a ? " (+1)" : "") : "")));
+    right.appendChild(mk("div", "tm num", cont ? "00:00 – " + (s[5] || "")
+      : s[4] + " – " + (s[5] ? s[5] + (sp.b - sp.a > 0 && toMin(s[2], s[5]) < sp.a ? " (+1)" : "") : "")));
+    var day0 = toMin(d, "00:00");
     right.appendChild(sp.live ? mk("div", "dur live", "근무 중 · " + dur(nowM - sp.a))
-      : sp.open ? mk("div", "dur stale", "퇴근 기록 없음") : mk("div", "dur num", dur(sp.b - sp.a)));
+      : sp.open ? mk("div", "dur stale", "퇴근 기록 없음")
+      : mk("div", "dur num", cont ? "이날 " + dur(Math.min(sp.b, day0 + 1440) - day0) : dur(sp.b - sp.a)));
     el.appendChild(left); el.appendChild(right);
     var track = mk("div", "track"), bar = mk("i");
-    var day0 = toMin(s[2], "00:00");
     function place(i, a, b) {
-      var from = (a - day0) / 1440, to = Math.min(1, (b - day0) / 1440);
+      var from = Math.max(0, (a - day0) / 1440), to = Math.min(1, (b - day0) / 1440);
       i.style.left = (from * 100).toFixed(2) + "%"; i.style.width = Math.max(0.5, (to - from) * 100).toFixed(2) + "%";
     }
     place(bar, sp.a, sp.e);
     track.appendChild(bar);
-    var ov = overlapsOf(s, sp, nowM, day0 + 1440), ovM = 0, ovMax = 0;
+    var ov = overlapsOf(s, sp, nowM, day0, day0 + 1440), ovM = 0, ovMax = 0;
     ov.forEach(function (g) {
       var i = mk("i", g[2] >= 3 ? "ov3" : "ov2"); place(i, g[0], g[1]); track.appendChild(i);
       ovM += g[1] - g[0]; ovMax = Math.max(ovMax, g[2]);
@@ -598,8 +618,8 @@ button.srow { cursor: pointer; }
   }
 
   /** Parts of shift s worked at the same time as other people: [[from, to, people], ...] with people >= 2. */
-  function overlapsOf(s, sp, nowM, dayEnd) {
-    var lo = sp.a, hi = Math.min(sp.e, dayEnd);
+  function overlapsOf(s, sp, nowM, dayStart, dayEnd) {
+    var lo = Math.max(sp.a, dayStart), hi = Math.min(sp.e, dayEnd);
     if (hi <= lo || (sp.open && !sp.live)) return [];
     var iv = [], pts = [lo, hi];
     S.shifts.forEach(function (o) {
