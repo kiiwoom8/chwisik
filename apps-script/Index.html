@@ -101,10 +101,9 @@ main .wrap { padding-block: 8px calc(110px + env(safe-area-inset-bottom, 0px)); 
 .cxnote { margin: 12px 2px 0; font-size: 13px; color: var(--muted); }
 .tot { margin-top: 12px; background: var(--band); border-radius: var(--r); padding: 10px 12px; display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .tot .tl { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.tot .tl.sum { color: var(--ink); font-weight: 500; font-size: 14px; }
-.tot .tl.sum b { font-size: 16px; font-weight: 700; }
-.tot.eat .tl.sum b { color: var(--eat); }
-.tot .tl.me { color: var(--ink); font-weight: 500; }
+.tot .tl.tot-sum { color: var(--ink); font-weight: 500; font-size: 14px; }
+.tot .tl.tot-sum b { font-size: 16px; font-weight: 700; }
+.tot.eat .tl.tot-sum b { color: var(--eat); }
 .tot .ppl { display: grid; gap: 2px; border-top: 1px dashed var(--rule); padding-top: 6px; margin-top: 2px; }
 .jeotag { color: var(--accent); font-weight: 500; }
 .empty { text-align: center; color: var(--muted); padding: 40px 12px; }
@@ -511,11 +510,11 @@ button.srow { cursor: pointer; }
       l.appendChild(mk("b", "num", fmt(o.n) + "개 · " + fmt(o.w) + "원"));
       return l;
     }
-    box.appendChild(line("sum", "금액합계", tot));
+    box.appendChild(line("tot-sum", "금액합계", tot));
     var names = Object.keys(by).sort(function (a, b) { return by[b].w - by[a].w || a.localeCompare(b, "ko"); });
     if (names.length > 1) {
       var ppl = mk("div", "ppl");
-      names.forEach(function (k) { ppl.appendChild(line(k === S.me ? "me" : "", k, by[k])); });
+      names.forEach(function (k) { ppl.appendChild(line("", k, by[k])); });
       box.appendChild(ppl);
     }
     return box;
