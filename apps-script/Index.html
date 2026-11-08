@@ -1090,7 +1090,7 @@ button.srow { cursor: pointer; }
   }
   $("mPrev").addEventListener("click", function () { goMonth(1); });
   $("mNext").addEventListener("click", function () { goMonth(-1); });
-  $("sync").addEventListener("click", function () { refreshLive(); load(true); });
+  $("sync").addEventListener("click", function () { refreshLive(); load(true); checkAppUpdate(true); });
 
   /* ---------- pull to refresh ----------
      At the top of the page, drag down and let go: same as tapping the sync button (BGF check + reload).
@@ -1140,6 +1140,7 @@ button.srow { cursor: pointer; }
       ptr.style.transition = "transform .2s"; ptr.style.transform = "translateY(" + (GO - 44) + "px)";
       var t0 = Date.now();
       refreshLive();
+      checkAppUpdate(true);  // 새 화면 코드가 있으면 바로 다시 불러옴 (앱을 껐다 켤 필요 없음)
       load(true).then(null, function () {}).then(function () {
         setTimeout(function () { busy = false; hide(); }, Math.max(0, 450 - (Date.now() - t0)));
       });
@@ -1157,15 +1158,18 @@ button.srow { cursor: pointer; }
   document.addEventListener("visibilitychange", function () { if (!document.hidden && S.month) { load(false); refreshLive(); } });
 
   /* ---------- app self-update ----------
-     The app ships a copy of this page; on start it asks the server for the current one (by hash),
-     keeps it in localStorage, and switches to it the next time the app comes back to the front. */
+     The app ships a copy of this page; on start, on pull to refresh and on a tap on the sync label it asks
+     the server for the current one (by hash) and keeps it in localStorage. now = true (pull / tap): switch to it
+     right away (location.reload → the loader shows the stored page); otherwise the next time the app comes back
+     to the front. Never while a save is still on its way (S.busy) or a sheet is open: then on the next return. */
   var pageReady = false;
-  function checkAppUpdate() {
+  function checkAppUpdate(now) {
     if (!API) return;
     run("getPage", window.CHWISIK_PAGE_HASH || "").then(function (p) {
       if (!p || !p.html) return;
       lsSet("chwisik.page", JSON.stringify(p));
       pageReady = true;
+      if (now && !S.busy && !document.querySelector(".sheet:not([hidden])")) location.reload();
     }, function () {});
   }
   document.addEventListener("visibilitychange", function () { if (pageReady && !document.hidden && !S.busy) location.reload(); });

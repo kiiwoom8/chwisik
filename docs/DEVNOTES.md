@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (출근 tab: + 근무 직접 입력)
+Last updated: 2026-11-09 (pull to refresh also loads new page code in the app)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -220,7 +220,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 
 - **Start**: if localStorage `chwisik.cache` holds this month's data (saved on every `take` of the newest month), the page draws it at once, then one `getBoot` call replaces it. So a returning phone sees the list right away even while Apps Script is slow. The Google Fonts stylesheet loads without blocking the first draw (`media=print` swap).
 
-- **Pull to refresh**: at the top of the page, drag down and let go (pull past 64 px; the spinner turns green) = tap on the sync label: `refreshLive()` + `load(true)`; the spinner stays until the reload answers (at least 0.45 s). Ignored when the page is scrolled down, a bottom sheet is open, or the swipe is sideways or upward. `overscroll-behavior-y: contain` stops the browser's own pull-to-refresh (which would reload the whole page) where the page is the top-level document.
+- **Pull to refresh**: at the top of the page, drag down and let go (pull past 64 px; the spinner turns green) = tap on the sync label: `refreshLive()` + `load(true)` + `checkAppUpdate(true)` (app only: new page code → reload into it); the spinner stays until the reload answers (at least 0.45 s). Ignored when the page is scrolled down, a bottom sheet is open, or the swipe is sideways or upward. `overscroll-behavior-y: contain` stops the browser's own pull-to-refresh (which would reload the whole page) where the page is the top-level document.
 - **Tabs** (8, one row, fits 360 px): 출근 · 미등록 · 취식 · 폐기 · 전체 · 취소 · **저회전** · 월별 합계. 출근 is first and always opens first.
   - 미등록 = untagged **폐기** lines (저회전 is never 미등록).
   - 취식 = every 취식 line, 폐기 and 저회전 (저회전 lines carry a green `저회전` label).
@@ -239,7 +239,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 Why: the `/exec` link is slow to open (Google's wrapper page, two iframes, then the API calls), shows the "created by a Google Apps Script user" banner, and on some phones Google asks to sign in. The app runs the same page **directly**, without Google's page, and talks to the server through the JSON API.
 
 - **One page for both.** `app/www/index.html` is a small loader. It takes the newest page the server gave last time (localStorage `chwisik.page` = `{hash, html}`), else the copy shipped in the app (`www/page.html`, copied from `apps-script/Index.html` by `app/build.mjs` at build time), adds `window.CHWISIK_API` / `CHWISIK_PAGE_HASH` and the viewport meta, drops `<base>`, and `document.write`s it.
-- **Self-update.** After start the page calls `getPage(hash)`. A new page is stored and used the next time the app comes back to the front (`visibilitychange` → reload). So **page changes reach the app with the normal push to `main`; no new APK is needed.** A new APK is only needed when `app/` itself changes.
+- **Self-update.** The page calls `getPage(hash)` after start, on **pull to refresh** and on a tap on the sync label. A new page is stored; after a pull or tap the app reloads into it right away (`location.reload()` → the loader shows the stored page), otherwise it is used the next time the app comes back to the front (`visibilitychange` → reload). Not while a save is still on its way (`S.busy`) or a sheet is open: then on the next return to the front. So after a deploy, pull down once to get the new screen; no need to close and reopen the app. So **page changes reach the app with the normal push to `main`; no new APK is needed.** A new APK is only needed when `app/` itself changes.
 - **Safety net.** The loader sets `chwisik.pageTry = hash` before running a downloaded page; the page clears it as soon as its script starts. If it is still set next launch, that page broke: the loader drops it and runs the shipped copy (which then downloads the newest page again).
 - **Android build** (`.github/workflows/android.yml`, on push to `app/**` or by hand): `npm ci` → `build.mjs` → `npx cap add android` (project generated fresh each time, not committed) → our icons/splash from `app/android-res/` (Capacitor's logo files removed) → `versionCode` = run number → **targetSdk 34** (Android 15 forces edge-to-edge for target 35, which would put the page under the status bar) → `assembleRelease` + zipalign + apksigner with the key from secrets → GitHub Releases: a versioned release **android-1.<run>** (kept as history) and **android-latest** (always the newest; `chwisik.apk`), plus a workflow artifact. Owner's rule: every app build is published to Releases. Without the secrets it builds a **debug** APK and warns: a phone with the debug build must uninstall it before a release-signed one installs.
 - **Signing key**: PKCS12, alias `chwisik`, made 2026-11-09 with openssl, kept in `C:\Users\kiiwo\chwisik-android-key\` (README there). Lose it and phones must uninstall and reinstall to get a new build.

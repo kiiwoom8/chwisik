@@ -121,7 +121,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 - Dialogs: `confirmBox`, `closeConfirm`, `openPicker`, `choose`, `openPw`, `closePw`, `savePw`.
 - Data: `take(res, force)` (also `saveCache`), `saveCache(res)` / `loadCache()` (localStorage `chwisik.cache`: newest month's data for an instant start), `load(force)` (poll with version; returns a promise), `refreshLive()` (`refreshNow`), `setOnline`, `renderSync`.
 - Misc: `snack(text, undo)`, tab click handlers, search, `goMonth`, Esc handling, `visibilitychange`.
-- App update: `checkAppUpdate()` (app only: `getPage(CHWISIK_PAGE_HASH)` → localStorage `chwisik.page`, reload on next `visibilitychange`). The script's first lines clear `chwisik.pageTry` (tells the loader the page started).
+- App update: `checkAppUpdate(now)` (app only: `getPage(CHWISIK_PAGE_HASH)` → localStorage `chwisik.page`; `now` (pull to refresh, sync tap) → `location.reload()` at once unless `S.busy` or a sheet is open; else reload on next `visibilitychange`). The script's first lines clear `chwisik.pageTry` (tells the loader the page started).
 - Pull to refresh: an IIFE after the sync button handler; `touchstart`/`touchmove`/`touchend` on `document`, `.ptr` spinner element; on release past `GO` calls `refreshLive()` + `load(true)`.
 - Boot: `loadCache()` draws the last data → `getBoot` → pick name / password → `refreshLive()` + `checkAppUpdate()` → intervals (poll 5 s, live 3 min, re-render 출근 every minute).
 
