@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (출근 tab: merged night rows latest-first with `22:30 – 24:00`; a live shift past midnight shows 근무 중 on today's `00:00 –` line)
+Last updated: 2026-11-09 (pull-to-refresh on the staff page)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -220,6 +220,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 
 - **Start**: if localStorage `chwisik.cache` holds this month's data (saved on every `take` of the newest month), the page draws it at once, then one `getBoot` call replaces it. So a returning phone sees the list right away even while Apps Script is slow. The Google Fonts stylesheet loads without blocking the first draw (`media=print` swap).
 
+- **Pull to refresh**: at the top of the page, drag down and let go (pull past 64 px; the spinner turns green) = tap on the sync label: `refreshLive()` + `load(true)`; the spinner stays until the reload answers (at least 0.45 s). Ignored when the page is scrolled down, a bottom sheet is open, or the swipe is sideways or upward. `overscroll-behavior-y: contain` stops the browser's own pull-to-refresh (which would reload the whole page) where the page is the top-level document.
 - **Tabs** (8, one row, fits 360 px): 출근 · 미등록 · 취식 · 폐기 · 전체 · 취소 · **저회전** · 월별 합계. 출근 is first and always opens first.
   - 미등록 = untagged **폐기** lines (저회전 is never 미등록).
   - 취식 = every 취식 line, 폐기 and 저회전 (저회전 lines carry a green `저회전` label).
