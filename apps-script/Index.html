@@ -88,6 +88,7 @@ main .wrap { padding-block: 8px calc(110px + env(safe-area-inset-bottom, 0px)); 
 .stamp:disabled { opacity: .5; }
 .neg { color: var(--void); }
 .row.t-cancel .tagline { color: var(--muted); font-weight: 400; }
+.row.t-cancel .tagline.orphan { color: var(--void); font-weight: 500; }
 .cxnote { margin: 12px 2px 0; font-size: 13px; color: var(--muted); }
 .empty { text-align: center; color: var(--muted); padding: 40px 12px; }
 
@@ -505,7 +506,7 @@ button.srow { cursor: pointer; }
         info.appendChild(mk("div", "n", c[1]));
         info.appendChild(mk("div", "meta num", String(c[0]).slice(11, 16) + " · " + c[2] + "개 · " + fmt(c[3]) + "원"));
         var orig = c[5] || [];
-        if (!orig.length) info.appendChild(mk("div", "tagline", "앞에 같은 상품 폐기가 없어서 무시했어요"));
+        if (!orig.length) info.appendChild(mk("div", "tagline orphan", "⚠ 앞에 같은 상품 폐기가 없어서 무시했어요"));
         orig.forEach(function (o) {
           var same = String(o[0]).slice(0, 10) === String(c[0]).slice(0, 10);
           var when = (same ? "" : +String(o[0]).slice(5, 7) + "/" + +String(o[0]).slice(8, 10) + " ") + String(o[0]).slice(11, 16);
