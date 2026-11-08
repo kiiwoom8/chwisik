@@ -47,10 +47,8 @@ button, input, select { font: inherit; color: inherit; }
 /* .hdr (title, name, monthly counts) scrolls away; .top (tabs, search, #pin) sticks, so the stuck part stays short */
 .hdr { background: var(--sheet); padding-top: env(safe-area-inset-top, 0px); }
 .hdr .wrap { padding-top: 12px; display: grid; gap: 10px; }
-.top { position: sticky; top: 0; z-index: 5; background: var(--sheet); border-bottom: 1px solid var(--rule); transition: transform .2s ease; }
-/* bar-off: hidden while scrolling down, back on a slight scroll up (see "sticky bar" in the script) */
-.top.bar-off { transform: translateY(calc(-100% - 2px)); }
-@media (prefers-reduced-motion: reduce) { .top { transition: none; } }
+/* transform is set by the script ("sticky bar"): follows the scroll going down, glides back on a slight scroll up */
+.top { position: sticky; top: 0; z-index: 5; background: var(--sheet); border-bottom: 1px solid var(--rule); will-change: transform; }
 .top .wrap { padding-block: 10px; display: grid; gap: 10px; }
 .titlebar { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
 h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
@@ -1197,26 +1195,36 @@ button.srow { cursor: pointer; }
     document.addEventListener("touchcancel", function () { pull = 0; end(); });
   })();
 
-  /* ---------- sticky bar: hides while scrolling down, comes back on a slight scroll up ----------
-     Same idea as Chrome's toolbar / headroom.js (offset + tolerance): after the bar sticks it stays for one more
-     bar height of scrolling; then DOWN_TOL px more down hides it and UP_TOL px up shows it again.
-     Never hidden above that point, while the search box has focus or while a sheet is open. */
+  /* ---------- sticky bar: slides away while scrolling down, glides back on a slight scroll up ----------
+     Like Chrome's toolbar / Material's enter-always app bar: after the bar sticks it stays for one more bar
+     height of scrolling (offset); past that it moves up with the content, pixel for pixel, until it is gone.
+     UP_TOL px of scrolling up glides it back in (GLIDE). If scrolling stops with the bar half way, it finishes
+     the move to whichever end is nearer. Always shown above the offset, while the search box has focus or a
+     sheet is open. */
   (function () {
-    var bar = document.querySelector(".top"), hdr = document.querySelector(".hdr"), DOWN_TOL = 10, UP_TOL = 5;
-    var lastY = 0, run = 0, off = false;
-    function setOff(v) { if (v !== off) { off = v; bar.classList.toggle("bar-off", v); } }
+    var bar = document.querySelector(".top"), hdr = document.querySelector(".hdr"), UP_TOL = 5, SETTLE_MS = 120;
+    var GLIDE = "transform .28s cubic-bezier(.2, 0, 0, 1)";
+    var lastY = 0, up = 0, shift = 0, timer = 0;   // shift = px the bar is moved up (>= full = gone)
+    function full() { return bar.offsetHeight + 2; }
+    function place(px, glide) {
+      var h = full();
+      shift = Math.max(0, Math.min(h, px));
+      bar.style.transition = glide ? GLIDE : "none";
+      bar.style.transform = !shift ? "" : shift >= h ? "translateY(calc(-100% - 2px))" : "translateY(" + -shift + "px)";
+    }
+    function settle() { var h = full(); if (shift > 0 && shift < h) place(shift > h / 2 ? h : 0, true); }
     function check() {
-      var y = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0), d = y - lastY;
+      var y = Math.max(0, window.scrollY || document.documentElement.scrollTop || 0), prev = lastY;
+      var limit = hdr.offsetHeight + bar.offsetHeight;
       lastY = y;
-      if (y <= hdr.offsetHeight + bar.offsetHeight || document.activeElement === $("q") || document.querySelector(".sheet:not([hidden])")) { run = 0; setOff(false); return; }
-      if (!d) return;
-      if ((d > 0) !== (run > 0)) run = 0;   // 방향이 바뀌면 새로 셈
-      run += d;
-      if (run >= DOWN_TOL) setOff(true);
-      else if (run <= -UP_TOL) setOff(false);
+      clearTimeout(timer);
+      if (y <= limit || document.activeElement === $("q") || document.querySelector(".sheet:not([hidden])")) { up = 0; if (shift) place(0, true); return; }
+      if (y > prev) { up = 0; if (shift < full()) place(shift + y - Math.max(prev, limit), false); }   // 내려가면 손가락 따라 올라감
+      else if (y < prev) { up += prev - y; if (shift && up >= UP_TOL) place(0, true); }               // 조금만 올려도 부드럽게 다시 나옴
+      timer = setTimeout(settle, SETTLE_MS);
     }
     window.addEventListener("scroll", check, { passive: true });   // scroll fires at most once per frame
-    $("q").addEventListener("focus", function () { run = 0; setOff(false); });
+    $("q").addEventListener("focus", function () { up = 0; if (shift) place(0, true); });
   })();
 
   document.addEventListener("keydown", function (e) {

@@ -123,7 +123,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 - Misc: `snack(text, undo)`, tab click handlers, search, `goMonth`, Esc handling, `visibilitychange`.
 - App update: `checkAppUpdate(now)` (app only: `getPage(CHWISIK_PAGE_HASH)` → localStorage `chwisik.page`; `now` (pull to refresh, sync tap) → `location.reload()` at once unless `S.busy` or a sheet is open; else reload on next `visibilitychange`). The script's first lines clear `chwisik.pageTry` (tells the loader the page started).
 - Pull to refresh: an IIFE after the sync button handler; `touchstart`/`touchmove`/`touchend` on `document`, `.ptr` spinner element; on release past `GO` calls `refreshLive()` + `load(true)`.
-- Sticky bar hide / show: an IIFE right after pull to refresh; `check()` on `scroll` (passive) toggles `.top.bar-off` with an offset (`.hdr` + `.top` height) and tolerances `DOWN_TOL` 10 / `UP_TOL` 5; never off while `#q` has focus or a sheet is open.
+- Sticky bar hide / show: an IIFE right after pull to refresh; `check()` on `scroll` (passive) moves `.top` with `place(px, glide)` (inline `transform`; `shift` = px moved up) after an offset (`.hdr` + `.top` height): down = follows the scroll, up `UP_TOL` 5 px = glide back; `settle()` after `SETTLE_MS` 120 finishes a half-way bar to the nearer end; never moved while `#q` has focus or a sheet is open.
 - Boot: `loadCache()` draws the last data → `getBoot` → pick name / password → `refreshLive()` + `checkAppUpdate()` → intervals (poll 5 s, live 3 min, re-render 출근 every minute).
 
 ---
