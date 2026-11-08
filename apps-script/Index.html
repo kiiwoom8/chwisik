@@ -626,13 +626,13 @@ button.srow { cursor: pointer; }
       if (gapsBy[d]) sec.appendChild(gapEl(d, gapsBy[d]));
       if (list.length || prevs.length) {
         var rows = mk("div", "rows");
-        // 한 사람의 같은 날 근무(전날 밤에서 이어진 근무 + 이날 밤 출근 등)는 한 줄로 합침
+        // 한 사람의 같은 날 근무(전날 밤에서 이어진 근무 + 당일 밤 출근 등)는 한 줄로 합침
         var groups = [], gi = {};
         prevs.concat(list).forEach(function (s) {
           if (!(s[3] in gi)) { gi[s[3]] = groups.length; groups.push([]); }
           groups[gi[s[3]]].push(s);
         });
-        // 이날 가장 늦게 시작한 근무 순서로: 야간(이날 밤 출근)은 맨 아래
+        // 당일 가장 늦게 시작한 근무 순서로: 야간(당일 밤 출근)은 맨 아래
         var day0 = toMin(d, "00:00");
         function lateKey(g) { return Math.max.apply(null, g.map(function (s) { return Math.max(day0, span(s, nowM).a); })); }
         function earlyKey(g) { return Math.min.apply(null, g.map(function (s) { return Math.max(day0, span(s, nowM).a); })); }
@@ -650,7 +650,7 @@ button.srow { cursor: pointer; }
   function gapEl(d, gaps) {
     var box = mk("div", "gapwarn");
     var whole = gaps.length === 1 && gaps[0][1] - gaps[0][0] >= 1440;
-    box.appendChild(mk("div", "gw-t", whole ? "⚠ 이날 근무 기록이 하나도 없어요. 누가 근무했나요?" : "⚠ 아무도 기록하지 않은 시간이 있어요. 누가 근무했나요?"));
+    box.appendChild(mk("div", "gw-t", whole ? "⚠ 당일 근무 기록이 하나도 없어요. 누가 근무했나요?" : "⚠ 아무도 기록하지 않은 시간이 있어요. 누가 근무했나요?"));
     gaps.forEach(function (g) {
       var line = mk("div", "gw-l");
       var len = g[1] - g[0];
@@ -666,7 +666,7 @@ button.srow { cursor: pointer; }
   }
 
   /** One person's row on day d: parts = that person's shifts on day d (one started the day before → only its part on d is drawn).
-   *  Several parts (야간: 전날 밤 근무의 끝 + 이날 밤 출근) share one row and one bar; then each time is its own edit button. */
+   *  Several parts (야간: 전날 밤 근무의 끝 + 당일 밤 출근) share one row and one bar; then each time is its own edit button. */
   function shiftEl(parts, nowM, d) {
     var name = parts[0][3], mine = name === S.me, multi = parts.length > 1;
     var day0 = toMin(d, "00:00");
@@ -689,15 +689,15 @@ button.srow { cursor: pointer; }
       var cont = d !== s[2], sp = span(s, nowM);
       var blk = mk(mine && multi ? "button" : "div", "part");
       if (mine && multi) { blk.type = "button"; blk.addEventListener("click", function () { openEditor(s); }); blk.setAttribute("aria-label", s[2] + " " + s[4] + " 근무 기록 고치기"); }
-      // 이날 몫만 보여 줌 (나머지는 다음 날 줄에): 합친 줄에서 자정을 넘긴 근무, 그리고 자정을 넘겨 아직 근무 중인 근무 → 22:30 – 24:00
+      // 당일 몫만 보여 줌 (나머지는 다음 날 줄에): 합친 줄에서 자정을 넘긴 근무, 그리고 자정을 넘겨 아직 근무 중인 근무 → 22:30 – 24:00
       var cut = !cont && sp.e > day0 + 1440 && (sp.live || (multi && !sp.open));
       blk.appendChild(mk("div", "tm num", cont ? "00:00 – " + (s[5] || "")
         : cut ? s[4] + " – 24:00"
         : s[4] + " – " + (s[5] ? s[5] + (sp.b - sp.a > 0 && toMin(s[2], s[5]) < sp.a ? " (+1)" : "") : "")));
-      blk.appendChild(cut ? mk("div", "dur num", "이날 " + dur(day0 + 1440 - sp.a))
-        : sp.live ? mk("div", "dur live", "근무 중 · " + (cont ? "이날 " + dur(nowM - day0) : dur(nowM - sp.a)))
+      blk.appendChild(cut ? mk("div", "dur num", "당일 " + dur(day0 + 1440 - sp.a))
+        : sp.live ? mk("div", "dur live", "근무 중 · " + (cont ? "다음날 " + dur(nowM - day0) : dur(nowM - sp.a)))
         : sp.open ? mk("div", "dur stale", "퇴근 기록 없음")
-        : mk("div", "dur num", cont ? "이날 " + dur(Math.min(sp.b, day0 + 1440) - day0) : dur(sp.b - sp.a)));
+        : mk("div", "dur num", cont ? "다음날 " + dur(Math.min(sp.b, day0 + 1440) - day0) : dur(sp.b - sp.a)));
       right.appendChild(blk);
       var bar = mk("i"); place(bar, sp.a, sp.e); track.appendChild(bar);
       overlapsOf(s, sp, nowM, day0, day0 + 1440).forEach(function (g) {
