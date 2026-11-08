@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (월별 합계: no 취식 매가, red 취식 원가 합계)
+Last updated: 2026-11-09 (출근 tab: + 근무 직접 입력)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 

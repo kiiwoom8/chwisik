@@ -576,7 +576,7 @@ button.srow { cursor: pointer; }
     } else {
       card.appendChild(mk("div", "mystate", S.month.replace("-", "년 ") + "월 근무 기록이에요. 출근/퇴근은 이번 달에서 눌러요."));
     }
-    var add = mk("button", "linkbtn", "+ 근무 직접 입력 (깜빡한 날)"); add.type = "button";
+    var add = mk("button", "linkbtn", "+ 근무 직접 입력"); add.type = "button";
     add.style.justifySelf = "start";
     add.addEventListener("click", function () { openEditor(null); });
     card.appendChild(add);
