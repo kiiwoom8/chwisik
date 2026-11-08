@@ -7,6 +7,8 @@
  * - 출근일지: [출근] / [퇴근] 한 번 누르거나 직접 입력. 다른 직원 근무 시간도 날짜별로 보임
  *   근무 기록 밖 시간의 폐기를 등록하면 확인을 받고, '확인' 열에 '근무외' 로 남김
  * - 월별 합계: '월별 합계' 시트와 웹앱에서 확인 (웹앱은 근무시간 합계도)
+ * - 저회전상품철수 전표도 폐기와 똑같이 가져옴 ('전표' 열 = '저회전'). 취식으로만 등록할 수 있고,
+ *   등록 안 해도 됨 (미등록에 안 셈). 폐기로는 등록할 수 없음.
  */
 
 var TZ = 'Asia/Seoul';
@@ -21,10 +23,16 @@ var SH_LOG = '가져오기 기록';
 var SH_SHIFTS = '출근일지';
 
 // 폐기목록 columns (1-based)
-var C = { KEY: 1, DATE: 2, TIME: 3, NAME: 4, CODE: 5, CAT: 6, QTY: 7, WPRICE: 8, WAMT: 9, MPRICE: 10, MAMT: 11, CHIT: 12, TYPE: 13, WHO: 14, MEMBER: 15, AT: 16, MONTH: 17, NOTE: 18 };
-var NCOL = 18;
-var HEADERS = ['키', '일자', '생성시각', '품명', '상품코드', '분류', '수량', '원가단가', '원가금액', '매가단가', '매가금액', '전표번호', '구분', '등록이름', '직원', '등록시각', '월', '확인'];
+var C = { KEY: 1, DATE: 2, TIME: 3, NAME: 4, CODE: 5, CAT: 6, QTY: 7, WPRICE: 8, WAMT: 9, MPRICE: 10, MAMT: 11, CHIT: 12, TYPE: 13, WHO: 14, MEMBER: 15, AT: 16, MONTH: 17, NOTE: 18, SRC: 19 };
+var NCOL = 19;
+var HEADERS = ['키', '일자', '생성시각', '품명', '상품코드', '분류', '수량', '원가단가', '원가금액', '매가단가', '매가금액', '전표번호', '구분', '등록이름', '직원', '등록시각', '월', '확인', '전표'];
 var OFFSHIFT_NOTE = '근무외';
+
+// 가져오는 전표 종류. SRC 열: 폐기 = '' (비어 있음), 저회전상품철수 = '저회전'
+var PYEGI_DIV = '10';          // 통합전표 조회 전표구분 (공통코드 S312) 10 = 폐기
+var JEO = '저회전';
+var JEO_CHIT_ID = '24';        // 목록의 CHIT_ID 24 = 저회전상품철수전표 (STGJ020_P1)
+var CHIT_DIV_CODE = 'S312';    // 전표구분 공통코드 (/stco010/selComCd)
 
 // 출근일지 columns (1-based). 퇴근이 출근보다 이르면 다음 날 퇴근.
 var SC = { KEY: 1, DATE: 2, MEMBER: 3, START: 4, END: 5, HOURS: 6, MEMO: 7, AT: 8, MONTH: 9 };
@@ -48,7 +56,7 @@ function setup() {
   items.getRange(1, 1, 1, NCOL).setValues([HEADERS]).setFontWeight('bold');
   items.setFrozenRows(1);
   items.getRange('A:F').setNumberFormat('@');
-  items.getRange('L:R').setNumberFormat('@');
+  items.getRange('L:S').setNumberFormat('@');
   items.getRange('G:K').setNumberFormat('#,##0');
 
   shiftSheet_();
@@ -86,8 +94,8 @@ function setup() {
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('취식 관리')
     .addItem('BGF 비밀번호 입력', 'menuSetPassword')
-    .addItem('오늘 폐기 지금 가져오기', 'menuLiveNow')
-    .addItem('어제 폐기 지금 가져오기', 'nightly')
+    .addItem('오늘 폐기·저회전 지금 가져오기', 'menuLiveNow')
+    .addItem('어제 폐기·저회전 지금 가져오기', 'nightly')
     .addItem('기간 지정해서 가져오기', 'menuImportRange')
     .addSeparator()
     .addItem('매일 자동 가져오기 켜기', 'installNightlyTrigger')
@@ -102,7 +110,7 @@ function onOpen() {
 function menuLiveNow() {
   var ui = SpreadsheetApp.getUi();
   var r = liveImport_();
-  ui.alert(r.error ? '가져오지 못했어요:\n' + r.error : '오늘 폐기 새 품목 ' + r.added + '건 추가 (' + (r.ms / 1000).toFixed(1) + '초)');
+  ui.alert(r.error ? '가져오지 못했어요:\n' + r.error : '오늘 폐기·저회전 새 품목 ' + r.added + '건 추가 (' + (r.ms / 1000).toFixed(1) + '초)');
 }
 function menuLiveOn() {
   var ui = SpreadsheetApp.getUi();   // first: throws when called from the web page
@@ -203,10 +211,11 @@ function importThisMonth() {
 
 function importRange_(fromYmd, toYmd) {
   try {
-    var r = fetchPyegi_(fromYmd, toYmd);
+    var r = fetchAll_(fromYmd, toYmd);
     var added = appendItems_(r.items);
-    var msg = fromYmd + '~' + toYmd + ': 전표 ' + r.chits + '장, 새 품목 ' + added + '건 추가';
-    logImport_(fromYmd + '~' + toYmd, r.chits, added, 'OK');
+    var msg = fromYmd + '~' + toYmd + ': 전표 ' + r.chits + '장 (' + JEO + ' ' + r.jeoChits + '장), 새 품목 ' + added + '건 추가' +
+      (r.jeoErr ? '\n' + JEO + ' 가져오기 실패: ' + r.jeoErr : '');
+    logImport_(fromYmd + '~' + toYmd, r.chits, added, 'OK' + jeoNote_(r));
     return msg;
   } catch (e) {
     logImport_(fromYmd + '~' + toYmd, '', '', '실패: ' + e.message);
@@ -219,19 +228,30 @@ function importRange_(fromYmd, toYmd) {
   }
 }
 
+/** 폐기목록 sheet with every column in place (adds the 전표 column to sheets made before it existed). */
+function itemsSheet_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(SH_ITEMS);
+  if (sh.getMaxColumns() < NCOL) sh.insertColumnsAfter(sh.getMaxColumns(), NCOL - sh.getMaxColumns());
+  if (sh.getRange(1, C.SRC).getDisplayValue() !== HEADERS[C.SRC - 1]) {
+    sh.getRange(1, C.SRC).setValue(HEADERS[C.SRC - 1]).setFontWeight('bold');
+    sh.getRange(1, C.SRC, sh.getMaxRows(), 1).setNumberFormat('@');
+  }
+  return sh;
+}
+
 function appendItems_(items) {
   if (!items.length) return 0;
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    var sh = SpreadsheetApp.getActive().getSheetByName(SH_ITEMS);
+    var sh = itemsSheet_();
     var n = sh.getLastRow() - 1;
     var have = {};
     if (n > 0) sh.getRange(2, 1, n, 1).getValues().forEach(function (r) { have[r[0]] = 1; });
-    var rows = items.filter(function (it) { return !have[it.key]; })
+    var rows = items.filter(function (it) { if (have[it.key]) return false; have[it.key] = 1; return true; })
       .sort(function (a, b) { return a.time < b.time ? -1 : a.time > b.time ? 1 : (a.key < b.key ? -1 : 1); })
       .map(function (it) {
-        return [it.key, it.date, it.time, it.name, it.code, it.cat, it.qty, it.wprice, it.wamt, it.mprice, it.mamt, it.chit, '', '', '', '', it.date.slice(0, 7), ''];
+        return [it.key, it.date, it.time, it.name, it.code, it.cat, it.qty, it.wprice, it.wamt, it.mprice, it.mamt, it.chit, '', '', '', '', it.date.slice(0, 7), '', it.src || ''];
       });
     if (rows.length) {
       sh.getRange(n + 2, 1, rows.length, NCOL).setValues(rows);
@@ -271,11 +291,16 @@ function liveImport_() {
   var now = new Date(t0);
   var from = ymd_(new Date(t0 - 24 * 3600 * 1000)), to = ymd_(now);
   try {
-    var r = fetchPyegi_(from, to, knownChits_());
+    var r = fetchAll_(from, to, knownChits_());
     var added = appendItems_(r.items);
     var ms = Date.now() - t0;
     p.setProperties({ LIVE_OK_AT: String(t0), LIVE_MS: String(ms), LIVE_ERR: '' });
-    if (added) logImport_(from + '~' + to + ' (실시간)', r.chits, added, 'OK · ' + (ms / 1000).toFixed(1) + '초, 상세 ' + r.fetched + '장');
+    // 저회전 failures are logged once per streak (JEO_ERR), and never stop the 폐기 import
+    var jeoErrBefore = p.getProperty('JEO_ERR') || '';
+    p.setProperty('JEO_ERR', r.jeoErr || '');
+    if (added || (r.jeoErr && !jeoErrBefore)) {
+      logImport_(from + '~' + to + ' (실시간)', r.chits, added, 'OK · ' + (ms / 1000).toFixed(1) + '초, 상세 ' + r.fetched + '장' + jeoNote_(r));
+    }
     return { added: added, ms: ms };
   } catch (e) {
     var msg = String(e && e.message || e).slice(0, 200);
@@ -327,6 +352,11 @@ function ssvBuild_(vars, dsName, cols, row) {
   p.push(['N'].concat(row).join(US));
   p.push('');
   return p.join(RS) + RS;
+}
+
+/** A request with variables only (no input dataset), e.g. the common code lookup. */
+function ssvVarsOnly_(vars) {
+  return ['SSV:utf-8'].concat(vars.map(function (kv) { return kv[0] + '=' + kv[1]; })).join(RS) + RS;
 }
 
 function ssvParse_(text) {
@@ -418,16 +448,60 @@ function svcVars_() {
 }
 
 /**
+ * One login, then 폐기 and 저회전상품철수 slips for the range.
+ * A 저회전 failure never blocks 폐기: it comes back as jeoErr and its items are left out.
+ */
+function fetchAll_(fromYmd, toYmd, known) {
+  var s = bgfLogin_();
+  var a = fetchSlips_(s, PYEGI_DIV, '', '', fromYmd, toYmd, known);
+  var b, jeoErr = '';
+  try {
+    // search by the S312 code (or 전체 when it can't be found), and keep CHIT_ID 24 slips only either way
+    b = fetchSlips_(s, jeoDiv_(s), JEO_CHIT_ID, JEO, fromYmd, toYmd, known);
+  } catch (e) {
+    jeoErr = String(e && e.message || e).slice(0, 150);
+    b = { chits: 0, fetched: 0, items: [] };
+  }
+  return { chits: a.chits + b.chits, jeoChits: b.chits, fetched: a.fetched + b.fetched, items: a.items.concat(b.items), jeoErr: jeoErr };
+}
+function jeoNote_(r) { return r.jeoErr ? ' · ' + JEO + ' 실패: ' + r.jeoErr : r.jeoChits ? ' · ' + JEO + ' ' + r.jeoChits + '장' : ''; }
+
+/**
+ * 전표구분 search code for 저회전상품철수, looked up by name in BGF's common code S312 (the same call
+ * the 통합전표 조회 screen makes for its dropdown) and cached in Script Property JEO_DIV.
+ * Returns '' (= 전체) when the lookup finds nothing; the caller then filters by CHIT_ID.
+ */
+function jeoDiv_(s) {
+  var p = PropertiesService.getScriptProperties();
+  var cached = p.getProperty('JEO_DIV');
+  if (cached) return cached;
+  var code = '';
+  try {
+    var r = s.post('/stco010/selComCd', ssvVarsOnly_(svcVars_().concat([
+      ['codeKeys', CHIT_DIV_CODE], ['selecttype', 'A'], ['col1', '%'], ['col2', '%'], ['col3', '%'], ['col4', '%'], ['col5', '%'], ['col6', '%']
+    ])));
+    Object.keys(r.ds).forEach(function (k) {
+      (r.ds[k] || []).forEach(function (row) {
+        if (!code && row.CODE && String(row.NAME || '').indexOf(JEO) >= 0) code = String(row.CODE);
+      });
+    });
+  } catch (e) {}
+  if (code) p.setProperty('JEO_DIV', code);
+  return code;
+}
+
+/**
+ * divCode: 전표구분 search code ('' = 전체). onlyChitId: keep only slips with this CHIT_ID ('' = all).
+ * src: written to the 전표 column ('' = 폐기).
  * known (optional): { CHIT_NO: lines already imported }. A slip is skipped when we already have
  * at least ITEM_CNT lines of it, so a live refresh only downloads details for new slips.
  * The nightly import passes nothing and re-reads every slip (safety net).
  */
-function fetchPyegi_(fromYmd, toYmd, known) {
-  var s = bgfLogin_();
+function fetchSlips_(s, divCode, onlyChitId, src, fromYmd, toYmd, known) {
   var list = s.post('/stgj020/search', ssvBuild_(svcVars_(), 'dsSearch',
     ['strDate', 'strStoreCd', 'strChitDiv', 'strChitNo', 'strChitYmd', 'strToDt', 'strFromDt'],
-    ['', STORE_CD, '10', '', '', toYmd, fromYmd]));
-  var chits = (list.ds.dsList || []).filter(function (c) { return c.CHIT_NO; });
+    ['', STORE_CD, divCode, '', '', toYmd, fromYmd]));
+  var chits = (list.ds.dsList || []).filter(function (c) { return c.CHIT_NO && (!onlyChitId || c.CHIT_ID === onlyChitId); });
   var meta = {};
   chits.forEach(function (c) { meta[c.CHIT_NO] = c; });
   var todo = chits.filter(function (c) {
@@ -465,7 +539,7 @@ function fetchPyegi_(fromYmd, toYmd, known) {
           time: cre.slice(0, 4) + '-' + cre.slice(4, 6) + '-' + cre.slice(6, 8) + ' ' + cre.slice(8, 10) + ':' + cre.slice(10, 12) + ':' + cre.slice(12, 14),
           name: d.ITEM_NM, code: d.ITEM_CD || '', cat: d.LARGE_NM || '',
           qty: Number(d.QTY) || 0, wprice: Number(d.WONGA_PRICE) || 0, wamt: Number(d.WONGA_AMT) || 0,
-          mprice: Number(d.MAEGA_PRICE) || 0, mamt: Number(d.MAEGA_AMT) || 0, chit: d.CHIT_NO
+          mprice: Number(d.MAEGA_PRICE) || 0, mamt: Number(d.MAEGA_AMT) || 0, chit: d.CHIT_NO, src: src || ''
         });
       });
     }
@@ -637,7 +711,7 @@ function getInitData_() {
 function getMonth(month, knownVersion) {
   var v = version_();
   if (knownVersion && knownVersion === v) return null;
-  var sh = SpreadsheetApp.getActive().getSheetByName(SH_ITEMS);
+  var sh = itemsSheet_();
   var n = sh.getLastRow() - 1;
   var rows = [], cancels = [];
   if (n > 0) {
@@ -649,9 +723,9 @@ function getMonth(month, knownVersion) {
       var r = vals[i];
       if (r[C.MONTH - 1] !== month) continue;
       if (cx.neg[i]) {
-        // [time, name, qty, wamt, date, [[time, qty, type, member], …] canceled lines (empty = no earlier 폐기)]
+        // [time, name, qty, wamt, date, [[time, qty, type, member], …] canceled lines (empty = no earlier line), src]
         cancels.push([when(i), r[C.NAME - 1], Number(nums[i][0]) || 0, Number(nums[i][2]) || 0, r[C.DATE - 1],
-          cx.neg[i].map(function (m) { var o = vals[m[0]]; return [when(m[0]), m[1], o[C.TYPE - 1], o[C.MEMBER - 1]]; })]);
+          cx.neg[i].map(function (m) { var o = vals[m[0]]; return [when(m[0]), m[1], o[C.TYPE - 1], o[C.MEMBER - 1]]; }), r[C.SRC - 1]]);
         continue;
       }
       var q = Number(nums[i][0]) || 0, wamt = Number(nums[i][2]) || 0, mamt = Number(nums[i][4]) || 0;
@@ -660,7 +734,7 @@ function getMonth(month, knownVersion) {
         wamt = Math.round(wamt * cx.left[i] / q); mamt = Math.round(mamt * cx.left[i] / q); q = cx.left[i];
       }
       rows.push([i + 2, r[C.KEY - 1], when(i), r[C.NAME - 1], q,
-        Number(nums[i][1]) || 0, wamt, mamt, r[C.TYPE - 1], r[C.MEMBER - 1], r[C.WHO - 1], r[C.DATE - 1], r[C.NOTE - 1]]);
+        Number(nums[i][1]) || 0, wamt, mamt, r[C.TYPE - 1], r[C.MEMBER - 1], r[C.WHO - 1], r[C.DATE - 1], r[C.NOTE - 1], r[C.SRC - 1]]);
     }
   }
   var all = readShifts_();
@@ -668,8 +742,9 @@ function getMonth(month, knownVersion) {
 }
 
 /**
- * BGF 폐기 취소: a line with a negative 수량/단가/금액 cancels an earlier 폐기 line of the same product
- * (same 상품코드, or 품명 when there is no code). Lines are walked in time order over the whole sheet,
+ * BGF 폐기 취소: a line with a negative 수량/단가/금액 cancels an earlier line of the same product
+ * (same 상품코드, or 품명 when there is no code) and the same slip kind (전표 열: 폐기 / 저회전 never
+ * cancel each other). Lines are walked in time order over the whole sheet,
  * so a cancel early next month still finds last month's line. Each cancel uses up the quantity of the
  * newest earlier line(s), untagged lines first. A cancel with no earlier line is simply ignored.
  * Returns neg: { index: [[matchedIndex, qty], …] } for every negative line (all are hidden),
@@ -683,7 +758,7 @@ function cancelMatch_(vals, nums) {
   order.forEach(function (i) {
     var r = vals[i], x = nums[i];
     var q = Number(x[0]) || 0;
-    var prod = String(r[C.CODE - 1] || r[C.NAME - 1]);
+    var prod = String(r[C.SRC - 1] || '') + '|' + String(r[C.CODE - 1] || r[C.NAME - 1]);
     var isNeg = [0, 1, 2, 3, 4].some(function (k) { return (Number(x[k]) || 0) < 0; });
     if (!isNeg) {
       if (q > 0) { rem[i] = q; (open[prod] = open[prod] || []).push(i); }
@@ -706,6 +781,7 @@ function cancelMatch_(vals, nums) {
 
 /**
  * type: '취식' | '폐기' | '' (clear). memberFull: whose tag to write (전체 이름).
+ * A 저회전 row (전표 열 = '저회전') can only be 취식 or cleared.
  * note: '근무외' when the worker confirmed a 폐기 outside their recorded shift (kept only for 폐기).
  * me/token: who is acting. Only your own name is written, and a row someone else tagged can't be
  * changed or cleared from the page (the owner can still fix it in the sheet).
@@ -726,6 +802,9 @@ function setTag(rowHint, key, type, memberFull, month, note, me, token) {
     }
     var curMember = sh.getRange(row, C.MEMBER).getDisplayValue();
     if (curMember && curMember !== actor.full) throw new Error(curMember + ' 님이 등록한 항목이라 바꿀 수 없어요.');
+    if (type === '폐기' && sh.getMaxColumns() >= C.SRC && sh.getRange(row, C.SRC).getDisplayValue() === JEO) {
+      throw new Error(JEO + ' 상품은 폐기로 등록할 수 없어요. 먹었으면 취식으로 등록해 주세요.');
+    }
     var rng = sh.getRange(row, C.TYPE, 1, 4);
     if (type) {
       var who = type === '취식' ? mem.full : mem.short;
