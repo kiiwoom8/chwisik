@@ -680,7 +680,7 @@ button.srow { cursor: pointer; }
     right.appendChild(cut ? mk("div", "dur num", "당일 " + dur(day0 + 1440 - sp.a))
       : sp.live ? mk("div", "dur live", "근무 중 · " + (cont ? "당일 " + dur(nowM - day0) : dur(nowM - sp.a)))
       : sp.open ? mk("div", "dur stale", "퇴근 기록 없음")
-      : mk("div", "dur num", cont ? "다음날 " + dur(Math.min(sp.b, day0 + 1440) - day0) : dur(sp.b - sp.a)));
+      : mk("div", "dur num", cont ? "전날 " + dur(Math.min(sp.b, day0 + 1440) - day0) : dur(sp.b - sp.a)));
     var track = mk("div", "track"), ovM = 0, ovMax = 0;
     function place(i, a, b) {
       var from = Math.max(0, (a - day0) / 1440), to = Math.min(1, (b - day0) / 1440);
