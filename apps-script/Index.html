@@ -695,7 +695,7 @@ button.srow { cursor: pointer; }
         : cut ? s[4] + " – 24:00"
         : s[4] + " – " + (s[5] ? s[5] + (sp.b - sp.a > 0 && toMin(s[2], s[5]) < sp.a ? " (+1)" : "") : "")));
       blk.appendChild(cut ? mk("div", "dur num", "당일 " + dur(day0 + 1440 - sp.a))
-        : sp.live ? mk("div", "dur live", "근무 중 · " + (cont ? "다음날 " + dur(nowM - day0) : dur(nowM - sp.a)))
+        : sp.live ? mk("div", "dur live", "근무 중 · " + (cont ? "당일 " + dur(nowM - day0) : dur(nowM - sp.a)))
         : sp.open ? mk("div", "dur stale", "퇴근 기록 없음")
         : mk("div", "dur num", cont ? "다음날 " + dur(Math.min(sp.b, day0 + 1440) - day0) : dur(sp.b - sp.a)));
       right.appendChild(blk);
