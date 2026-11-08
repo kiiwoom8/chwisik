@@ -119,7 +119,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 - Tagging: `tap(r, type)` (guards: picker, other worker, 저회전 + 폐기, off-shift confirm) → `doTag` → `apply` (optimistic) + `send` (`setTag`; rolls back on error) + snack undo.
 - Shifts UI: `call(fn, args, done)` (adds token), `clock`, `openEditor(s, preset)`, `edHint`, `closeEditor`, form submit / delete handlers.
 - Dialogs: `confirmBox`, `closeConfirm`, `openPicker`, `choose`, `openPw`, `closePw`, `savePw`.
-- Data: `take(res, force)` (also `saveCache`), `saveCache(res)` / `loadCache()` (localStorage `chwisik.cache`: newest month's data for an instant start), `load(force)` (poll with version; returns a promise), `refreshLive()` (`refreshNow`), `setOnline`, `renderSync`.
+- Data: `take(res, force)` (also `saveCache`), `saveCache(res)` / `loadCache()` (localStorage `chwisik.cache`: newest month's data for an instant start), `load(force)` (poll with version; returns a promise), `refreshLive()` (`refreshNow`), `setOnline`, `renderSync` (picks the text), `setSync(cls, text)` (writes the `#sync` button: text + `.ico` ↻; class `go` spins it).
 - Misc: `snack(text, undo)`, tab click handlers, search, `goMonth`, Esc handling, `visibilitychange`.
 - App update: `checkAppUpdate(now)` (app only: `getPage(CHWISIK_PAGE_HASH)` → localStorage `chwisik.page`; `now` (pull to refresh, sync tap) → `location.reload()` at once unless `S.busy` or a sheet is open; else reload on next `visibilitychange`). The script's first lines clear `chwisik.pageTry` (tells the loader the page started).
 - Pull to refresh: an IIFE after the sync button handler; `touchstart`/`touchmove`/`touchend` on `document`, `.ptr` spinner element; on release past `GO` calls `refreshLive()` + `load(true)`.

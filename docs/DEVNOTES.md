@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (월별 합계: all columns shown, 폐기 before 취식)
+Last updated: 2026-11-09 (sync button: ↻ icon after the label)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -252,7 +252,7 @@ Why: the `/exec` link is slow to open (Google's wrapper page, two iframes, then 
 - `refreshNow()` (page) and `liveTick()` (10-min trigger) go through the same gate: `LIVE_AT` must be ≥ `LIVE_MIN_GAP_S` = 120 s old, and a 90 s cache flag stops two runs at once. So BGF sees **at most one login per 2 min**, and only while someone has the page open; otherwise one per 10 min.
 - **Past days**: the live import only reads yesterday..today, so on its own it would never fill 저회전 for days before 저회전 import existed (2026-11-09: only 11/8 came in). After a successful live run, `jeoBackfill_` imports 저회전 once for the whole range from the earliest 일자 in 폐기목록 to today, reusing the same login, then sets `JEO_BACKFILL=1`. The log row says `(저회전 지난 날짜)`. Any new slip kind added later needs the same kind of backfill.
 - One run = login + 폐기 list + 저회전 list (+ the S312 lookup once, until `JEO_DIV` is cached) + detail calls **only for slips not fully in the sheet** (`knownChits_()` counts lines per 전표번호 and compares with `ITEM_CNT`). The nightly import re-reads every slip as a safety net.
-- `LIVE_OK_AT` = start of the last successful run → the page header shows "업데이트 21:31" (another day: "업데이트 11/8 21:31"). `LIVE_ERR` holds the last error; only the first failure of a streak goes to 가져오기 기록, and live failures don't email (the nightly one does).
+- `LIVE_OK_AT` = start of the last successful run → the page header shows "업데이트 21:31 ↻" (another day: "업데이트 11/8 21:31 ↻"). The whole label is one round button (text + ↻ icon); tapping it = pull to refresh; the icon spins during `정보 가져오는 중…`, is green when connected and red when not. `LIVE_ERR` holds the last error; only the first failure of a streak goes to 가져오기 기록, and live failures don't email (the nightly one does).
 - Load: 144 trigger runs/day × a few seconds ≈ 10 min of the 90 min/day trigger quota; UrlFetch stays far below 20k/day.
 - **Watch out:** if BGF ever logs the store PC out when the same account logs in elsewhere, turn live import off (menu → 실시간 가져오기 끄기).
 
