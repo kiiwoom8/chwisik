@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (금액합계 on 미등록 / 취식)
+Last updated: 2026-11-09 (미등록 / 취식: filter + 금액합계 pinned in the header)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -227,7 +227,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
   - 폐기 = 폐기-tagged lines. 전체 = every 폐기-slip line. 저회전 = every 저회전 line, with a one-line explanation on top and a single button per line: **[취식]** before it is registered, **[취소]** after (same as the 취식 / 폐기 tabs).
   - 취소 = BGF cancel lines (both kinds; 저회전 ones say so).
 - In the 취식 / 폐기 tabs each line's right button is **취소** (removes that tag) and the left one switches to the other type (hidden for 저회전 lines). Lines tagged by another worker have disabled buttons.
-- **금액합계** card on top of the **미등록** and **취식** tabs only: 수량 and 원가 total of the lines shown (follows the name filter and the search). On 취식 it also lists each person's 수량 · 원가 (largest first, all lines look the same) when more than one person is shown. Other tabs have no card.
+- **금액합계** card on top of the **미등록** and **취식** tabs only: 수량 and 원가 total of the lines shown (follows the name filter and the search). On 취식 it also lists each person's 수량 · 원가 (largest first, all lines look the same) when more than one person is shown. Other tabs have no card. On these two tabs the card and the name filter sit at the bottom of the sticky header (`#pin`), so they stay on screen while scrolling; on other tabs the name filter is above the list as before.
 - Name filter (모두 + names that have something in that tab this month) on every tab except 미등록 and 취소. (일) is red and (토) blue in day headings.
 - Header "이번 달 취식 / 폐기" and the 월별 합계 table count 저회전 취식 as 취식; its footer shows only 미등록 **폐기**.
 - 월별 합계 tab shows every column at once (fits a 360 px phone): **직원별 폐기 / 취식** = 직원 · 폐기 수량 · 폐기 원가 · 취식 수량 · 취식 원가 (취식 on the right; no 매가; the 취식 원가 합계 is red) and **근무 시간** = 직원 · 근무일 · 근무 시간. Names are full names only.

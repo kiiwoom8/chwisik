@@ -69,6 +69,10 @@ h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .tab { border: 0; background: transparent; padding: 7px 1px; white-space: nowrap; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); line-height: 1.2; }
 .tab .num { display: block; font-size: 11.5px; }
 .tab[aria-selected="true"] { background: var(--sheet); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+/* 미등록 / 취식: name filter + 금액합계 card ride in the sticky header so they stay on screen */
+.pin { display: grid; gap: 8px; }
+.pin .whobar { padding: 0; }
+.pin .tot { margin-top: 0; }
 .search { width: 100%; padding: 9px 12px; border-radius: var(--r); border: 1px solid var(--rule); background: var(--paper); font-size: 15px; }
 
 main .wrap { padding-block: 8px calc(110px + env(safe-area-inset-bottom, 0px)); }
@@ -211,6 +215,7 @@ button.srow { cursor: pointer; }
     <button class="tab" role="tab" data-view="sum" aria-selected="false">월별<span class="num">합계</span></button>
   </div>
   <input class="search" id="q" type="search" placeholder="상품명 검색" autocomplete="off">
+  <div class="pin" id="pin" hidden><div id="pinTot"></div></div>
 </div></header>
 
 <main><div class="wrap">
@@ -443,16 +448,22 @@ button.srow { cursor: pointer; }
     $("myEat").textContent = fmt(myEat.n) + "개 · " + fmt(myEat.w) + "원";
     $("myVoid").textContent = fmt(myVoid.n) + "개 · " + fmt(myVoid.w) + "원";
     renderSync();
+    // 미등록 / 취식: 이름 필터와 금액합계를 위쪽 고정 헤더 안에 둠 (스크롤해도 보이게)
+    var pinned = S.view === "todo" || S.view === "eat", bar = $("whoBar");
+    if (pinned && bar.parentNode !== $("pin")) $("pin").insertBefore(bar, $("pinTot"));
+    else if (!pinned && bar.parentNode === $("pin")) $("list").parentNode.insertBefore(bar, $("list"));
+    $("pinTot").textContent = "";
     renderWho();
     $("mePw").textContent = mm && mm.hasPw ? "비밀번호 🔒" : "비밀번호";
     $("mePw").hidden = !mm;
 
     var isSum = S.view === "sum", isShift = S.view === "shift";
     $("list").hidden = isSum || isShift; $("sum").hidden = !isSum; $("shifts").hidden = !isShift; $("q").hidden = isSum || isShift;
-    if (isSum) { renderSum(); $("emptyMsg").hidden = true; return; }
-    if (isShift) { renderShifts(); return; }
-    if (S.view === "cancel") { renderCancels(); return; }
-    renderList();
+    if (isSum) { renderSum(); $("emptyMsg").hidden = true; }
+    else if (isShift) renderShifts();
+    else if (S.view === "cancel") renderCancels();
+    else renderList();
+    $("pin").hidden = !pinned || (bar.hidden && !$("pinTot").firstChild);
   }
 
   function renderList() {
@@ -471,7 +482,7 @@ button.srow { cursor: pointer; }
     var list = $("list");
     list.textContent = "";
     if (S.view === "jeo") list.appendChild(mk("p", "cxnote", "BGF 저회전상품철수 상품이에요. 먹었으면 [취식]을 눌러요. 안 먹은 건 그냥 두면 돼요. 폐기로는 등록할 수 없어요."));
-    if ((S.view === "todo" || S.view === "eat") && vis.length) list.appendChild(totalEl(vis));
+    if ((S.view === "todo" || S.view === "eat") && vis.length) $("pinTot").appendChild(totalEl(vis));
     var byDay = [], cur = null;
     vis.forEach(function (r) { var d = r[11] || String(r[2]).slice(0, 10); if (!cur || cur.d !== d) { cur = { d: d, rows: [] }; byDay.push(cur); } cur.rows.push(r); });
     byDay.forEach(function (g) {
