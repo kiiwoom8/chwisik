@@ -1,9 +1,12 @@
 /**
  * 직원 취식 목록
  * - 매일 00:01 무렵 BGF 점포시스템에서 어제(와 그제) 폐기 전표를 가져와 '폐기목록' 시트에 추가
+ * - 낮에도 오늘 폐기를 바로 가져옴: 직원이 링크를 열 때(2분에 한 번까지) + 10분마다 자동
  * - 웹앱: 직원이 자기 이름을 한 번 고르고, 품목마다 [취식] / [폐기] 를 한 번 눌러 등록
  *   취식 → 전체 이름(김성휘), 폐기 → 이름만(성휘)
- * - 월별 합계: '월별 합계' 시트와 웹앱에서 확인
+ * - 출근일지: [출근] / [퇴근] 한 번 누르거나 직접 입력. 다른 직원 근무 시간도 날짜별로 보임
+ *   근무 기록 밖 시간의 폐기를 등록하면 확인을 받고, '확인' 열에 '근무외' 로 남김
+ * - 월별 합계: '월별 합계' 시트와 웹앱에서 확인 (웹앱은 근무시간 합계도)
  */
 
 var TZ = 'Asia/Seoul';
@@ -15,11 +18,23 @@ var SH_ITEMS = '폐기목록';
 var SH_MEMBERS = '직원';
 var SH_SUMMARY = '월별 합계';
 var SH_LOG = '가져오기 기록';
+var SH_SHIFTS = '출근일지';
 
 // 폐기목록 columns (1-based)
-var C = { KEY: 1, DATE: 2, TIME: 3, NAME: 4, CODE: 5, CAT: 6, QTY: 7, WPRICE: 8, WAMT: 9, MPRICE: 10, MAMT: 11, CHIT: 12, TYPE: 13, WHO: 14, MEMBER: 15, AT: 16, MONTH: 17 };
-var NCOL = 17;
-var HEADERS = ['키', '일자', '생성시각', '품명', '상품코드', '분류', '수량', '원가단가', '원가금액', '매가단가', '매가금액', '전표번호', '구분', '등록이름', '직원', '등록시각', '월'];
+var C = { KEY: 1, DATE: 2, TIME: 3, NAME: 4, CODE: 5, CAT: 6, QTY: 7, WPRICE: 8, WAMT: 9, MPRICE: 10, MAMT: 11, CHIT: 12, TYPE: 13, WHO: 14, MEMBER: 15, AT: 16, MONTH: 17, NOTE: 18 };
+var NCOL = 18;
+var HEADERS = ['키', '일자', '생성시각', '품명', '상품코드', '분류', '수량', '원가단가', '원가금액', '매가단가', '매가금액', '전표번호', '구분', '등록이름', '직원', '등록시각', '월', '확인'];
+var OFFSHIFT_NOTE = '근무외';
+
+// 출근일지 columns (1-based). 퇴근이 출근보다 이르면 다음 날 퇴근.
+var SC = { KEY: 1, DATE: 2, MEMBER: 3, START: 4, END: 5, HOURS: 6, MEMO: 7, AT: 8, MONTH: 9 };
+var SNCOL = 9;
+var SHIFT_HEADERS = ['키', '날짜', '직원', '출근', '퇴근', '근무시간', '메모', '등록시각', '월'];
+var OPEN_SHIFT_MAX_H = 16;   // 퇴근을 안 찍은 근무는 이 시간까지만 '근무 중'으로 봄
+
+// 실시간 가져오기
+var LIVE_MIN_GAP_S = 120;    // BGF 에 이보다 자주 접속하지 않음
+var LIVE_TRIGGER_MIN = 10;   // 아무도 안 열어도 이 간격으로 오늘 폐기를 가져옴
 
 /* ======================= 시트 준비 / 메뉴 ======================= */
 
@@ -28,13 +43,14 @@ function setup() {
   ss.setSpreadsheetTimeZone(TZ);
 
   var items = ss.getSheetByName(SH_ITEMS) || ss.insertSheet(SH_ITEMS, 0);
-  if (items.getLastRow() === 0) {
-    items.getRange(1, 1, 1, NCOL).setValues([HEADERS]).setFontWeight('bold');
-    items.setFrozenRows(1);
-  }
+  if (items.getMaxColumns() < NCOL) items.insertColumnsAfter(items.getMaxColumns(), NCOL - items.getMaxColumns());
+  items.getRange(1, 1, 1, NCOL).setValues([HEADERS]).setFontWeight('bold');
+  items.setFrozenRows(1);
   items.getRange('A:F').setNumberFormat('@');
-  items.getRange('L:Q').setNumberFormat('@');
+  items.getRange('L:R').setNumberFormat('@');
   items.getRange('G:K').setNumberFormat('#,##0');
+
+  shiftSheet_();
 
   var mem = ss.getSheetByName(SH_MEMBERS) || ss.insertSheet(SH_MEMBERS);
   if (mem.getLastRow() === 0) {
@@ -62,17 +78,37 @@ function setup() {
   if (def && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
 
   installNightlyTrigger();
+  installLiveTrigger();
   return 'ok';
 }
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('취식 관리')
     .addItem('BGF 비밀번호 입력', 'menuSetPassword')
+    .addItem('오늘 폐기 지금 가져오기', 'menuLiveNow')
     .addItem('어제 폐기 지금 가져오기', 'nightly')
     .addItem('기간 지정해서 가져오기', 'menuImportRange')
     .addSeparator()
     .addItem('매일 자동 가져오기 켜기', 'installNightlyTrigger')
+    .addItem('실시간 가져오기 켜기 (10분마다 + 링크 열 때)', 'menuLiveOn')
+    .addItem('실시간 가져오기 끄기', 'menuLiveOff')
     .addToUi();
+}
+
+function menuLiveNow() {
+  var ui = SpreadsheetApp.getUi();
+  var r = liveImport_();
+  ui.alert(r.error ? '가져오지 못했어요:\n' + r.error : '오늘 폐기 새 품목 ' + r.added + '건 추가 (' + (r.ms / 1000).toFixed(1) + '초)');
+}
+function menuLiveOn() {
+  PropertiesService.getScriptProperties().deleteProperty('LIVE_OFF');
+  installLiveTrigger();
+  SpreadsheetApp.getUi().alert('실시간 가져오기를 켰어요. 10분마다, 그리고 직원이 링크를 열 때 (2분에 한 번까지) 오늘 폐기를 가져옵니다.');
+}
+function menuLiveOff() {
+  PropertiesService.getScriptProperties().setProperty('LIVE_OFF', '1');
+  removeLiveTrigger_();
+  SpreadsheetApp.getUi().alert('실시간 가져오기를 껐어요. 매일 밤 00:01 가져오기는 그대로 돌아갑니다.');
 }
 
 function menuSetPassword() {
@@ -108,6 +144,22 @@ function installNightlyTrigger() {
   return '매일 00:01 무렵 자동 가져오기가 켜졌어요.';
 }
 
+function installLiveTrigger() {
+  removeLiveTrigger_();
+  ScriptApp.newTrigger('liveTick').timeBased().everyMinutes(LIVE_TRIGGER_MIN).create();
+  PropertiesService.getScriptProperties().setProperty('LIVE_TRIGGER', '1');
+  return LIVE_TRIGGER_MIN + '분마다 오늘 폐기 가져오기가 켜졌어요.';
+}
+function removeLiveTrigger_() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'liveTick') ScriptApp.deleteTrigger(t);
+  });
+  PropertiesService.getScriptProperties().deleteProperty('LIVE_TRIGGER');
+}
+
+/** Time trigger: 오늘(과 어제) 폐기 중 새 전표만 가져옴. */
+function liveTick() { refreshNow(); }
+
 /* ======================= 매일 가져오기 ======================= */
 
 function nightly() {
@@ -124,16 +176,14 @@ function importThisMonth() {
 }
 
 function importRange(fromYmd, toYmd) {
-  var log = SpreadsheetApp.getActive().getSheetByName(SH_LOG);
-  var stamp = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss');
   try {
     var r = fetchPyegi_(fromYmd, toYmd);
     var added = appendItems_(r.items);
     var msg = fromYmd + '~' + toYmd + ': 전표 ' + r.chits + '장, 새 품목 ' + added + '건 추가';
-    if (log) log.appendRow([stamp, fromYmd + '~' + toYmd, r.chits, added, 'OK']);
+    logImport_(fromYmd + '~' + toYmd, r.chits, added, 'OK');
     return msg;
   } catch (e) {
-    if (log) log.appendRow([stamp, fromYmd + '~' + toYmd, '', '', '실패: ' + e.message]);
+    logImport_(fromYmd + '~' + toYmd, '', '', '실패: ' + e.message);
     try {
       MailApp.sendEmail(Session.getEffectiveUser().getEmail(), '[직원 취식 목록] 폐기 가져오기 실패',
         fromYmd + '~' + toYmd + ' 폐기 목록을 가져오지 못했어요.\n\n' + e.message +
@@ -155,7 +205,7 @@ function appendItems_(items) {
     var rows = items.filter(function (it) { return !have[it.key]; })
       .sort(function (a, b) { return a.time < b.time ? -1 : a.time > b.time ? 1 : (a.key < b.key ? -1 : 1); })
       .map(function (it) {
-        return [it.key, it.date, it.time, it.name, it.code, it.cat, it.qty, it.wprice, it.wamt, it.mprice, it.mamt, it.chit, '', '', '', '', it.date.slice(0, 7)];
+        return [it.key, it.date, it.time, it.name, it.code, it.cat, it.qty, it.wprice, it.wamt, it.mprice, it.mamt, it.chit, '', '', '', '', it.date.slice(0, 7), ''];
       });
     if (rows.length) {
       sh.getRange(n + 2, 1, rows.length, NCOL).setValues(rows);
@@ -165,6 +215,72 @@ function appendItems_(items) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ======================= 실시간 가져오기 (오늘 폐기) ======================= */
+
+/**
+ * Called by the page on open / every few minutes, and by the 10-minute trigger.
+ * Hits BGF at most once per LIVE_MIN_GAP_S across all callers; otherwise returns at once.
+ */
+function refreshNow() {
+  var p = PropertiesService.getScriptProperties();
+  var props = p.getProperties();
+  if (props.LIVE_OFF === '1') return liveInfo_(props, 0);
+  if (props.LIVE_TRIGGER !== '1') { try { installLiveTrigger(); } catch (e) {} }
+  if (Date.now() - Number(props.LIVE_AT || 0) < LIVE_MIN_GAP_S * 1000) return liveInfo_(props, 0);
+  var cache = CacheService.getScriptCache();
+  if (cache.get('live_running')) return liveInfo_(props, 0);
+  cache.put('live_running', '1', 90);
+  var r;
+  try { r = liveImport_(); } finally { cache.remove('live_running'); }
+  return liveInfo_(p.getProperties(), r.added);
+}
+
+/** Fetch yesterday..today, only slips we don't have yet. Never throws. */
+function liveImport_() {
+  var p = PropertiesService.getScriptProperties();
+  var t0 = Date.now();
+  p.setProperty('LIVE_AT', String(t0));
+  var now = new Date(t0);
+  var from = ymd_(new Date(t0 - 24 * 3600 * 1000)), to = ymd_(now);
+  try {
+    var r = fetchPyegi_(from, to, knownChits_());
+    var added = appendItems_(r.items);
+    var ms = Date.now() - t0;
+    p.setProperties({ LIVE_OK_AT: String(t0), LIVE_MS: String(ms), LIVE_ERR: '' });
+    if (added) logImport_(from + '~' + to + ' (실시간)', r.chits, added, 'OK · ' + (ms / 1000).toFixed(1) + '초, 상세 ' + r.fetched + '장');
+    return { added: added, ms: ms };
+  } catch (e) {
+    var msg = String(e && e.message || e).slice(0, 200);
+    if (!p.getProperty('LIVE_ERR')) logImport_(from + '~' + to + ' (실시간)', '', '', '실패: ' + msg);
+    p.setProperty('LIVE_ERR', msg);
+    return { added: 0, ms: Date.now() - t0, error: msg };
+  }
+}
+
+function liveInfo_(props, added) {
+  var ok = Number(props.LIVE_OK_AT || 0);
+  var label = '';
+  if (ok) {
+    var d = new Date(ok);
+    label = Utilities.formatDate(d, TZ, 'yyyy-MM-dd') === Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd')
+      ? Utilities.formatDate(d, TZ, 'HH:mm') : Utilities.formatDate(d, TZ, 'M/d HH:mm');
+  }
+  return { label: label, off: props.LIVE_OFF === '1', error: props.LIVE_ERR ? true : false, added: added || 0 };
+}
+
+/** { CHIT_NO: number of lines already in the sheet } */
+function knownChits_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(SH_ITEMS);
+  var n = sh.getLastRow() - 1, out = {};
+  if (n > 0) sh.getRange(2, C.CHIT, n, 1).getDisplayValues().forEach(function (r) { if (r[0]) out[r[0]] = (out[r[0]] || 0) + 1; });
+  return out;
+}
+
+function logImport_(range, chits, added, result) {
+  var log = SpreadsheetApp.getActive().getSheetByName(SH_LOG);
+  if (log) log.appendRow([Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'), range, chits, added, result]);
 }
 
 /* ======================= BGF 점포시스템 통신 (Nexacro SSV) ======================= */
@@ -275,7 +391,12 @@ function svcVars_() {
   ]);
 }
 
-function fetchPyegi_(fromYmd, toYmd) {
+/**
+ * known (optional): { CHIT_NO: lines already imported }. A slip is skipped when we already have
+ * at least ITEM_CNT lines of it, so a live refresh only downloads details for new slips.
+ * The nightly import passes nothing and re-reads every slip (safety net).
+ */
+function fetchPyegi_(fromYmd, toYmd, known) {
   var s = bgfLogin_();
   var list = s.post('/stgj020/search', ssvBuild_(svcVars_(), 'dsSearch',
     ['strDate', 'strStoreCd', 'strChitDiv', 'strChitNo', 'strChitYmd', 'strToDt', 'strFromDt'],
@@ -283,10 +404,14 @@ function fetchPyegi_(fromYmd, toYmd) {
   var chits = (list.ds.dsList || []).filter(function (c) { return c.CHIT_NO; });
   var meta = {};
   chits.forEach(function (c) { meta[c.CHIT_NO] = c; });
+  var todo = chits.filter(function (c) {
+    var cnt = Number(c.ITEM_CNT), have = known ? (known[c.CHIT_NO] || 0) : 0;
+    return !(cnt > 0 && have >= cnt);
+  });
 
   // group by (date, chit id, flag) so each detail call matches what the site sends
   var groups = {};
-  chits.forEach(function (c) {
+  todo.forEach(function (c) {
     var g = c.CHIT_YMD + '|' + c.CHIT_ID + '|' + c.CHIT_FLAG;
     (groups[g] = groups[g] || []).push(c.CHIT_NO);
   });
@@ -319,7 +444,7 @@ function fetchPyegi_(fromYmd, toYmd) {
       });
     }
   });
-  return { chits: chits.length, items: items };
+  return { chits: chits.length, fetched: todo.length, items: items };
 }
 
 function ymd_(d) { return Utilities.formatDate(d, TZ, 'yyyyMMdd'); }
@@ -356,15 +481,31 @@ function shortName_(full) {
   return full.length >= 2 ? full.slice(1) : full;
 }
 
+function member_(full) {
+  var mem = null;
+  members_().forEach(function (m) { if (m.full === full) mem = m; });
+  if (!mem) throw new Error('직원 목록에 없는 이름이에요. 이름을 다시 골라 주세요.');
+  return mem;
+}
+
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
 function getInit() {
-  var sh = SpreadsheetApp.getActive().getSheetByName(SH_ITEMS);
-  var n = sh.getLastRow() - 1;
+  var ss = SpreadsheetApp.getActive();
   var months = {};
-  if (n > 0) sh.getRange(2, C.MONTH, n, 1).getDisplayValues().forEach(function (r) { if (r[0]) months[r[0]] = 1; });
+  [[ss.getSheetByName(SH_ITEMS), C.MONTH], [ss.getSheetByName(SH_SHIFTS), SC.MONTH]].forEach(function (p) {
+    var sh = p[0];
+    var n = sh ? sh.getLastRow() - 1 : 0;
+    if (n > 0) sh.getRange(2, p[1], n, 1).getDisplayValues().forEach(function (r) { if (r[0]) months[r[0]] = 1; });
+  });
   var list = Object.keys(months).sort().reverse();
   var cur = Utilities.formatDate(new Date(), TZ, 'yyyy-MM');
   if (list.indexOf(cur) < 0) list.unshift(cur);
-  return { members: members_(), months: list, version: version_() };
+  return { members: members_(), months: list, version: version_(), live: liveInfo_(PropertiesService.getScriptProperties().getProperties(), 0) };
 }
 
 /** month: 'yyyy-MM'. Returns null when the caller already has this version. */
@@ -381,23 +522,21 @@ function getMonth(month, knownVersion) {
       var r = vals[i];
       if (r[C.MONTH - 1] !== month) continue;
       rows.push([i + 2, r[C.KEY - 1], r[C.TIME - 1] || r[C.DATE - 1], r[C.NAME - 1], Number(nums[i][0]) || 0,
-        Number(nums[i][1]) || 0, Number(nums[i][2]) || 0, Number(nums[i][4]) || 0, r[C.TYPE - 1], r[C.MEMBER - 1], r[C.WHO - 1], r[C.DATE - 1]]);
+        Number(nums[i][1]) || 0, Number(nums[i][2]) || 0, Number(nums[i][4]) || 0, r[C.TYPE - 1], r[C.MEMBER - 1], r[C.WHO - 1], r[C.DATE - 1], r[C.NOTE - 1]]);
     }
   }
-  return { version: v, month: month, rows: rows, members: members_() };
+  return { version: v, month: month, rows: rows, shifts: shiftsFor_(month), members: members_() };
 }
 
-/** type: '취식' | '폐기' | '' (clear). memberFull: 전체 이름. */
-function setTag(rowHint, key, type, memberFull, month) {
+/**
+ * type: '취식' | '폐기' | '' (clear). memberFull: 전체 이름.
+ * note: '근무외' when the worker confirmed a 폐기 outside their recorded shift (kept only for 폐기).
+ */
+function setTag(rowHint, key, type, memberFull, month, note) {
   if (['취식', '폐기', ''].indexOf(type) < 0) throw new Error('bad type');
-  var mem = null;
-  if (type) {
-    members_().forEach(function (m) { if (m.full === memberFull) mem = m; });
-    if (!mem) throw new Error('직원 목록에 없는 이름이에요. 이름을 다시 골라 주세요.');
-  }
-  var lock = LockService.getScriptLock();
-  lock.waitLock(15000);
-  try {
+  var mem = type ? member_(memberFull) : null;
+  note = type === '폐기' && note === OFFSHIFT_NOTE ? OFFSHIFT_NOTE : '';
+  withLock_(function () {
     var sh = SpreadsheetApp.getActive().getSheetByName(SH_ITEMS);
     var row = Number(rowHint);
     if (!(row >= 2 && row <= sh.getLastRow() && sh.getRange(row, C.KEY).getDisplayValue() === key)) {
@@ -412,10 +551,179 @@ function setTag(rowHint, key, type, memberFull, month) {
     } else {
       rng.clearContent();
     }
+    if (note && sh.getRange(1, C.NOTE).getDisplayValue() !== HEADERS[C.NOTE - 1]) {
+      sh.getRange(1, C.NOTE).setValue(HEADERS[C.NOTE - 1]).setFontWeight('bold');
+    }
+    sh.getRange(row, C.NOTE).setValue(note);
     bumpVersion_();
-  } finally {
-    lock.releaseLock();
+  });
+  return getMonth(month || '', '');
+}
+
+/* ======================= 출근일지 ======================= */
+
+function shiftSheet_() {
+  var ss = SpreadsheetApp.getActive();
+  var sh = ss.getSheetByName(SH_SHIFTS);
+  if (!sh) {
+    sh = ss.insertSheet(SH_SHIFTS);
+    sh.getRange(1, 1, 1, SNCOL).setValues([SHIFT_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    sh.getRange('A:E').setNumberFormat('@');
+    sh.getRange('G:I').setNumberFormat('@');
+    sh.getRange('F:F').setNumberFormat('0.00');
   }
+  return sh;
+}
+
+/** minutes on a time line where 'yyyy-MM-dd' + 'HH:mm' is read as written (KST) */
+function toMin_(date, hhmm) {
+  return Date.UTC(+date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10), +hhmm.slice(0, 2), +hhmm.slice(3, 5)) / 60000;
+}
+function nowMin_() {
+  var now = new Date();
+  return toMin_(Utilities.formatDate(now, TZ, 'yyyy-MM-dd'), Utilities.formatDate(now, TZ, 'HH:mm'));
+}
+/** [startMin, endMin or null] — 퇴근 earlier than 출근 means the next day */
+function shiftSpan_(s) {
+  var a = toMin_(s.date, s.start);
+  if (!s.end) return [a, null];
+  var b = toMin_(s.date, s.end);
+  if (b < a) b += 1440;
+  return [a, b];
+}
+
+function readShifts_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(SH_SHIFTS);
+  var n = sh ? sh.getLastRow() - 1 : 0;
+  if (n < 1) return [];
+  return sh.getRange(2, 1, n, SNCOL).getDisplayValues().map(function (r, i) {
+    return { row: i + 2, key: r[SC.KEY - 1], date: r[SC.DATE - 1], member: r[SC.MEMBER - 1], start: r[SC.START - 1], end: r[SC.END - 1], memo: r[SC.MEMO - 1] };
+  }).filter(function (s) { return s.key && /^\d{4}-\d\d-\d\d$/.test(s.date) && /^\d\d:\d\d$/.test(s.start); });
+}
+
+/** Shifts that start in the month, plus the last day of the month before (overnight shifts). */
+function shiftsFor_(month) {
+  if (!/^\d{4}-\d\d$/.test(month)) return [];
+  var first = month + '-01';
+  var prev = Utilities.formatDate(new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7) - 1, 1) - 12 * 3600 * 1000), 'UTC', 'yyyy-MM-dd');
+  var last = month + '-31';
+  return readShifts_().filter(function (s) { return s.date >= prev && s.date <= last; })
+    .map(function (s) { return [s.row, s.key, s.date, s.member, s.start, s.end, s.memo]; });
+}
+
+function openShiftOf_(all, member, nowM) {
+  var best = null;
+  all.forEach(function (s) {
+    if (s.member !== member || s.end) return;
+    var a = shiftSpan_(s)[0];
+    if (a <= nowM + 5 && nowM - a < OPEN_SHIFT_MAX_H * 60 && (!best || a > shiftSpan_(best)[0])) best = s;
+  });
+  return best;
+}
+
+function overlapOf_(all, member, a, b, skipKey, nowM) {
+  var hit = null;
+  all.forEach(function (s) {
+    if (hit || s.member !== member || s.key === skipKey) return;
+    var sp = shiftSpan_(s);
+    var e = sp[1] !== null ? sp[1] : Math.max(sp[0] + 1, Math.min(nowM, sp[0] + OPEN_SHIFT_MAX_H * 60));
+    var bb = b !== null ? b : a + 1;
+    if (sp[0] < bb && a < e) hit = s;
+  });
+  return hit;
+}
+
+function shiftHours_(date, start, end) {
+  if (!end) return '';
+  var sp = shiftSpan_({ date: date, start: start, end: end });
+  return Math.round((sp[1] - sp[0]) / 60 * 100) / 100;
+}
+
+function writeShift_(sh, row, s) {
+  sh.getRange(row, 1, 1, SNCOL).setValues([[s.key, s.date, s.member, s.start, s.end || '', shiftHours_(s.date, s.start, s.end),
+    s.memo || '', Utilities.formatDate(new Date(), TZ, 'MM/dd HH:mm'), s.date.slice(0, 7)]]);
+}
+
+function clockIn(memberFull, month) {
+  var mem = member_(memberFull);
+  withLock_(function () {
+    var sh = shiftSheet_();
+    var all = readShifts_(), nowM = nowMin_(), now = new Date();
+    var open = openShiftOf_(all, mem.full, nowM);
+    if (open) throw new Error('이미 ' + open.start + '에 출근했어요. 끝났으면 [퇴근]을 눌러 주세요.');
+    var hit = overlapOf_(all, mem.full, nowM, null, '', nowM);
+    if (hit) throw new Error('지금 시간이 이미 근무 기록(' + hit.start + '–' + hit.end + ') 안에 있어요.');
+    writeShift_(sh, sh.getLastRow() + 1, {
+      key: 's' + now.getTime().toString(36) + Math.floor(Math.random() * 1296).toString(36),
+      date: Utilities.formatDate(now, TZ, 'yyyy-MM-dd'), member: mem.full, start: Utilities.formatDate(now, TZ, 'HH:mm'), end: '', memo: ''
+    });
+    bumpVersion_();
+  });
+  return getMonth(month || '', '');
+}
+
+function clockOut(memberFull, month) {
+  var mem = member_(memberFull);
+  withLock_(function () {
+    var sh = shiftSheet_();
+    var all = readShifts_(), nowM = nowMin_();
+    var open = openShiftOf_(all, mem.full, nowM);
+    if (!open) throw new Error('지금 출근 중인 기록이 없어요. [직접 입력]으로 적어 주세요.');
+    open.end = Utilities.formatDate(new Date(), TZ, 'HH:mm');
+    writeShift_(sh, open.row, open);
+    bumpVersion_();
+  });
+  return getMonth(month || '', '');
+}
+
+/** key '' = new. end '' = still working. */
+function saveShift(key, date, memberFull, start, end, memo, month) {
+  var mem = member_(memberFull);
+  date = String(date || ''); start = String(start || '').slice(0, 5); end = String(end || '').slice(0, 5);
+  memo = String(memo || '').replace(/^[=+\-@]+/, '').trim().slice(0, 40);
+  if (!/^\d{4}-\d\d-\d\d$/.test(date)) throw new Error('날짜를 골라 주세요.');
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(start)) throw new Error('출근 시간을 적어 주세요.');
+  if (end && !/^([01]\d|2[0-3]):[0-5]\d$/.test(end)) throw new Error('퇴근 시간이 이상해요.');
+  if (end && end === start) throw new Error('출근과 퇴근 시간이 같아요.');
+  var nowM = nowMin_();
+  var a = toMin_(date, start);
+  if (a > nowM + 60) throw new Error('아직 오지 않은 시간은 적을 수 없어요.');
+  var b = end ? shiftSpan_({ date: date, start: start, end: end })[1] : null;
+  if (!end && nowM - a >= OPEN_SHIFT_MAX_H * 60) throw new Error('지난 근무는 퇴근 시간도 적어 주세요.');
+  if (!end && a > nowM + 5) throw new Error('퇴근을 비워 두려면 출근 시간이 지금보다 앞이어야 해요.');
+  withLock_(function () {
+    var sh = shiftSheet_();
+    var all = readShifts_();
+    var cur = null;
+    if (key) {
+      all.forEach(function (s) { if (s.key === key) cur = s; });
+      if (!cur) throw new Error('기록을 찾지 못했어요. 새로고침해 주세요.');
+      if (cur.member !== mem.full) throw new Error('다른 직원의 기록은 고칠 수 없어요.');
+    }
+    var hit = overlapOf_(all, mem.full, a, b, key, nowM);
+    if (hit) throw new Error(hit.date.slice(5).replace('-', '/') + ' ' + hit.start + (hit.end ? '–' + hit.end : '') + ' 기록과 겹쳐요.');
+    if (!end && openShiftOf_(all.filter(function (s) { return s.key !== key; }), mem.full, nowM)) {
+      throw new Error('이미 출근 중인 기록이 있어요. 퇴근 시간을 적어 주세요.');
+    }
+    var s = { key: key || 's' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36), date: date, member: mem.full, start: start, end: end, memo: memo };
+    writeShift_(sh, cur ? cur.row : sh.getLastRow() + 1, s);
+    bumpVersion_();
+  });
+  return getMonth(month || '', '');
+}
+
+function deleteShift(key, memberFull, month) {
+  var mem = member_(memberFull);
+  withLock_(function () {
+    var sh = shiftSheet_();
+    var cur = null;
+    readShifts_().forEach(function (s) { if (s.key === key) cur = s; });
+    if (!cur) throw new Error('기록을 찾지 못했어요. 새로고침해 주세요.');
+    if (cur.member !== mem.full) throw new Error('다른 직원의 기록은 지울 수 없어요.');
+    sh.deleteRow(cur.row);
+    bumpVersion_();
+  });
   return getMonth(month || '', '');
 }
 

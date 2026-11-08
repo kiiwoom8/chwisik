@@ -27,8 +27,8 @@ The live copy runs in Google Apps Script, bound to the spreadsheet **직원 취�
 
 ## Where things are
 
-- `apps-script/Code.gs`: server. BGF login + nightly 폐기 import, sheet setup, web app API.
-- `apps-script/Index.html`: the staff page (one-tap 취식 / 폐기, monthly totals).
+- `apps-script/Code.gs`: server. BGF login + nightly and live 폐기 import, 출근일지, sheet setup, web app API.
+- `apps-script/Index.html`: the staff page (one-tap 취식 / 폐기, 출근일지, monthly totals).
 - `docs/DEVNOTES.md`: architecture, BGF protocol notes, data model, operations, troubleshooting.
 - `docs/ROADMAP.md`: future plans (worker app, etc.).
 

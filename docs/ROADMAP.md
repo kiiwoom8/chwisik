@@ -22,6 +22,8 @@ Goal: staff get an app icon on their phone that opens straight to the list, with
 - **Admin view**: lock a month once settled, export the month (CSV / Excel), and correct tags made by mistake.
 - **Monthly report** emailed or messaged to the owner on the 1st: totals per person, 취식 원가/매가.
 - **Reminders**: on the morning after import, show staff how many items are still 미등록.
+- ~~출근일지 + off-shift 폐기 warning~~ Done 2026-11-08. Next: owner view to approve or fix shifts, night-hours split, export for payroll.
+- ~~Live import of today's 폐기~~ Done 2026-11-08 (on open + every 10 min). If BGF allows it, keep the session cookie between runs to skip the login call.
 - **History filters**: by person, by product, by day.
 
 ## Phase 3 — Engineering
