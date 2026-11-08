@@ -109,6 +109,7 @@ th, td { padding: 9px 10px; text-align: right; border-bottom: 1px solid var(--ru
 th:first-child, td:first-child { text-align: left; }
 thead th { color: var(--muted); font-weight: 500; font-size: 12px; }
 tfoot td { font-weight: 700; border-bottom: 0; }
+tfoot td.hot { color: var(--void); }
 tr.meRow td:first-child { color: var(--accent); font-weight: 700; }
 
 .sheet { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
@@ -730,21 +731,23 @@ button.srow { cursor: pointer; }
 
   function renderSum() {
     var box = $("sum"); box.textContent = ""; box.classList.toggle("less", !S.sumMore);
-    var by = {}, tot = { en: 0, ew: 0, em: 0, vn: 0, vw: 0 }, todo = { n: 0, w: 0 }, who = curWho();
+    var by = {}, tot = { en: 0, ew: 0, vn: 0, vw: 0 }, todo = { n: 0, w: 0 }, who = curWho();
     S.rows.forEach(function (r) {
       if (!r[8]) { if (!r[13]) { todo.n += r[4]; todo.w += r[6]; } return; }
       if (who && r[9] !== who) return;
       var k = r[9] || "(이름 없음)";
-      var o = by[k] = by[k] || { en: 0, ew: 0, em: 0, vn: 0, vw: 0 };
-      if (r[8] === "취식") { o.en += r[4]; o.ew += r[6]; o.em += r[7]; tot.en += r[4]; tot.ew += r[6]; tot.em += r[7]; }
+      var o = by[k] = by[k] || { en: 0, ew: 0, vn: 0, vw: 0 };
+      if (r[8] === "취식") { o.en += r[4]; o.ew += r[6]; tot.en += r[4]; tot.ew += r[6]; }
       else { o.vn += r[4]; o.vw += r[6]; tot.vn += r[4]; tot.vw += r[6]; }
     });
     var names = Object.keys(by).sort(function (a, b) { return (by[b].ew + by[b].vw) - (by[a].ew + by[a].vw); });
     var title = S.month.replace("-", "년 ") + "월 ";
-    box.appendChild(table(title + "직원별 취식 / 폐기", ["직원", "취식 수량", "취식 원가", "취식 매가", "폐기 수량", "폐기 원가"],
-      names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.en), fmt(o.ew), fmt(o.em), fmt(o.vn), fmt(o.vw)] }; }),
-      ["합계", fmt(tot.en), fmt(tot.ew), fmt(tot.em), fmt(tot.vn), fmt(tot.vw)],
-      "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식에는 저회전 취식도 들어가요", [4, 5]));
+    var eat = table(title + "직원별 취식 / 폐기", ["직원", "취식 수량", "취식 원가", "폐기 수량", "폐기 원가"],
+      names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.en), fmt(o.ew), fmt(o.vn), fmt(o.vw)] }; }),
+      ["합계", fmt(tot.en), fmt(tot.ew), fmt(tot.vn), fmt(tot.vw)],
+      "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식에는 저회전 취식도 들어가요", [3, 4]);
+    eat.querySelector("tfoot td:nth-child(3)").classList.add("hot");  // 취식 원가 합계는 빨간색으로 강조
+    box.appendChild(eat);
 
     var nowM = nowMin(), hb = {}, totM = 0, openN = 0;
     S.shifts.forEach(function (s) {
