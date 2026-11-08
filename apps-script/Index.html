@@ -984,7 +984,7 @@ button.srow { cursor: pointer; }
     el.className = "sync ok";
     var l = S.live;
     el.textContent = S.refreshing ? "폐기 가져오는 중…"
-      : l && l.label ? "폐기 " + l.label + "까지" + (l.error ? " · BGF 접속 안 됨" : "")
+      : l && l.label ? "마지막 업데이트 " + l.label + (l.error ? " · BGF 접속 안 됨" : "")
       : "실시간";
   }
 
