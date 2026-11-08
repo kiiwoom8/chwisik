@@ -26,8 +26,8 @@ Goal: staff get an app icon on their phone that opens straight to the list, with
 
 ## Phase 3 — Engineering
 
-- **clasp + GitHub Actions**: on push to `main`, `clasp push` the `apps-script/` folder and create a new deployment version automatically. That makes GitHub → Apps Script fully automatic. It needs the owner's clasp credentials stored as a GitHub secret (`CLASPRC_JSON`) and the script id in `.clasp.json`.
-- Also commit `appsscript.json` (manifest: timezone Asia/Seoul, scopes, web app settings).
+- ~~clasp + GitHub Actions auto-deploy~~ Done 2026-11-08 (see DEVNOTES → Auto-deploy).
+- Alert if the deploy secret stops working (a failed Actions run already emails the repo owner by default).
 - **Storage**: Sheets is fine up to tens of thousands of rows. If it gets slow, move items to Firestore or Supabase and keep the sheet as a monthly export.
 - **Multi-store**: store code and `SS_*` variables in config, so other stores can use the same app.
 - **Health check**: if the nightly import fails 2 nights in a row, send a stronger alert (KakaoTalk / SMS).

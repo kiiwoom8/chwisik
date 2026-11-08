@@ -101,11 +101,22 @@ Row shape sent to the page: `[sheetRow, key, time, name, qty, wprice, wamt, mamt
 
 The page polls every 5 s while visible. A Script Property `VER` changes on every write or import, so unchanged polls return `null`.
 
+## Auto-deploy (GitHub → Apps Script)
+
+Set up 2026-11-08.
+
+- Workflow: `.github/workflows/deploy.yml`. It runs on push to `main` when `apps-script/**`, `.clasp.json` or the workflow changes, and can also be run by hand (Actions → Deploy to Apps Script → Run workflow).
+- Steps: `node --check` on Code.gs and the page script → `clasp push --force` (rootDir `apps-script/`) → `clasp deploy --deploymentId <web app deployment>`, which adds a new version to the same deployment, so the `/exec` link never changes.
+- Credentials: repo secret **`CLASPRC_JSON`** = the content of `~/.clasprc.json` from `clasp login` (clasp 2.4.2) as noerror96@gmail.com. The refresh token doesn't expire on its own. It stops working if the Google password changes or access for "clasp – The Apps Script CLI" is removed at myaccount.google.com → Security → Third-party access.
+  - To renew: run `npx @google/clasp@2.4.2 login` on any computer with a browser, then replace the secret with the new `~/.clasprc.json`.
+- Requires the **Google Apps Script API** to be ON at https://script.google.com/home/usersettings (it is).
+- Deployments: `AKfycbzmsekR…wlRKpw` = staff web app (versioned). `AKfycbz0TxbU…` = the editor's @HEAD test deployment (ignore).
+
 ## Operations
 
 - **Password changed at BGF** → spreadsheet menu 취식 관리 → BGF 비밀번호 입력.
 - **Missed days** → 기간 지정해서 가져오기 (safe to repeat; it dedupes by key).
-- **After code changes** → paste into the editor, save, then Deploy → Manage deployments → edit → *New version*. The `/exec` URL stays the same.
+- **After code changes** → commit and push to `main`. GitHub Actions deploys it (see Auto-deploy). The `/exec` URL stays the same.
 - **Code got deleted in the editor** → restore from `apps-script/` in this repo.
 
 ## Known limits / gotchas

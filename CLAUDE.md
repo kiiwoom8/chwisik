@@ -17,12 +17,13 @@ Instructions for Claude (and any other agent or person) working in this repo.
 GitHub (`apps-script/`) is the source of truth for the code.
 The live copy runs in Google Apps Script, bound to the spreadsheet **직원 취식 목록**.
 
-- After changing `apps-script/Code.gs` or `apps-script/Index.html`:
-  1. Commit and push (the hook pushes).
-  2. Copy the same code into the Apps Script editor and save. (Or use `clasp push` once clasp is set up; see `docs/DEVNOTES.md`.)
-  3. **Redeploy the web app:** Deploy → Manage deployments → pencil → Version: *New version* → Deploy.
-     Saving the code alone does **not** change what staff see at the `/exec` link.
-- If someone edits code directly in the Apps Script editor, copy it back into `apps-script/` and commit, so GitHub never falls behind.
+- **Auto-deploy is on.** Every push to `main` that touches `apps-script/` runs `.github/workflows/deploy.yml`:
+  syntax check → `clasp push` → `clasp deploy` onto the existing web app deployment.
+  The staff `/exec` link stays the same and serves the new version a minute later.
+  So: commit + push = live. Check the run in the repo's **Actions** tab; a red run means nothing went live.
+- `apps-script/appsscript.json` is the manifest (timezone, web app access = anyone). Keep `webapp.access` as `ANYONE_ANONYMOUS` or staff lose access.
+- Do not edit code in the Apps Script editor. The next push from GitHub overwrites it. If someone did, run `clasp pull` (or copy it) into `apps-script/` and commit first.
+- Commits that should not deploy (docs only) don't need anything: the workflow only runs when `apps-script/` or the deploy config changes.
 
 ## Where things are
 
