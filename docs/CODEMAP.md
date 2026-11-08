@@ -99,7 +99,7 @@ refreshNow() ─► liveImport_() ────────┘        │        
 
 ### Layout (HTML)
 
-Sticky header: title + month switcher, "나: 이름" + 이름 바꾸기 / 비밀번호 + sync label, my 취식/폐기 totals, the tab bar (`.tabs`, 8 columns, `data-view` = `shift`, `todo`, `eat`, `void`, `all`, `cancel`, `jeo`, `sum`; counters `#c-<view>`), search box, `#pin` (미등록 / 취식 only: holds `#whoBar` and `#pinTot`, the 금액합계 card, so they stay on screen). Main: `#status`, `#whoBar` (name filter), `#list` (line views), `#shifts`, `#sum`, `#emptyMsg`. Bottom sheets: `#confirm`, `#shiftEd`, `#picker`, `#pwSheet`. `#snack` for messages with 되돌리기.
+Header `.hdr` (scrolls away): title + month switcher, "나: 이름" + 이름 바꾸기 / 비밀번호 + sync label, my 취식/폐기 totals. Sticky bar `.top`: the tab bar (`.tabs`, 8 columns, `data-view` = `shift`, `todo`, `eat`, `void`, `all`, `cancel`, `jeo`, `sum`; counters `#c-<view>`), search box, `#pin` (미등록 / 취식 only: holds `#whoBar` and `#pinTot`, the 금액합계 card, so they stay on screen). Main: `#status`, `#whoBar` (name filter), `#list` (line views), `#shifts`, `#sum`, `#emptyMsg`. Bottom sheets: `#confirm`, `#shiftEd`, `#picker`, `#pwSheet`. `#snack` for messages with 되돌리기.
 
 CSS: tokens on `:root` with a dark-mode override; `.row.t-eat` / `.t-void` / `.t-cancel`; `.stamp` buttons (`.eat`, `.void`, `.on`, `.undo`); `.jeotag` labels 저회전 lines outside the 저회전 tab; `@media (max-width: 380px)` shrinks stamps and tab text so 8 tabs fit at 360 px.
 
