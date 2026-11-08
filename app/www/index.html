@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>직원 취식 목록</title>
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="취식">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  html, body { margin: 0; background: #f2f4f1; color: #646f69; font: 15px system-ui, sans-serif; }
+  .boot { min-height: 100vh; display: grid; place-items: center; }
+</style>
+<script>
+/* App loader (Android app and installable page).
+   Shows the staff page without Google's /exec wrapper: the page (apps-script/Index.html) runs here
+   directly and talks to the server through the JSON API (doPost). It uses the newest page the server
+   gave last time (localStorage chwisik.page), else the copy shipped with the app (page.html).
+   If a downloaded page never started (chwisik.pageTry still set), it falls back to the shipped copy. */
+(function () {
+  var API = "https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec";
+  function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } }
+  function show(html, hash) {
+    var head = '<script>window.CHWISIK_API=' + JSON.stringify(API) + ';window.CHWISIK_PAGE_HASH=' + JSON.stringify(hash) + ';<\/script>' +
+      '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">';
+    html = html.replace(/<base[^>]*>/i, "").replace(/<head>/i, "<head>" + head);
+    document.open(); document.write(html); document.close();
+  }
+  function shipped() {
+    var x = new XMLHttpRequest();
+    x.open("GET", "page.html");
+    x.onload = function () { show(x.responseText, ""); };
+    x.onerror = function () { document.body.textContent = "앱 파일을 읽지 못했어요. 앱을 다시 설치해 주세요."; };
+    x.send();
+  }
+  var c = null;
+  try { c = JSON.parse(ls("chwisik.page") || "null"); } catch (e) {}
+  if (c && c.html && c.hash && ls("chwisik.pageTry") === c.hash) { ls("chwisik.page", null); c = null; }  // it broke last time
+  window.addEventListener("DOMContentLoaded", function () {
+    if (c && c.html && c.hash) { ls("chwisik.pageTry", c.hash); show(c.html, c.hash); }
+    else shipped();
+  });
+  if ("serviceWorker" in navigator && location.protocol === "https:" && location.hostname !== "localhost") {
+    navigator.serviceWorker.register("sw.js").catch(function () {});
+  }
+})();
+</script>
+</head>
+<body><div class="boot">불러오는 중…</div></body>
+</html>

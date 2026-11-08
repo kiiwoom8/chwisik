@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" media="print" onload="this.media='all'">
 <style>
 /* Layout: receipt-roll column. Sticky header with month + who-am-I, a band per day, each line with two stamp buttons (취식 / 폐기). */
 :root {
@@ -272,8 +272,15 @@ button.srow { cursor: pointer; }
   function setTok(name, t) { if (t) TOK[name] = t; else delete TOK[name]; lsSet(K_TOK, JSON.stringify(TOK)); }
   function isAuthErr(e) { return String((e && e.message) || "").indexOf("[비밀번호]") >= 0; }
 
+  /* App mode (app/ loader sets window.CHWISIK_API = the /exec URL): JSON over fetch, no Google page.
+     Web mode (/exec link): google.script.run. Same server functions either way. */
+  var API = window.CHWISIK_API || "";
+  try { localStorage.removeItem("chwisik.pageTry"); } catch (e) {}  // tells the app loader this page started fine
   function run(fn) {
     var args = Array.prototype.slice.call(arguments, 1);
+    if (API) return fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn: fn, args: args }) })
+      .then(function (r) { if (!r.ok) throw new Error("서버 응답 " + r.status); return r.json(); })
+      .then(function (j) { if (!j || !j.ok) throw new Error((j && j.err) || "서버 오류"); return j.r; });
     return new Promise(function (resolve, reject) {
       var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
       r[fn].apply(r, args);
@@ -909,6 +916,22 @@ button.srow { cursor: pointer; }
     if (!force && S.busy) return;
     S.version = res.version; S.rows = res.rows; S.cancels = res.cancels || []; S.shifts = res.shifts || []; S.usual = res.usual || {}; if (res.members) S.members = res.members;
     render();
+    saveCache(res);
+  }
+  /* Last data seen, so the next start draws at once and fixes itself when the server answers. */
+  var K_CACHE = "chwisik.cache";
+  function saveCache(res) {
+    if (res.month !== S.months[0]) return;
+    lsSet(K_CACHE, JSON.stringify({ months: S.months, live: S.live, month: res }));
+  }
+  function loadCache() {
+    try {
+      var c = JSON.parse(lsGet(K_CACHE) || "null");
+      if (!c || !c.month || !c.months || c.months[0] !== c.month.month || c.month.month !== curMonth()) return false;
+      S.months = c.months; S.month = c.month.month; S.live = c.live; S.members = c.month.members || [];
+      take(c.month, true);
+      return true;
+    } catch (e) { return false; }
   }
   function load(force) {
     if (S.busy) return;
@@ -1049,15 +1072,31 @@ button.srow { cursor: pointer; }
   });
   document.addEventListener("visibilitychange", function () { if (!document.hidden && S.month) { load(false); refreshLive(); } });
 
+  /* ---------- app self-update ----------
+     The app ships a copy of this page; on start it asks the server for the current one (by hash),
+     keeps it in localStorage, and switches to it the next time the app comes back to the front. */
+  var pageReady = false;
+  function checkAppUpdate() {
+    if (!API) return;
+    run("getPage", window.CHWISIK_PAGE_HASH || "").then(function (p) {
+      if (!p || !p.html) return;
+      lsSet("chwisik.page", JSON.stringify(p));
+      pageReady = true;
+    }, function () {});
+  }
+  document.addEventListener("visibilitychange", function () { if (pageReady && !document.hidden && !S.busy) location.reload(); });
+
   /* ---------- boot ---------- */
-  render();
-  run("getInit", S.me, tok()).then(function (init) {
+  if (!loadCache()) render();
+  run("getBoot", S.me, tok()).then(function (boot) {
+    var init = boot.init;
     S.members = init.members; S.months = init.months; S.month = init.months[0]; S.live = init.live;
-    render();
+    S.version = "";
+    if (boot.month) take(boot.month, true); else render();
     if (!memberOf(S.me)) openPicker();
     else if (init.meOk === false) { setTok(S.me, ""); openPw("login", S.me); }
-    load(true);
     refreshLive();
+    checkAppUpdate();
     setInterval(function () { if (!document.hidden) load(false); }, POLL_MS);
     setInterval(function () { if (!document.hidden) refreshLive(); }, LIVE_MS);
     setInterval(function () { if (!document.hidden && !S.busy && S.view === "shift") render(); }, 60000);

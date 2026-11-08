@@ -16,7 +16,8 @@ Instructions for Claude (and any other agent or person) working in this repo.
    - `docs/CODEMAP.md`: whenever functions are added, renamed, removed or change role.
    - `docs/ROADMAP.md`: strike through items that got done; add new ideas the owner mentions.
    - `README.md` / this file: when the overview, layout or rules change.
-5. **Never commit secrets.** The BGF password lives only in the Apps Script project's Script Properties (`BGF_PW`), never in code, docs, or commit messages. If a secret is committed by mistake, tell the owner so the password can be changed.
+5. **Every app build goes to GitHub Releases.** Any app made from this repo (Android now, others later) is built by CI and published as a release: its own versioned release (`android-1.<run>`) plus the moving `android-latest`. Don't hand out builds that aren't on Releases.
+6. **Never commit secrets.** The BGF password lives only in the Apps Script project's Script Properties (`BGF_PW`), never in code, docs, or commit messages. If a secret is committed by mistake, tell the owner so the password can be changed.
 
 ## Code ↔ Apps Script ↔ GitHub
 
@@ -36,7 +37,8 @@ The live copy runs in Google Apps Script, bound to the spreadsheet **직원 취�
 Start with `docs/DEVNOTES.md`, then `docs/CODEMAP.md` for the code you are about to touch.
 
 - `apps-script/Code.gs`: server. BGF login + nightly and live import (폐기 and 저회전상품철수), 출근일지, passwords, sheet setup, web app API.
-- `apps-script/Index.html`: the staff page (one-tap 취식 / 폐기, 저회전, 취소, 출근일지, monthly totals).
+- `apps-script/Index.html`: the staff page (one-tap 취식 / 폐기, 저회전, 취소, 출근일지, monthly totals). The same file runs inside the Android app (it fetches it from the server), so keep it working in both modes: calls only through `run()`, new server functions listed in `apiFns_()`.
+- `app/`: Android app shell (Capacitor) + installable page. `.github/workflows/android.yml` builds the APK on push to `app/**`. The signing key is never committed.
 - `docs/DEVNOTES.md`: what it does, live resources, sheets and columns, Script Properties, BGF protocol, API shapes, page behavior, operations, gotchas.
 - `docs/CODEMAP.md`: function-by-function map of both files, data flows, recipes for common changes.
 - `docs/HISTORY.md`: every change with commit id and reason.

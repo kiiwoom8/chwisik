@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (viewport: no `viewport-fit=cover`, fixes white strip at the bottom on phones)
+Last updated: 2026-11-09 (Android app + JSON API `doPost`; faster start: one `getBoot` call and the last data drawn from localStorage)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -18,7 +18,7 @@ A tracker for CU store **25377**: which expired items (폐기) a worker ate (취
 
 - **Every night around 00:01 (Asia/Seoul)** a time trigger logs in to the BGF 점포시스템, downloads the **폐기** and **저회전상품철수** slips for **yesterday and the day before**, and appends new lines to the **폐기목록** sheet. The day before is re-read so late slips are not missed. Lines already in the sheet are skipped (by key).
 - **During the day (실시간 가져오기)** today's and yesterday's new slips are pulled when a worker opens the link, every 3 min while the page is open, and every 10 min by a trigger even if nobody has it open. BGF is hit at most once per 2 min overall. See *Live import*.
-- **Staff open one link** (no Google login). They pick their name once (stored on the phone), then tap **[취식]** or **[폐기]** on each line.
+- **Staff open the Android app or one link** (no Google login). The app (see *App*) shows the same page without Google's wrapper and banner. They pick their name once (stored on the phone), then tap **[취식]** or **[폐기]** on each line.
   - 취식 → records the **full name** (김성휘)
   - 폐기 → records the **first name only** (성휘)
 - **저회전 (저회전상품철수)** lines are imported the same way and shown in their own **저회전** tab. They can be tagged **취식 only**, never 폐기, and they **don't need to be tagged** (they are not counted in 미등록). A 저회전 취식 counts in the worker's 취식 totals like any other 취식.
@@ -35,7 +35,9 @@ Everything runs on Google's servers. The owner's computer can be off.
 |---|---|
 | Spreadsheet | Google Drive → **직원 취식 목록** (`1OFt4d-qxrv8EnsK3PK060Llv33fw2UnZ09rp00It338`) |
 | Apps Script project | Bound to the sheet; script id `1ypg7065GCWVnqAQFi1mu3vFyg_vSEti7RdtbzXKITl4ogeFpoqfqYjzQ` (also in `.clasp.json`) |
-| Staff web app (versioned deployment) | https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec |
+| Staff web app (versioned deployment) | https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec (GET = the page, POST = the JSON API the app uses) |
+| Android app (APK) | GitHub → Releases → **android-latest** → `chwisik.apk` (built by `.github/workflows/android.yml`) |
+| App signing key | `C:\Users\kiiwo\chwisik-android-key\` on the owner's PC (never in the repo); also as repo secrets `ANDROID_KEYSTORE_B64` / `ANDROID_KEYSTORE_PW` |
 | GitHub repo | source of truth; push to `main` deploys (see *Auto-deploy*) |
 | Google account | noerror96@gmail.com (the script runs as this account) |
 | Trigger `nightly` | time-driven, daily, `atHour(0).nearMinute(1)`, Asia/Seoul. Google fires it within about ±15 min. |
@@ -52,6 +54,8 @@ Web app settings (`apps-script/appsscript.json`): **Execute as: Me (owner)**, **
 | `apps-script/appsscript.json` | Manifest: timezone, V8, web app access |
 | `.clasp.json` | clasp config (`rootDir: apps-script`) |
 | `.github/workflows/deploy.yml` | Syntax check → `clasp push` → `clasp deploy` on the staff deployment |
+| `app/` | Android app (Capacitor 7 shell) and installable page: `www/index.html` loader, `manifest.webmanifest`, `sw.js`, icons; `build.mjs` copies `Index.html` to `www/page.html`; `android-res/` icons + splash; `make-icons.py` draws the icons |
+| `.github/workflows/android.yml` | Builds the APK on push to `app/**` and publishes release `android-latest` |
 | `.githooks/post-commit`, `scripts/setup-hooks.sh` | Auto-push `main` after every commit |
 | `docs/` | These docs |
 
@@ -179,10 +183,14 @@ Verified (폐기): 11/1–11/8 import = 103 slips / 225 lines, identical to the 
 
 If BGF changes its login (captcha, OTP, password encryption), the nightly import fails and emails the owner. Re-capture the login request in the browser: hook `XMLHttpRequest.prototype.send` on the login page **before** pressing 로그인 (logging out reloads the page and clears the hook). Static form scripts can be read without logging in: `https://store.bgfretail.com/websrc/deploy/<prefix>/<FORM>.xfdl.js` (e.g. `GJ/STGJ020_M0.xfdl.js`).
 
-## Web app API (google.script.run)
+## Web app API (google.script.run and JSON)
+
+The page calls the server with `run(fn, …args)`. On the `/exec` link that is `google.script.run`. In the app (`window.CHWISIK_API` set by the loader) it is `fetch(POST /exec)` with a `text/plain` body `{"fn": name, "args": [...]}` (text/plain avoids a CORS preflight; Apps Script answers through a redirect to `script.googleusercontent.com`, which allows any origin). `doPost` answers `{"ok": true, "r": result}` or `{"ok": false, "err": message}` and only runs the names in `apiFns_()`, all of which are already public through `google.script.run`.
 
 | Function | Purpose |
 |---|---|
+| `getBoot(me, token)` | `{init: getInit(…), month: getMonth(newest month, '')}`: the page's first call (one round trip instead of two) |
+| `getPage(knownHash)` | `{hash, html}` of `Index.html`, or `null` if the app already has that hash (app self-update) |
 | `getInit(me, token)` | members (`{full, short, hasPw}`), months (items + shifts), data version, live-import label, `meOk` (false = this phone must enter the password again) |
 | `getMonth(month, knownVersion)` | rows + cancels + shifts + `usual` for `yyyy-MM`; `null` if `knownVersion` is current (cheap polling) |
 | `setTag(rowHint, key, type, memberFull, month, note, me, token)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` kept only for 폐기. Refuses rows another worker tagged, and 폐기 on 저회전 rows. Returns the fresh month. |
@@ -210,6 +218,8 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 
 ## Page behavior (Index.html)
 
+- **Start**: if localStorage `chwisik.cache` holds this month's data (saved on every `take` of the newest month), the page draws it at once, then one `getBoot` call replaces it. So a returning phone sees the list right away even while Apps Script is slow. The Google Fonts stylesheet loads without blocking the first draw (`media=print` swap).
+
 - **Tabs** (8, one row, fits 360 px): 출근 · 미등록 · 취식 · 폐기 · 전체 · 취소 · **저회전** · 월별 합계. 출근 is first and always opens first.
   - 미등록 = untagged **폐기** lines (저회전 is never 미등록).
   - 취식 = every 취식 line, 폐기 and 저회전 (저회전 lines carry a green `저회전` label).
@@ -221,6 +231,19 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 - Off-shift 폐기 check runs in the page: the line's 생성시각 must fall inside one of the worker's shifts, 30 min grace either side; an open shift counts up to now. Lines with only a date pass if any shift touches that day. Each line shows who was working then (`근무 지은`).
 - **Empty-time warning (출근 tab)**: for each past day of the month, from the first recorded day to yesterday, the page joins everyone's shifts (including overnight ones from the day before) over 00:00–24:00 and lists gaps ≥ 15 min. The store is treated as **open 24 h**. A shift without 퇴근 from a past day counts as unknown. Each gap has **내가 근무했어요**, which opens 근무 직접 입력 prefilled. Hidden while a name filter is on.
 - 출근 timeline bars: overlap with 2 people = yellow, 3+ = red, with "겹침 N분". Overnight shifts also show on the next day as `00:00 – 퇴근`.
+
+## App (Android, and the installable page)
+
+Why: the `/exec` link is slow to open (Google's wrapper page, two iframes, then the API calls), shows the "created by a Google Apps Script user" banner, and on some phones Google asks to sign in. The app runs the same page **directly**, without Google's page, and talks to the server through the JSON API.
+
+- **One page for both.** `app/www/index.html` is a small loader. It takes the newest page the server gave last time (localStorage `chwisik.page` = `{hash, html}`), else the copy shipped in the app (`www/page.html`, copied from `apps-script/Index.html` by `app/build.mjs` at build time), adds `window.CHWISIK_API` / `CHWISIK_PAGE_HASH` and the viewport meta, drops `<base>`, and `document.write`s it.
+- **Self-update.** After start the page calls `getPage(hash)`. A new page is stored and used the next time the app comes back to the front (`visibilitychange` → reload). So **page changes reach the app with the normal push to `main`; no new APK is needed.** A new APK is only needed when `app/` itself changes.
+- **Safety net.** The loader sets `chwisik.pageTry = hash` before running a downloaded page; the page clears it as soon as its script starts. If it is still set next launch, that page broke: the loader drops it and runs the shipped copy (which then downloads the newest page again).
+- **Android build** (`.github/workflows/android.yml`, on push to `app/**` or by hand): `npm ci` → `build.mjs` → `npx cap add android` (project generated fresh each time, not committed) → our icons/splash from `app/android-res/` (Capacitor's logo files removed) → `versionCode` = run number → **targetSdk 34** (Android 15 forces edge-to-edge for target 35, which would put the page under the status bar) → `assembleRelease` + zipalign + apksigner with the key from secrets → GitHub Releases: a versioned release **android-1.<run>** (kept as history) and **android-latest** (always the newest; `chwisik.apk`), plus a workflow artifact. Owner's rule: every app build is published to Releases. Without the secrets it builds a **debug** APK and warns: a phone with the debug build must uninstall it before a release-signed one installs.
+- **Signing key**: PKCS12, alias `chwisik`, made 2026-11-09 with openssl, kept in `C:\Users\kiiwo\chwisik-android-key\` (README there). Lose it and phones must uninstall and reinstall to get a new build.
+- **Installing**: the repo is private, so staff can't download from GitHub. The owner downloads `chwisik.apk` from the release and sends it (e.g. KakaoTalk); staff allow "install unknown apps" once. App id `com.kiiwoom8.chwisik`, name 취식.
+- **iPhone**: a store app needs a Mac and a paid Apple developer account. Instead `app/www` is also an installable page (manifest, icons, `sw.js` caches the loader files, `apple-mobile-web-app-*` metas): host `app/www` + `page.html` on any HTTPS static host and staff use Safari → 공유 → 홈 화면에 추가. Not hosted yet (GitHub Pages needs a public repo or a paid plan).
+- **Testing without a phone**: copy `app/www` (after `node app/build.mjs`) to a scratch folder, point `API` in its `index.html` at a small local server that answers POST with fake `{ok, r}` JSON, open it at 375 px. Done 2026-11-09: boot, name picker, tabs, cache-first start all worked.
 
 ## Live import (오늘 폐기·저회전)
 
@@ -247,6 +270,7 @@ Set up 2026-11-08.
 1. Syntax: `cp apps-script/Code.gs /tmp/code.js && node --check /tmp/code.js`, and the same for the `<script>` block of `Index.html` (CI does both).
 2. Page layout without Apps Script: copy `Index.html` to a scratch folder, add `<meta name="viewport" content="width=device-width, initial-scale=1">` (Apps Script adds it in `doGet`), and put a stub before the main script that defines `window.google.script.run` with `withSuccessHandler` / `withFailureHandler` and fake `getInit` / `getMonth` / `refreshNow` / `setTag` results (row shape above). Serve it with `python -m http.server` and check at 360 px.
 3. Server code can't run locally (SpreadsheetApp, UrlFetchApp). After the push, watch the Actions run, then the 가져오기 기록 sheet and the page.
+4. JSON API after a deploy: `curl -sL -H 'Content-Type: text/plain' -d '{"fn":"getInit","args":["",""]}' <exec URL>` must print `{"ok":true,…}`.
 
 ## Operations
 
@@ -263,9 +287,10 @@ Set up 2026-11-08.
 - Names without a password are open: anyone can tag or clock in under them. With a password, only phones that entered it (or the developer password) can.
 - The off-shift warning is advisory: the worker can still save; the row is marked `근무외`.
 - A line is tagged as a whole. Quantity 3 cannot yet be split into 1 취식 + 2 폐기.
+- The JSON API is as open as the link: anyone can POST the same public functions. Nothing new is exposed (they were all callable through `google.script.run` already).
 - The public link has no Google login. Anyone with it can tag lines under password-less names or add a name. 등록시각 is the audit trail.
 - The 월별 합계 sheet counts tagged lines that BGF later canceled; the page doesn't.
-- Apps Script web apps show a "created by a Google Apps Script user" banner. Normal.
+- Apps Script web apps show a "created by a Google Apps Script user" banner on the `/exec` link. It can't be removed there; the app doesn't have it.
 - The page runs two iframes deep inside Google's `/exec` page, whose own background is white and can't be styled (`addMetaTag` takes only a few names; no `theme-color`). Keep the viewport meta without `viewport-fit=cover`: with it, phones draw the page under the bottom system bar, outside our frame, and Google's white shows there as a strip. `env(safe-area-inset-*)` in the CSS is harmless (0 inside the frame).
 - In Claude's Chrome tab group, the web app's inner frame sometimes stayed blank (extension-side issue). Normal Chrome tabs and phones work.
 - The BGF site page can freeze Chrome's screenshot tool (CDP timeout); use `javascript_tool` to read it instead.

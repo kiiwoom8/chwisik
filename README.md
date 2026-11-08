@@ -7,11 +7,14 @@ Staff meal (취식) and waste (폐기) tracker for CU store 25377.
 - 출근일지: staff clock in/out; the page warns about 폐기 outside one's shift and about hours nobody recorded.
 - Monthly totals per person (items and hours) are shown in the app and in the sheet.
 
+**Android app:** GitHub → Releases → `android-latest` → `chwisik.apk` (send it to staff; the app updates its page by itself).
+
 **Staff link:** https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec
 
 | Folder | Contents |
 |---|---|
 | `apps-script/` | `Code.gs` (server, BGF import, API) and `Index.html` (staff page) |
+| `app/` | Android app (Capacitor shell) and installable page; built by `.github/workflows/android.yml` |
 | `docs/DEVNOTES.md` | how it works, BGF protocol, sheets, Script Properties, API, operations, troubleshooting |
 | `docs/CODEMAP.md` | where each function is and what it does, data flows, how to make common changes |
 | `docs/HISTORY.md` | every change, with reasons |

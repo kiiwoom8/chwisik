@@ -597,6 +597,45 @@ function doGet() {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
+/* ---------- 앱 API (JSON) ----------
+ * The Android app / installable page (app/) calls the same functions as google.script.run, but through
+ * POST /exec with a text/plain body {"fn": name, "args": [...]} (text/plain = no CORS preflight).
+ * Answer: {"ok": true, "r": result} or {"ok": false, "err": message}.
+ * Only these names can be called; they are all public (google.script.run-callable) already. */
+function apiFns_() {
+  return {
+    getBoot: getBoot, getInit: getInit, getMonth: getMonth, setTag: setTag, addMember: addMember,
+    clockIn: clockIn, clockOut: clockOut, saveShift: saveShift, deleteShift: deleteShift,
+    login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage
+  };
+}
+function doPost(e) {
+  var out;
+  try {
+    var req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    var fns = apiFns_();
+    if (!req || typeof req.fn !== 'string' || !Object.prototype.hasOwnProperty.call(fns, req.fn)) throw new Error('알 수 없는 요청이에요.');
+    var r = fns[req.fn].apply(null, Array.isArray(req.args) ? req.args : []);
+    out = { ok: true, r: r === undefined ? null : r };
+  } catch (err) {
+    out = { ok: false, err: String((err && err.message) || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/** One call for the page start: init + the newest month (saves a round trip). */
+function getBoot(me, token) {
+  var init = getInit(me, token);
+  return { init: init, month: getMonth(init.months[0], '') };
+}
+
+/** The page source, for the app to update itself. null when the app already has this version (hash). */
+function getPage(knownHash) {
+  var html = HtmlService.createHtmlOutputFromFile('Index').getContent();
+  var h = b64_(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, html, Utilities.Charset.UTF_8));
+  return String(knownHash || '') === h ? null : { hash: h, html: html };
+}
+
 function bumpVersion_() {
   var p = PropertiesService.getScriptProperties();
   var v = String(Date.now());

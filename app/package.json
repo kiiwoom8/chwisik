@@ -1,0 +1,15 @@
+{
+  "name": "chwisik-app",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Android app shell for 직원 취식 목록 (Capacitor). See docs/DEVNOTES.md, App.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.0",
+    "@capacitor/cli": "^7.4.0",
+    "@capacitor/core": "^7.4.0"
+  }
+}

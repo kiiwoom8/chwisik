@@ -6,7 +6,8 @@ The `/exec` web link stays the main way in. Apps for workers come next and use *
 
 Goal: staff get an app icon on their phone that opens straight to the list, with notifications.
 
-1. **Installable web app (PWA) first.** Fastest and cheapest.
+0. ~~**Android app**~~ Done 2026-11-09: Capacitor shell in `app/`, APK on release android-latest, self-updating page, JSON API (`doPost`). Next: set the signing secrets, try it on staff phones, maybe Play internal testing.
+1. **Installable web app (PWA)** — files ready in `app/www` (manifest, service worker, icons); JSON endpoint done (`doPost`). Left: host it on HTTPS (needs a public repo for GitHub Pages, or Cloudflare Pages / Netlify) so iPhones can 홈 화면에 추가.
    - Host a small static shell (GitHub Pages from this repo, `app/` folder) with a manifest, an icon, and a service worker.
    - The shell talks to the Apps Script backend through a JSON endpoint (`doPost` / `doGet?api=…` returning `ContentService` JSON), instead of `google.script.run`. This also removes the Google banner and iframe.
    - "홈 화면에 추가" on Android and iOS gives an app icon.

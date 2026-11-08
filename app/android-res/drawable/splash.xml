@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launch screen: page background with the app icon in the middle (replaces Capacitor's logo splash.png). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><solid android:color="#f2f4f1" /></shape></item>
+    <item android:gravity="center" android:width="96dp" android:height="96dp" android:drawable="@mipmap/ic_launcher" />
+</layer-list>

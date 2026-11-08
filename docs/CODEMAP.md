@@ -4,10 +4,10 @@ Last updated: 2026-11-09
 
 A guide to where things are in the code and how they connect. Functions are listed by name (search for `function <name>`), not by line number, so this file stays right when code moves. Keep it in sync with every change (see `CLAUDE.md`).
 
-Two source files, no build step, no libraries:
+Two source files, no build step, no libraries (plus the app shell in `app/`, see the end):
 
 - `apps-script/Code.gs` — Google Apps Script (V8). Runs as the owner. Talks to BGF with `UrlFetchApp`, stores everything in the bound spreadsheet.
-- `apps-script/Index.html` — the staff page served by `doGet()`. One IIFE in one `<script>` block, ES5 style (`var`, `function`), talks to the server only through `google.script.run` (wrapped by `run()`).
+- `apps-script/Index.html` — the staff page served by `doGet()`. One IIFE in one `<script>` block, ES5 style (`var`, `function`), talks to the server only through `run()`: `google.script.run` on the `/exec` link, `fetch` to the JSON API in the app.
 
 Naming rule in Code.gs: a name ending in `_` is private. **Any other top-level function is callable by anyone with the /exec link** — so a new public function must check its caller (`authMember_`, `adminOnly_`, `fromTrigger_`, or `SpreadsheetApp.getUi()` for menu items).
 
@@ -74,6 +74,9 @@ refreshNow() ─► liveImport_() ────────┘        │        
 ### Web app — section `웹앱`
 
 - `doGet()` — serves `Index.html` with the viewport meta (`width=device-width, initial-scale=1`; no `viewport-fit=cover`, see DEVNOTES gotchas).
+- `doPost(e)` — JSON API for the app: body `{fn, args}`, runs only names in `apiFns_()`, answers `{ok, r}` / `{ok:false, err}`. **A new public function the app should use must be added to `apiFns_()`.**
+- `getBoot(me, token)` (public) — `getInit` + `getMonth(newest, '')` in one call; the page's first call.
+- `getPage(knownHash)` (public) — `Index.html` source + MD5 hash for the app's self-update; `null` when unchanged.
 - `bumpVersion_()`, `version_()` — data version `VER` (also clears the `members` cache key).
 - Members: `memberRows_()`, `members_()` (public shape `{full, short, hasPw}`), `memberRow_(full)` (throws if unknown), `shortName_(full)`, `addMember(full)` (public; sanitizes, appends).
 - Passwords: `secret_(name)`, `b64_`, `pwHash_(full, pw)`, `devHash_(pw)`, `token_(m)`, `authMember_(full, token)` (the auth check every write uses), `login(full, pw)` (public, rate-limited), `setPassword(full, token, newPw)` (public).
@@ -108,7 +111,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 
 ### Functions by area
 
-- Helpers: `$`, `fmt`, `lsGet`/`lsSet`, `mk(tag, cls, text)`, `tok`/`setTok`, `isAuthErr`, `run(fn, …args)` (Promise around `google.script.run`), `errMsg`, `status`, `memberOf`, `shortOf`.
+- Helpers: `$`, `fmt`, `lsGet`/`lsSet`, `mk(tag, cls, text)`, `tok`/`setTok`, `isAuthErr`, `run(fn, …args)` (Promise: `fetch` to `API` = `window.CHWISIK_API` in the app, else `google.script.run`), `errMsg`, `status`, `memberOf`, `shortOf`.
 - Time: `toMin`, `nowMin`, `todayStr`, `curMonth`, `dur`, `dowOf`, `dayLabel`, `dayEl` (red 일 / blue 토), `addDays`, `hm`.
 - Shifts logic: `span(s, nowM)` (`{a, b, open, live, stale, e}`), `openShift`, `workedAt(member, ts, grace)`, `workersAt(ts)`, `gapsOf(d, nowM)`, `checkDays()`, `overlapsOf(…)`.
 - Name filter: `whoNames()` (per view), `curWho()`, `renderWho()`.
@@ -116,13 +119,26 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 - Tagging: `tap(r, type)` (guards: picker, other worker, 저회전 + 폐기, off-shift confirm) → `doTag` → `apply` (optimistic) + `send` (`setTag`; rolls back on error) + snack undo.
 - Shifts UI: `call(fn, args, done)` (adds token), `clock`, `openEditor(s, preset)`, `edHint`, `closeEditor`, form submit / delete handlers.
 - Dialogs: `confirmBox`, `closeConfirm`, `openPicker`, `choose`, `openPw`, `closePw`, `savePw`.
-- Data: `take(res, force)`, `load(force)` (poll with version), `refreshLive()` (`refreshNow`), `setOnline`, `renderSync`.
+- Data: `take(res, force)` (also `saveCache`), `saveCache(res)` / `loadCache()` (localStorage `chwisik.cache`: newest month's data for an instant start), `load(force)` (poll with version), `refreshLive()` (`refreshNow`), `setOnline`, `renderSync`.
 - Misc: `snack(text, undo)`, tab click handlers, search, `goMonth`, Esc handling, `visibilitychange`.
-- Boot: `getInit` → pick name / password → `load(true)` + `refreshLive()` → intervals (poll 5 s, live 3 min, re-render 출근 every minute).
+- App update: `checkAppUpdate()` (app only: `getPage(CHWISIK_PAGE_HASH)` → localStorage `chwisik.page`, reload on next `visibilitychange`). The script's first lines clear `chwisik.pageTry` (tells the loader the page started).
+- Boot: `loadCache()` draws the last data → `getBoot` → pick name / password → `refreshLive()` + `checkAppUpdate()` → intervals (poll 5 s, live 3 min, re-render 출근 every minute).
 
 ---
 
+## app/ (Android app and installable page)
+
+- `www/index.html` — loader: picks `chwisik.page` from localStorage (unless `chwisik.pageTry` says it broke) or fetches `page.html`, injects `CHWISIK_API` / `CHWISIK_PAGE_HASH` + viewport, `document.write`s it. Registers `sw.js` on real HTTPS hosts only (not inside the app, where the origin is `https://localhost`). **The `/exec` URL is hard-coded here**; change it if the deployment ever changes.
+- `www/sw.js` — cache-first for the loader files (installable page only). Bump `CACHE` when the file list changes.
+- `www/manifest.webmanifest`, `www/icon-192.png`, `icon-512.png`, `apple-touch-icon.png`; `android-res/mipmap-*/ic_launcher*.png`, `android-res/drawable/splash.xml`; `make-icons.py` redraws all icons (PIL + Malgun Gothic Bold).
+- `build.mjs` — `apps-script/Index.html` → `www/page.html` (generated, git-ignored).
+- `capacitor.config.json` — app id `com.kiiwoom8.chwisik`, name 취식, `webDir: www`. `package.json` / `package-lock.json` — Capacitor 7. `android/` is generated in CI (git-ignored).
+
 ## Recipes
+
+**Change the page.** Edit `apps-script/Index.html` and push: the `/exec` link updates via deploy.yml and the app picks it up by itself (`getPage`). Keep it working in both modes: no Apps Script templating (`<? ?>`), every server call through `run()`, and any new server function the page calls added to `apiFns_()`.
+
+**Change the app shell** (`app/`). Push; android.yml builds a new APK on release android-latest. Phones only need it if the loader, icons or native settings changed.
 
 **Import another BGF slip type (like 저회전).**
 1. Find its CHIT_ID and detail dataset: read `https://store.bgfretail.com/websrc/deploy/GJ/STGJ020_P1.xfdl.js` (no login needed) for `strTitle` per `case "NN"`, and which `searchDetailType*` case group it is in. If it isn't `Type1`/`dsListType1`, the columns differ — map them in `fetchSlips_`.
