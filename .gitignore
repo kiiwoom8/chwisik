@@ -1,0 +1,6 @@
+# secrets / local tooling
+.clasprc.json
+*.env
+.env*
+node_modules/
+.DS_Store

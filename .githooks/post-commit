@@ -1,0 +1,11 @@
+#!/bin/sh
+# Auto-sync: push main to GitHub after every commit on main.
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+[ "$branch" = "main" ] || exit 0
+git remote get-url origin >/dev/null 2>&1 || { echo "[auto-push] no 'origin' remote yet; skipped"; exit 0; }
+if git push --quiet origin main 2>/dev/null; then
+  echo "[auto-push] pushed main to origin"
+else
+  echo "[auto-push] push FAILED. Run: git pull --rebase origin main && git push origin main"
+fi
+exit 0
