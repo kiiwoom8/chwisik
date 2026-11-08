@@ -46,7 +46,8 @@ Times are KST.
   - Not tested against the live BGF site (Claude may not enter the BGF password). First check after deploy: 가져오기 기록 shows `저회전 N장` or `저회전 실패: …`.
   - Docs: DEVNOTES rewritten in detail (Script Properties table, BGF code systems, page behavior, how to check changes, two stale statements about other workers' tags fixed); new `docs/CODEMAP.md` (function map, flows, recipes) and this `docs/HISTORY.md`; CLAUDE.md now requires updating the docs with every change.
   - Result: deployed fine; the first live run (01:40) logged `저회전 4장` — the BGF path works.
-- **저회전 one-time backfill.**
+- **01:45 `a9e5674` — 저회전 one-time backfill.**
   - Problem (reported by the owner): 저회전 showed only 11/8. The live import reads only yesterday..today, so 11/1–11/7 저회전 slips were never requested (폐기 had the same gap and was filled by the one-off 11/1–11/8 import on 11/8).
   - Fix: `jeoBackfill_` runs once after a successful live import: 저회전 from the earliest 일자 in 폐기목록 to today, reusing that run's login (`fetchAll_` now returns its session). Sets `JEO_BACKFILL=1` on success; a failure is logged and retried at most hourly. New menu item 저회전 지난 날짜 모두 가져오기 runs it on demand.
   - Lesson (in CODEMAP recipe): any new slip kind needs a backfill for past days.
+  - Result: ran at 01:48 on the first live tick after deploy: `20261101~20261109 (저회전 지난 날짜)`, 27 slips, 40 new lines. 폐기목록 now has 저회전 lines on every day 11/1–11/8 (44 lines in all).
