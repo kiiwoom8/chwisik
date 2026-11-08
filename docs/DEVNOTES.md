@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (저회전 import + tab)
+Last updated: 2026-11-09 (저회전 one-time backfill)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -123,6 +123,8 @@ One row per import run: time, date range, slip count, new lines, result. Nightly
 | `LIVE_TRIGGER` | `installLiveTrigger_` | `1` = the 10-min trigger exists |
 | `JEO_DIV` | `jeoDiv_` | cached 전표구분 search code for 저회전상품철수 (from common code S312). Delete it to look it up again. |
 | `JEO_ERR` | live import | last 저회전 error ('' = ok); only the first failure of a streak is logged |
+| `JEO_BACKFILL` | `jeoBackfill_` | `1` = 저회전 for all past dates in the sheet was imported once. Delete it (or use the menu item) to run it again. |
+| `JEO_BACKFILL_TRY` | `jeoBackfill_` | time of the last backfill try; a failed try waits 1 h before the next automatic one |
 | `PW_SALT`, `TOKEN_KEY` | first use | password hashing salt / token HMAC key. Deleting `TOKEN_KEY` logs every phone out; deleting `PW_SALT` invalidates every stored password |
 | `DEV_PW_HASH` | menu 개발자 비밀번호 설정 | hash of the developer bypass password |
 
@@ -139,6 +141,7 @@ One row per import run: time, date range, slip count, new lines, result. Nightly
 - **오늘 폐기·저회전 지금 가져오기**: one live import now (ignores the 2-min limit), shows the time it took.
 - **어제 폐기·저회전 지금 가져오기**: runs `nightly()` now.
 - **기간 지정해서 가져오기**: e.g. `20261101-20261108` (both kinds; safe to repeat).
+- **저회전 지난 날짜 모두 가져오기**: re-runs the 저회전 backfill now: from the earliest 일자 in 폐기목록 to today (safe to repeat).
 - **매일 자동 가져오기 켜기**: recreates the nightly trigger.
 - **실시간 가져오기 켜기 / 끄기**: the 10-min trigger and the on-open refresh. 끄기 sets `LIVE_OFF=1`; the nightly import keeps running.
 - **개발자 비밀번호 설정**, **직원 비밀번호 지우기**: see *Passwords*.
@@ -222,6 +225,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 ## Live import (오늘 폐기·저회전)
 
 - `refreshNow()` (page) and `liveTick()` (10-min trigger) go through the same gate: `LIVE_AT` must be ≥ `LIVE_MIN_GAP_S` = 120 s old, and a 90 s cache flag stops two runs at once. So BGF sees **at most one login per 2 min**, and only while someone has the page open; otherwise one per 10 min.
+- **Past days**: the live import only reads yesterday..today, so on its own it would never fill 저회전 for days before 저회전 import existed (2026-11-09: only 11/8 came in). After a successful live run, `jeoBackfill_` imports 저회전 once for the whole range from the earliest 일자 in 폐기목록 to today, reusing the same login, then sets `JEO_BACKFILL=1`. The log row says `(저회전 지난 날짜)`. Any new slip kind added later needs the same kind of backfill.
 - One run = login + 폐기 list + 저회전 list (+ the S312 lookup once, until `JEO_DIV` is cached) + detail calls **only for slips not fully in the sheet** (`knownChits_()` counts lines per 전표번호 and compares with `ITEM_CNT`). The nightly import re-reads every slip as a safety net.
 - `LIVE_OK_AT` = start of the last successful run → the page header shows "폐기 21:31까지". `LIVE_ERR` holds the last error; only the first failure of a streak goes to 가져오기 기록, and live failures don't email (the nightly one does).
 - Load: 144 trigger runs/day × a few seconds ≈ 10 min of the 90 min/day trigger quota; UrlFetch stays far below 20k/day.
@@ -249,6 +253,7 @@ Set up 2026-11-08.
 - **Password changed at BGF** → menu 취식 관리 → BGF 비밀번호 입력.
 - **Missed days** → 기간 지정해서 가져오기 (safe to repeat; dedupes by key).
 - **저회전 not coming in** → check 가져오기 기록 for `저회전 실패: …`; delete Script Property `JEO_DIV` to redo the S312 lookup; check that `CHIT_ID` is still `24` on the site.
+- **저회전 missing for older days** → menu 저회전 지난 날짜 모두 가져오기 (or 기간 지정해서 가져오기 for a specific range).
 - **After code changes** → commit and push to `main`. GitHub Actions deploys it. The `/exec` URL stays the same.
 - **Code got deleted in the editor** → restore from `apps-script/` in this repo (push again or run the workflow by hand).
 - **A wrong tag by another worker** → owner clears columns M–P of that row in 폐기목록.

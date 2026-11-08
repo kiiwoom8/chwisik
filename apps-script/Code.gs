@@ -97,6 +97,7 @@ function onOpen() {
     .addItem('오늘 폐기·저회전 지금 가져오기', 'menuLiveNow')
     .addItem('어제 폐기·저회전 지금 가져오기', 'nightly')
     .addItem('기간 지정해서 가져오기', 'menuImportRange')
+    .addItem('저회전 지난 날짜 모두 가져오기', 'menuJeoBackfill')
     .addSeparator()
     .addItem('매일 자동 가져오기 켜기', 'installNightlyTrigger')
     .addItem('실시간 가져오기 켜기 (10분마다 + 링크 열 때)', 'menuLiveOn')
@@ -111,6 +112,12 @@ function menuLiveNow() {
   var ui = SpreadsheetApp.getUi();
   var r = liveImport_();
   ui.alert(r.error ? '가져오지 못했어요:\n' + r.error : '오늘 폐기·저회전 새 품목 ' + r.added + '건 추가 (' + (r.ms / 1000).toFixed(1) + '초)');
+}
+function menuJeoBackfill() {
+  var ui = SpreadsheetApp.getUi();   // first: throws when called from the web page
+  PropertiesService.getScriptProperties().deleteProperty('JEO_BACKFILL');
+  var r = jeoBackfill_(null, true);
+  ui.alert(r.error ? JEO + ' 가져오지 못했어요:\n' + r.error : JEO + ' ' + r.range + ': 전표 ' + r.chits + '장, 새 품목 ' + r.added + '건 추가');
 }
 function menuLiveOn() {
   var ui = SpreadsheetApp.getUi();   // first: throws when called from the web page
@@ -301,7 +308,8 @@ function liveImport_() {
     if (added || (r.jeoErr && !jeoErrBefore)) {
       logImport_(from + '~' + to + ' (실시간)', r.chits, added, 'OK · ' + (ms / 1000).toFixed(1) + '초, 상세 ' + r.fetched + '장' + jeoNote_(r));
     }
-    return { added: added, ms: ms };
+    if (!r.jeoErr) added += jeoBackfill_(r.session, false).added || 0;
+    return { added: added, ms: Date.now() - t0 };
   } catch (e) {
     var msg = String(e && e.message || e).slice(0, 200);
     if (!p.getProperty('LIVE_ERR')) logImport_(from + '~' + to + ' (실시간)', '', '', '실패: ' + msg);
@@ -451,8 +459,8 @@ function svcVars_() {
  * One login, then 폐기 and 저회전상품철수 slips for the range.
  * A 저회전 failure never blocks 폐기: it comes back as jeoErr and its items are left out.
  */
-function fetchAll_(fromYmd, toYmd, known) {
-  var s = bgfLogin_();
+function fetchAll_(fromYmd, toYmd, known, session) {
+  var s = session || bgfLogin_();
   var a = fetchSlips_(s, PYEGI_DIV, '', '', fromYmd, toYmd, known);
   var b, jeoErr = '';
   try {
@@ -462,7 +470,39 @@ function fetchAll_(fromYmd, toYmd, known) {
     jeoErr = String(e && e.message || e).slice(0, 150);
     b = { chits: 0, fetched: 0, items: [] };
   }
-  return { chits: a.chits + b.chits, jeoChits: b.chits, fetched: a.fetched + b.fetched, items: a.items.concat(b.items), jeoErr: jeoErr };
+  return { chits: a.chits + b.chits, jeoChits: b.chits, fetched: a.fetched + b.fetched, items: a.items.concat(b.items), jeoErr: jeoErr, session: s };
+}
+
+/**
+ * One time: 저회전 for every date already in 폐기목록 (the live import only reads yesterday..today,
+ * so days before 저회전 import existed would stay empty). Runs after a live import until it succeeds
+ * once (JEO_BACKFILL=1); a failed try waits an hour (JEO_BACKFILL_TRY). force: ignore that wait.
+ * Never throws. Returns { added, chits, range, error }.
+ */
+function jeoBackfill_(session, force) {
+  var p = PropertiesService.getScriptProperties();
+  if (p.getProperty('JEO_BACKFILL') === '1') return { added: 0 };
+  if (!force && Date.now() - Number(p.getProperty('JEO_BACKFILL_TRY') || 0) < 3600 * 1000) return { added: 0 };
+  p.setProperty('JEO_BACKFILL_TRY', String(Date.now()));
+  var to = ymd_(new Date()), from = to, range = '';
+  try {
+    var sh = itemsSheet_(), n = sh.getLastRow() - 1;
+    if (n > 0) sh.getRange(2, C.DATE, n, 1).getDisplayValues().forEach(function (r) {
+      var d = String(r[0]).replace(/-/g, '');
+      if (/^\d{8}$/.test(d) && d < from) from = d;
+    });
+    range = from + '~' + to;
+    var s = session || bgfLogin_();
+    var r = fetchSlips_(s, jeoDiv_(s), JEO_CHIT_ID, JEO, from, to);
+    var added = appendItems_(r.items);
+    logImport_(range + ' (' + JEO + ' 지난 날짜)', r.chits, added, 'OK');
+    p.setProperty('JEO_BACKFILL', '1');
+    return { added: added, chits: r.chits, range: range };
+  } catch (e) {
+    var msg = String(e && e.message || e).slice(0, 200);
+    logImport_(range + ' (' + JEO + ' 지난 날짜)', '', '', '실패: ' + msg);
+    return { added: 0, error: msg };
+  }
 }
 function jeoNote_(r) { return r.jeoErr ? ' · ' + JEO + ' 실패: ' + r.jeoErr : r.jeoChits ? ' · ' + JEO + ' ' + r.jeoChits + '장' : ''; }
 

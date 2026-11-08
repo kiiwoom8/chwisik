@@ -34,7 +34,7 @@ Naming rule in Code.gs: a name ending in `_` is private. **Any other top-level f
 
 - `setup()` (admin) — creates/formats sheets, headers, the 월별 합계 QUERY, both triggers. Safe to re-run.
 - `onOpen()` — builds the 취식 관리 menu. Each item maps to a `menu…` function or `nightly` / `installNightlyTrigger`.
-- `menuLiveNow`, `menuLiveOn`, `menuLiveOff`, `menuSetPassword`, `menuImportRange`, `menuSetDevPw`, `menuClearMemberPw` — menu handlers; each calls `SpreadsheetApp.getUi()` first so web callers fail.
+- `menuLiveNow`, `menuJeoBackfill`, `menuLiveOn`, `menuLiveOff`, `menuSetPassword`, `menuImportRange`, `menuSetDevPw`, `menuClearMemberPw` — menu handlers; each calls `SpreadsheetApp.getUi()` first so web callers fail.
 - `installNightlyTrigger()` (admin), `installLiveTrigger_()`, `removeLiveTrigger_()` — trigger management.
 - `liveTick(e)` — 10-min trigger → `refreshNow()`.
 - `adminOnly_()` — throws unless the active user is the owner. `fromTrigger_(e)` — true when `e.triggerUid` is one of this project's triggers.
@@ -58,14 +58,15 @@ refreshNow() ─► liveImport_() ────────┘        │        
 - `itemsSheet_()` — returns 폐기목록, adding missing columns and the 전표 header (one-time migration). Used by `appendItems_` and `getMonth`.
 - `appendItems_(items)` — under the script lock: skips keys already in the sheet **or earlier in the same batch**, sorts by time, writes rows (전표 = `it.src`), bumps `VER`.
 - `refreshNow()` (public, no auth: it only imports) — throttle gate (`LIVE_OFF`, `LIVE_AT` ≥ 120 s, cache flag `live_running`), installs the live trigger if missing, → `liveImport_()`; returns `liveInfo_`.
-- `liveImport_()` — yesterday..today with `knownChits_()` so only new slips get detail calls. Never throws; stores `LIVE_OK_AT` / `LIVE_MS` / `LIVE_ERR` / `JEO_ERR`; logs when lines were added or a failure streak starts.
+- `liveImport_()` — yesterday..today with `knownChits_()` so only new slips get detail calls. Never throws; stores `LIVE_OK_AT` / `LIVE_MS` / `LIVE_ERR` / `JEO_ERR`; logs when lines were added or a failure streak starts. Then calls `jeoBackfill_(session)` (does nothing once `JEO_BACKFILL=1`).
+- `jeoBackfill_(session, force)` — one-time 저회전 import from the earliest 일자 in 폐기목록 to today; reuses the live run's login; retries at most hourly unless `force`. Never throws.
 - `liveInfo_(props, added)` — `{label, off, error, added}` for the page header.
 - `knownChits_()` — `{CHIT_NO: lines in sheet}`.
 - `logImport_(range, chits, added, result)` — appends to 가져오기 기록.
 - `ssvBuild_(vars, dsName, cols, row)` — SSV request with one dataset/one row. `ssvVarsOnly_(vars)` — variables only. `ssvParse_(text)` — `{vars, ds: {name: [rowObj]}}`.
 - `Session_` — cookie jar; `.get(path)`, `.post(path, body)` (throws on HTTP ≠ 200 or `ErrorCode ≠ 0`).
 - `bgfLogin_()` — logs in with `BGF_PW`; throws a Korean message if missing/failed. `svcVars_()` — vars for service calls.
-- `fetchAll_(from, to, known)` — one login, 폐기 then 저회전. A 저회전 error is caught into `jeoErr` (폐기 still imports). Returns `{chits, jeoChits, fetched, items, jeoErr}`. `jeoNote_(r)` — short log suffix.
+- `fetchAll_(from, to, known, session?)` — one login (or the given session), 폐기 then 저회전. A 저회전 error is caught into `jeoErr` (폐기 still imports). Returns `{chits, jeoChits, fetched, items, jeoErr, session}`. `jeoNote_(r)` — short log suffix.
 - `jeoDiv_(s)` — S312 lookup via `/stco010/selComCd`, first CODE whose NAME contains `저회전`; cached in `JEO_DIV`; `''` if not found.
 - `fetchSlips_(s, divCode, onlyChitId, src, from, to, known)` — list call → filter (`CHIT_NO`, optional `CHIT_ID`) → skip slips fully known → group by (date, CHIT_ID, CHIT_FLAG) → detail calls in chunks of 40 (`searchDetailType0` for flag PA, else `Type1`) → item objects `{key, date, time, name, code, cat, qty, wprice, wamt, mprice, mamt, chit, src}`.
 - `ymd_(d)` — `yyyyMMdd` in KST.
@@ -125,7 +126,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 
 **Import another BGF slip type (like 저회전).**
 1. Find its CHIT_ID and detail dataset: read `https://store.bgfretail.com/websrc/deploy/GJ/STGJ020_P1.xfdl.js` (no login needed) for `strTitle` per `case "NN"`, and which `searchDetailType*` case group it is in. If it isn't `Type1`/`dsListType1`, the columns differ — map them in `fetchSlips_`.
-2. Add constants, then a `fetchSlips_` call in `fetchAll_` with its own `src` value (look up the S312 search code by name like `jeoDiv_`, and always filter by CHIT_ID).
+2. Add constants, then a `fetchSlips_` call in `fetchAll_` with its own `src` value (look up the S312 search code by name like `jeoDiv_`, and always filter by CHIT_ID). Add a one-time backfill like `jeoBackfill_`: the live import only reads yesterday..today, so past days stay empty otherwise.
 3. Server rules for tagging in `setTag`; page: a tab (`data-view`, counter id, `.tabs` column count), filters in `renderList` / `whoNames` / `render` counters, buttons in `rowEl`, guard in `tap`.
 4. Update DEVNOTES (sheet column values, protocol, page behavior), this file, HISTORY.
 

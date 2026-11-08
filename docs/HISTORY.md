@@ -38,10 +38,15 @@ Times are KST.
   - Locked down public functions: `setup`, trigger installers, `importThisMonth` need the owner; `nightly` / `liveTick` accept only their own trigger; `importRange_`, `installLiveTrigger_` made private. Why: every non-`_` function is callable from the public link.
 - **01:03 `762e845`** — `setTag` writes only the actor's own name and refuses rows another worker tagged; the page greys those buttons out. Why: closes a way to overwrite or clear someone else's tag.
 - **01:08 `c33e880`** — 취소 tab: the "no earlier 폐기" note is colored so it stands out.
-- **저회전상품철수 import + 저회전 tab; docs overhaul.**
+- **01:39 `e59472e` — 저회전상품철수 import + 저회전 tab; docs overhaul.**
   - The owner asked to pull **통합전표 조회 → 저회전상품철수** slips the same way as 폐기, show them in a new tab right after 취소, allow **취식 only** (never 폐기), and not require every line to be tagged.
   - BGF facts found in the site's static form scripts (no login): the detail popup `GJ/STGJ020_P1.xfdl.js` names CHIT_ID `24` "저회전상품철수전표" and handles it exactly like `04` (폐기): `searchDetailType1` / `dsListType1`. The list screen fills its 전표구분 dropdown from common code `S312` via `/stco010/selComCd`.
   - Server: 폐기목록 gets column S `전표` (`''` = 폐기, `저회전`), added to old sheets by `itemsSheet_()`. `fetchPyegi_` became `fetchAll_` + `fetchSlips_`: one login, 폐기 then 저회전. The 저회전 search code is looked up from S312 by name (`jeoDiv_`, cached in `JEO_DIV`), falling back to 전체; slips are always filtered to CHIT_ID 24. A 저회전 failure never blocks 폐기 (`jeoErr`, logged once per streak via `JEO_ERR`). `appendItems_` also dedupes within one batch. `cancelMatch_` keeps the two kinds apart. `setTag` refuses 폐기 on a 저회전 row. Menu labels say 폐기·저회전.
   - Page: 8th tab **저회전** (after 취소) with an explanation line and a single [취식] button per line; 미등록 and the 월별 합계 미등록 footer ignore 저회전; 전체 shows 폐기 lines only; 취식 tab and my totals include 저회전 취식 (green `저회전` label); 취소 tab labels 저회전 cancels. Tab text shrinks under 380 px so 8 tabs fit at 360 px (checked with a mock page).
   - Not tested against the live BGF site (Claude may not enter the BGF password). First check after deploy: 가져오기 기록 shows `저회전 N장` or `저회전 실패: …`.
   - Docs: DEVNOTES rewritten in detail (Script Properties table, BGF code systems, page behavior, how to check changes, two stale statements about other workers' tags fixed); new `docs/CODEMAP.md` (function map, flows, recipes) and this `docs/HISTORY.md`; CLAUDE.md now requires updating the docs with every change.
+  - Result: deployed fine; the first live run (01:40) logged `저회전 4장` — the BGF path works.
+- **저회전 one-time backfill.**
+  - Problem (reported by the owner): 저회전 showed only 11/8. The live import reads only yesterday..today, so 11/1–11/7 저회전 slips were never requested (폐기 had the same gap and was filled by the one-off 11/1–11/8 import on 11/8).
+  - Fix: `jeoBackfill_` runs once after a successful live import: 저회전 from the earliest 일자 in 폐기목록 to today, reusing that run's login (`fetchAll_` now returns its session). Sets `JEO_BACKFILL=1` on success; a failure is logged and retried at most hourly. New menu item 저회전 지난 날짜 모두 가져오기 runs it on demand.
+  - Lesson (in CODEMAP recipe): any new slip kind needs a backfill for past days.
