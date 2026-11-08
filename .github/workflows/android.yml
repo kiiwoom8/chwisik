@@ -8,6 +8,10 @@ on:
     paths:
       - "app/**"
       - ".github/workflows/android.yml"
+      # the icon script and its source picture don't change the APK; the PNGs it writes do
+      - "!app/make-icons.py"
+      - "!app/icon-source.*"
+      - "!app/icon-preview.png"
   workflow_dispatch:
 
 concurrency:

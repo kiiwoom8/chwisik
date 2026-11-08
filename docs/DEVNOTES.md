@@ -54,7 +54,7 @@ Web app settings (`apps-script/appsscript.json`): **Execute as: Me (owner)**, **
 | `apps-script/appsscript.json` | Manifest: timezone, V8, web app access |
 | `.clasp.json` | clasp config (`rootDir: apps-script`) |
 | `.github/workflows/deploy.yml` | Syntax check → `clasp push` → `clasp deploy` on the staff deployment |
-| `app/` | Android app (Capacitor 7 shell) and installable page: `www/index.html` loader, `manifest.webmanifest`, `sw.js`, icons; `build.mjs` copies `Index.html` to `www/page.html`; `android-res/` icons + splash; `make-icons.py` draws the icons |
+| `app/` | Android app (Capacitor 7 shell) and installable page: `www/index.html` loader, `manifest.webmanifest`, `sw.js`, icons; `build.mjs` copies `Index.html` to `www/page.html`; `android-res/` icons + splash; `make-icons.py` makes the icons from `icon-source.png` |
 | `.github/workflows/android.yml` | Builds the APK on push to `app/**` and publishes release `android-latest` |
 | `.githooks/post-commit`, `scripts/setup-hooks.sh` | Auto-push `main` after every commit |
 | `docs/` | These docs |

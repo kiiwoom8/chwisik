@@ -130,7 +130,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 
 - `www/index.html` — loader: picks `chwisik.page` from localStorage (unless `chwisik.pageTry` says it broke) or fetches `page.html`, injects `CHWISIK_API` / `CHWISIK_PAGE_HASH` + viewport, `document.write`s it. Registers `sw.js` on real HTTPS hosts only (not inside the app, where the origin is `https://localhost`). **The `/exec` URL is hard-coded here**; change it if the deployment ever changes.
 - `www/sw.js` — cache-first for the loader files (installable page only). Bump `CACHE` when the file list changes.
-- `www/manifest.webmanifest`, `www/icon-192.png`, `icon-512.png`, `apple-touch-icon.png`; `android-res/mipmap-*/ic_launcher*.png`, `android-res/drawable/splash.xml`; `make-icons.py` redraws all icons (PIL + Malgun Gothic Bold).
+- `www/manifest.webmanifest`, `www/icon-192.png`, `icon-512.png`, `apple-touch-icon.png`; `android-res/mipmap-*/ic_launcher*.png`, `android-res/drawable/splash.xml`; `make-icons.py` makes all icons from `app/icon-source.png` (the owner's character drawing): white background removed by edge flood fill, only the biggest shape kept (drops the speech bubble), square crop from the top of the head; Android icons transparent, web/iPhone icons on the page background. Needs Pillow, numpy, scipy. Writes `icon-preview.png` to look at.
 - `build.mjs` — `apps-script/Index.html` → `www/page.html` (generated, git-ignored).
 - `capacitor.config.json` — app id `com.kiiwoom8.chwisik`, name 취식, `webDir: www`. `package.json` / `package-lock.json` — Capacitor 7. `android/` is generated in CI (git-ignored).
 
