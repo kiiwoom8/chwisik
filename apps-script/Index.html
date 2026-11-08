@@ -632,11 +632,11 @@ button.srow { cursor: pointer; }
           if (!(s[3] in gi)) { gi[s[3]] = groups.length; groups.push([]); }
           groups[gi[s[3]]].push(s);
         });
-        // 당일 가장 늦게 시작한 근무 순서로: 야간(당일 밤 출근)은 맨 아래
+        // 늦게 시작한 근무가 위로: 야간(당일 밤 출근) → 오후 → 오전 (날짜 목록처럼 최신이 위)
         var day0 = toMin(d, "00:00");
         function lateKey(g) { return Math.max.apply(null, g.map(function (s) { return Math.max(day0, span(s, nowM).a); })); }
         function earlyKey(g) { return Math.min.apply(null, g.map(function (s) { return Math.max(day0, span(s, nowM).a); })); }
-        groups.sort(function (x, y) { return lateKey(x) - lateKey(y) || earlyKey(x) - earlyKey(y); });
+        groups.sort(function (x, y) { return lateKey(y) - lateKey(x) || earlyKey(y) - earlyKey(x); });
         groups.forEach(function (g) { rows.appendChild(shiftEl(g, nowM, d)); });
         sec.appendChild(rows);
       }

@@ -4,6 +4,25 @@ Every change in order, newest last, with the reason behind it. Add an entry with
 
 Times are KST.
 
+## Owner preferences and past corrections — read before changing anything
+
+The owner's settled choices, and the mistakes already made and corrected. Don't undo these or repeat them. When the owner corrects or reverses something, add it here (what was wrong → what is right) in the same commit as the fix, and add the usual dated entry below.
+
+**출근 tab (근무 기록)**
+- One row per person per day. A night worker's two shifts on one day (last night's end + tonight's start) share one row and one bar, not two rows.
+- Order inside a day: latest start on top, **야간 → 오후 → 오전**. (Was first built with 야간 at the bottom on the owner's request, then the owner reversed it; top is current.)
+- Order inside a merged row: latest first, `22:30 – 24:00` above `00:00 – 08:00`.
+- In a merged row tonight's part ends at **`24:00`**, never `00:00`, and never the next-day end (`22:30 – 08:00` under `00:00 – 08:00` was confusing).
+- Length labels for a night shift: before midnight **`당일 N`**, after midnight **`다음날 N`**. But a shift still running after midnight is **`근무 중 · 당일 N`** on today's `00:00 –` line (`다음날` there was wrong). Yesterday's part of it shows as finished (`22:30 – 24:00`), not 근무 중.
+- Use **`당일`**, not `이날`, in page text.
+
+**Header**
+- Sync label: **`마지막 업데이트 HH:mm`** (not `폐기 HH:mm까지`).
+
+**Working with the owner**
+- Requests can be short and ambiguous (e.g. "reverse the sequence" with an example that didn't match). Pick the reading that fits the example and their earlier asks, say which reading you took, and record the outcome here.
+- If the owner reports the old behavior right after a push, the deploy (or the app's page update) may simply not have reached them yet: check the live page (`getPage`) before changing code again.
+
 ## Before the repo
 
 - **2026-11-04 — one-off October split.** The October 폐기 list was copied into Excel Online, then turned into a shared "tap to remove" page (first a Claude artifact, then an Apps Script web app on a sheet named **10월 폐기 정리**) so 4 people could split the items. This showed the need for a permanent tool and for automating the BGF download.
@@ -69,3 +88,4 @@ Times are KST.
 - **`995f505` — 출근 tab: 당일 / 다음날 labels.** The owner asked that a night shift's parts read `당일 1시간 30분` (before midnight) and `다음날 8시간` (after midnight) instead of `이날 …` for both, and that `당일` be used instead of `이날` in page text wherever it reads naturally. Now: the before-midnight part says `당일`; the after-midnight part (carry-over row, finished or `근무 중`) says `다음날`; the empty-time warning says `⚠ 당일 근무 기록이 하나도 없어요.` (the only other `이날` on the page). Verified: syntax check; local mock page shows `22:30 – 24:00 · 당일 1시간 30분` / `00:00 – 08:00 · 다음날 8시간` and `근무 중 · 다음날 N`; live server serves it (`getPage`). Not checked on a phone.
 - **`b89521f` — 출근 tab: `근무 중 · 당일 N` after midnight.** The owner said `근무 중 · 다음날 N` is wrong for a night shift still running after midnight; it should be `근무 중 · 당일 N` (time worked since 00:00 today). Finished after-midnight parts keep `다음날 N`. Verified: syntax check; live server serves it (`getPage`). Not checked on a phone.
 - **Header: `마지막 업데이트 HH:mm`.** The owner asked for "마지막 업데이트 21:31" instead of "폐기 21:31까지" on the sync label (time of the last good BGF import; another day shows `M/d HH:mm`). Verified: syntax check; at 360 px with 이름 바꾸기 + 비밀번호 showing, the longer label drops to its own line under them (the old text fit on the same line); no sideways scroll. Not checked on a phone.
+- **출근 tab: 야간 → 오후 → 오전 from the top; owner-preferences section.** The owner asked that each day's rows go latest start first (야간, then 오후, then 오전), reversing the earlier "야간 at the bottom". Groups are now sorted by latest start that day, descending. The owner also asked that every change be written down so agents don't repeat past mistakes: added "Owner preferences and past corrections" at the top of this file (all of today's 출근 tab corrections and the header label) and a rule in `CLAUDE.md` to read it first and add to it whenever the owner corrects something. Verified: syntax check; local mock page (11/7: 야간 22:30 on top, then 15:30 and 14:00 starts, 06:00 at the bottom). Not checked on a phone.

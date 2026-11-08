@@ -11,7 +11,7 @@ Instructions for Claude (and any other agent or person) working in this repo.
    - If the hook could not push (offline, auth), run `git push origin main` yourself before finishing.
 3. **Before starting work, sync:** `git pull --rebase origin main`.
 4. **Update the docs in the same commit as every change.** A change is not done until the docs match it:
-   - `docs/HISTORY.md`: always add an entry (what changed and why; decisions; anything not verified).
+   - `docs/HISTORY.md`: always add an entry for **every** change, however small (what changed and why; decisions; anything not verified). When the owner corrects or reverses something, also add it to **Owner preferences and past corrections** at the top of that file (what was wrong → what is right), so no agent repeats it. Read that section before changing anything.
    - `docs/DEVNOTES.md`: whenever behavior, sheets/columns, Script Properties, BGF calls, API/row shapes, menu or operations change. Bump its "Last updated" line.
    - `docs/CODEMAP.md`: whenever functions are added, renamed, removed or change role.
    - `docs/ROADMAP.md`: strike through items that got done; add new ideas the owner mentions.
