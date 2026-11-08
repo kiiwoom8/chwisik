@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (sync button: ↻ icon after the label)
+Last updated: 2026-11-09 (header: 이번 달 취식 / 폐기)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -228,7 +228,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
   - 취소 = BGF cancel lines (both kinds; 저회전 ones say so).
 - In the 취식 / 폐기 tabs each line's right button is **취소** (removes that tag) and the left one switches to the other type (hidden for 저회전 lines). Lines tagged by another worker have disabled buttons.
 - Name filter (모두 + names that have something in that tab this month) on every tab except 미등록 and 취소. (일) is red and (토) blue in day headings.
-- Header "이번 달 내 취식 / 폐기" and the 월별 합계 table count 저회전 취식 as 취식; its footer shows only 미등록 **폐기**.
+- Header "이번 달 취식 / 폐기" and the 월별 합계 table count 저회전 취식 as 취식; its footer shows only 미등록 **폐기**.
 - 월별 합계 tab shows every column at once (fits a 360 px phone): **직원별 폐기 / 취식** = 직원 · 폐기 수량 · 폐기 원가 · 취식 수량 · 취식 원가 (취식 on the right; no 매가; the 취식 원가 합계 is red) and **근무 시간** = 직원 · 근무일 · 근무 시간. Names are full names only.
 - Off-shift 폐기 check runs in the page: the line's 생성시각 must fall inside one of the worker's shifts, 30 min grace either side; an open shift counts up to now. Lines with only a date pass if any shift touches that day. Each line shows who was working then (`근무 지은`).
 - **Empty-time warning (출근 tab)**: for each past day of the month, from the first recorded day to yesterday, the page joins everyone's shifts (including overnight ones from the day before) over 00:00–24:00 and lists gaps ≥ 15 min. The store is treated as **open 24 h**. A shift without 퇴근 from a past day counts as unknown. Each gap has **내가 근무했어요**, which opens 근무 직접 입력 prefilled. Hidden while a name filter is on.
