@@ -707,13 +707,14 @@ function cancelMatch_(vals, nums) {
 /**
  * type: '취식' | '폐기' | '' (clear). memberFull: whose tag to write (전체 이름).
  * note: '근무외' when the worker confirmed a 폐기 outside their recorded shift (kept only for 폐기).
- * me/token: who is acting. Writing someone else's name is only allowed to undo your own change
- * (the row must currently be yours or empty).
+ * me/token: who is acting. Only your own name is written, and a row someone else tagged can't be
+ * changed or cleared from the page (the owner can still fix it in the sheet).
  */
 function setTag(rowHint, key, type, memberFull, month, note, me, token) {
   if (['취식', '폐기', ''].indexOf(type) < 0) throw new Error('bad type');
   var actor = authMember_(me || memberFull, token);
-  var mem = type ? (memberFull === actor.full ? actor : memberRow_(memberFull)) : null;
+  if (type && memberFull && memberFull !== actor.full) throw new Error('다른 직원 이름으로는 등록할 수 없어요.');
+  var mem = type ? actor : null;
   note = type === '폐기' && note === OFFSHIFT_NOTE ? OFFSHIFT_NOTE : '';
   withLock_(function () {
     var sh = SpreadsheetApp.getActive().getSheetByName(SH_ITEMS);
@@ -723,17 +724,8 @@ function setTag(rowHint, key, type, memberFull, month, note, me, token) {
       if (!f) throw new Error('항목을 찾지 못했어요. 새로고침해 주세요.');
       row = f.getRow();
     }
-    var cache = CacheService.getScriptCache(), ck = 'undo|' + key;
-    var cur = sh.getRange(row, C.TYPE, 1, 3).getDisplayValues()[0];   // [구분, 등록이름, 직원]
-    if (mem && mem.full !== actor.full) {
-      // Only to undo: this actor just replaced or cleared mem's tag on this row.
-      if ((cur[2] && cur[2] !== actor.full) || cache.get(ck) !== actor.full + '|' + mem.full + '|' + type) {
-        throw new Error('다른 직원 이름으로는 등록할 수 없어요.');
-      }
-      cache.remove(ck);
-    } else if (cur[2] && cur[2] !== actor.full) {
-      cache.put(ck, actor.full + '|' + cur[2] + '|' + cur[0], 600);
-    }
+    var curMember = sh.getRange(row, C.MEMBER).getDisplayValue();
+    if (curMember && curMember !== actor.full) throw new Error(curMember + ' 님이 등록한 항목이라 바꿀 수 없어요.');
     var rng = sh.getRange(row, C.TYPE, 1, 4);
     if (type) {
       var who = type === '취식' ? mem.full : mem.short;

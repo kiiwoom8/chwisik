@@ -470,6 +470,7 @@ button.srow { cursor: pointer; }
       info.appendChild(t);
     }
     var acts = mk("div", "acts");
+    var others = !!(r[9] && r[9] !== S.me);   // 다른 직원이 등록한 줄은 바꾸거나 지울 수 없음
     // 취식 / 폐기 탭: 다른 쪽 버튼은 왼쪽, 오른쪽은 [취소] (이 탭의 등록을 지움)
     var tabType = S.view === "eat" ? "취식" : S.view === "void" ? "폐기" : "";
     var btns = tabType ? [[tabType === "취식" ? "폐기" : "취식", tabType === "취식" ? "void" : "eat"], [tabType, "undo"]] : [["취식", "eat"], ["폐기", "void"]];
@@ -477,6 +478,7 @@ button.srow { cursor: pointer; }
       var undo = p[1] === "undo";
       var bt = mk("button", "stamp " + (undo ? (p[0] === "취식" ? "eat" : "void") + " undo" : p[1] + (r[8] === p[0] ? " on" : "")), undo ? "취소" : p[0]); bt.type = "button";
       if (undo) bt.setAttribute("aria-label", p[0] + " 취소"); else bt.setAttribute("aria-pressed", r[8] === p[0] ? "true" : "false");
+      if (others) { bt.disabled = true; bt.title = "다른 직원이 등록한 항목"; }
       bt.addEventListener("click", function () { tap(r, p[0]); });
       acts.appendChild(bt);
     });
@@ -751,6 +753,7 @@ button.srow { cursor: pointer; }
   /* ---------- 취식 / 폐기 ---------- */
   function tap(r, type) {
     if (!memberOf(S.me)) { openPicker(); return; }
+    if (r[9] && r[9] !== S.me) { snack(shortOf(r[9]) + " 님이 등록한 항목이라 바꿀 수 없어요."); return; }
     var next = r[8] === type ? "" : type;
     if (next === "폐기" && !workedAt(S.me, r[2], GRACE_MIN)) {
       var when = /\d\d:\d\d/.test(String(r[2]).slice(11)) ? dayLabel(r[2]) + " " + String(r[2]).slice(11, 16) : dayLabel(String(r[2]).slice(0, 10));

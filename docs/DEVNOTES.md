@@ -146,7 +146,7 @@ Auth failures throw a message containing `[비밀번호]`; the page then opens t
 
 **Anything public is callable.** Every top-level function in Code.gs whose name does not end in `_` can be called by anyone with the /exec link (`google.script.run` from the browser console), running as the owner. Keep helpers private with a trailing `_`. Menu / editor / trigger functions guard themselves: menu items call `SpreadsheetApp.getUi()` first (throws outside the spreadsheet), `setup`, `installNightlyTrigger`, `importThisMonth` call `adminOnly_()` (active user must be the owner or an editor), and the trigger handlers `nightly(e)` / `liveTick(e)` accept their own trigger's `triggerUid` or else `adminOnly_()`.
 
-`setTag` writes another worker's name only to undo: the actor must have just cleared or replaced that worker's tag on the same row (10-min cache entry `undo|key`), and the row must be empty or the actor's.
+`setTag` only writes the acting worker's own name, and refuses to change or clear a row another worker tagged (the page greys those buttons out). Wrong tags by someone else are fixed by the owner in the sheet (clear columns M–P of that row).
 
 `usual` = `{fullName: [출근, 퇴근], '*': [...]}`: the most frequent closed shift (start+end pair) per worker over the last 90 days (ties → most recent). The 근무 직접 입력 form starts with the worker's own pair, else everyone's.
 
