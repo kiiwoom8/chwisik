@@ -678,7 +678,7 @@ button.srow { cursor: pointer; }
       : cut ? s[4] + " – 24:00"
       : s[4] + " – " + (s[5] ? s[5] + (sp.b - sp.a > 0 && toMin(s[2], s[5]) < sp.a ? " (+1)" : "") : "")));
     right.appendChild(cut ? mk("div", "dur num", "당일 " + dur(day0 + 1440 - sp.a))
-      : sp.live ? mk("div", "dur live", "근무 중 · " + (cont ? "당일 " + dur(nowM - day0) : dur(nowM - sp.a)))
+      : sp.live ? mk("div", "dur live", "근무 중 · " + (cont ? "전날 " + dur(nowM - day0) : dur(nowM - sp.a)))
       : sp.open ? mk("div", "dur stale", "퇴근 기록 없음")
       : mk("div", "dur num", cont ? "전날 " + dur(Math.min(sp.b, day0 + 1440) - day0) : dur(sp.b - sp.a)));
     var track = mk("div", "track"), ovM = 0, ovMax = 0;
@@ -742,7 +742,7 @@ button.srow { cursor: pointer; }
     var names = Object.keys(by).sort(function (a, b) { return (by[b].ew + by[b].vw) - (by[a].ew + by[a].vw); });
     var title = S.month.replace("-", "년 ") + "월 ";
     box.appendChild(table(title + "직원별 취식 / 폐기", ["직원", "취식 수량", "취식 원가", "취식 매가", "폐기 수량", "폐기 원가"],
-      names.map(function (k) { var o = by[k], m = memberOf(k); return { me: k === S.me, cells: [k + (m ? " (" + m.short + ")" : ""), fmt(o.en), fmt(o.ew), fmt(o.em), fmt(o.vn), fmt(o.vw)] }; }),
+      names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.en), fmt(o.ew), fmt(o.em), fmt(o.vn), fmt(o.vw)] }; }),
       ["합계", fmt(tot.en), fmt(tot.ew), fmt(tot.em), fmt(tot.vn), fmt(tot.vw)],
       "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식에는 저회전 취식도 들어가요", [4, 5]));
 
@@ -770,10 +770,10 @@ button.srow { cursor: pointer; }
     var wrap = mk("div"), head = mk("div", "sumhead");
     head.appendChild(mk("h2", "", title));
     if (more.length) {
-      var mb = mk("button", "linkbtn morebtn", S.sumMore ? "접기" : "더보기"); mb.type = "button";
+      var mb = mk("button", "linkbtn morebtn", S.sumMore ? "< 접기" : "더보기 >"); mb.type = "button";
       mb.onclick = function () {
         S.sumMore = !S.sumMore; $("sum").classList.toggle("less", !S.sumMore);
-        Array.prototype.forEach.call(document.querySelectorAll("#sum .morebtn"), function (b) { b.textContent = S.sumMore ? "접기" : "더보기"; });
+        Array.prototype.forEach.call(document.querySelectorAll("#sum .morebtn"), function (b) { b.textContent = S.sumMore ? "< 접기" : "더보기 >"; });
       };
       head.appendChild(mb);
     }
