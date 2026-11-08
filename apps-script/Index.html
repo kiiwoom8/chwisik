@@ -14,6 +14,7 @@
   --eat: #b8620e; --eat-soft: #fbead7; --eat-ink: #ffffff;
   --void: #b0442c; --void-soft: #f5e4de; --focus: #2a62d6;
   --sun: #d1242f; --sat: #1f5fd6;
+  --ov2: #e6ad12; --ov2-ink: #9a6a00; --ov3: #d1242f;
   --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
   --font-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --r: 10px; color-scheme: light;
@@ -25,6 +26,7 @@
     --eat: #f0a35a; --eat-soft: #3a2a17; --eat-ink: #1d1206;
     --void: #ec8a71; --void-soft: #3b231d; --focus: #7aa4ff; color-scheme: dark;
     --sun: #ff7b7b; --sat: #7aa8ff;
+    --ov2: #f2c14e; --ov2-ink: #f2c14e; --ov3: #ff6b6b;
   }
 }
 * { box-sizing: border-box; }
@@ -153,6 +155,11 @@ button.srow { cursor: pointer; }
 .srow .edit { color: var(--accent); }
 .track { grid-column: 1 / -1; position: relative; height: 4px; background: var(--band); border-radius: 2px; overflow: hidden; margin-top: 4px; }
 .track i { position: absolute; top: 0; bottom: 0; background: var(--accent); border-radius: 2px; opacity: .7; }
+.track i.ov2 { background: var(--ov2); opacity: 1; border-radius: 0; }
+.track i.ov3 { background: var(--ov3); opacity: 1; border-radius: 0; }
+.srow .ovnote { font-size: 12px; font-weight: 500; }
+.srow .ovnote.ov2 { color: var(--ov2-ink); }
+.srow .ovnote.ov3 { color: var(--ov3); }
 
 .snack { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(560px, calc(100% - 32px)); background: var(--ink); color: var(--paper); border-radius: 12px; padding: 10px 10px 10px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.25); z-index: 40; font-size: 14px; }
 .snack span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -570,10 +577,52 @@ button.srow { cursor: pointer; }
       : sp.open ? mk("div", "dur stale", "퇴근 기록 없음") : mk("div", "dur num", dur(sp.b - sp.a)));
     el.appendChild(left); el.appendChild(right);
     var track = mk("div", "track"), bar = mk("i");
-    var day0 = toMin(s[2], "00:00"), from = (sp.a - day0) / 1440, to = Math.min(1, (sp.e - day0) / 1440);
-    bar.style.left = (from * 100).toFixed(2) + "%"; bar.style.width = Math.max(0.5, (to - from) * 100).toFixed(2) + "%";
-    track.appendChild(bar); el.appendChild(track);
+    var day0 = toMin(s[2], "00:00");
+    function place(i, a, b) {
+      var from = (a - day0) / 1440, to = Math.min(1, (b - day0) / 1440);
+      i.style.left = (from * 100).toFixed(2) + "%"; i.style.width = Math.max(0.5, (to - from) * 100).toFixed(2) + "%";
+    }
+    place(bar, sp.a, sp.e);
+    track.appendChild(bar);
+    var ov = overlapsOf(s, sp, nowM, day0 + 1440), ovM = 0, ovMax = 0;
+    ov.forEach(function (g) {
+      var i = mk("i", g[2] >= 3 ? "ov3" : "ov2"); place(i, g[0], g[1]); track.appendChild(i);
+      ovM += g[1] - g[0]; ovMax = Math.max(ovMax, g[2]);
+    });
+    el.appendChild(track);
+    if (ovM) {
+      var on = mk("div", "ovnote " + (ovMax >= 3 ? "ov3" : "ov2"), (ovMax >= 3 ? ovMax + "명까지 " : "") + "겹침 " + dur(ovM));
+      left.appendChild(on);
+    }
     return el;
+  }
+
+  /** Parts of shift s worked at the same time as other people: [[from, to, people], ...] with people >= 2. */
+  function overlapsOf(s, sp, nowM, dayEnd) {
+    var lo = sp.a, hi = Math.min(sp.e, dayEnd);
+    if (hi <= lo || (sp.open && !sp.live)) return [];
+    var iv = [], pts = [lo, hi];
+    S.shifts.forEach(function (o) {
+      if (o === s || o[3] === s[3]) return;
+      var op = span(o, nowM);
+      if (op.open && !op.live) return;
+      var a = Math.max(lo, op.a), b = Math.min(hi, op.e);
+      if (b > a) { iv.push([a, b, o[3]]); pts.push(a, b); }
+    });
+    if (!iv.length) return [];
+    pts.sort(function (x, y) { return x - y; });
+    var out = [];
+    for (var k = 0; k + 1 < pts.length; k++) {
+      var a = pts[k], b = pts[k + 1];
+      if (b <= a) continue;
+      var who = {};
+      iv.forEach(function (v) { if (v[0] <= a && v[1] >= b) who[v[2]] = 1; });
+      var n = 1 + Object.keys(who).length;
+      if (n < 2) continue;
+      var last = out[out.length - 1];
+      if (last && last[1] === a && last[2] === n) last[1] = b; else out.push([a, b, n]);
+    }
+    return out;
   }
 
   function renderSum() {
