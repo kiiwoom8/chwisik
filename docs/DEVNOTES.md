@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (저회전 tab: 취소 button on registered lines)
+Last updated: 2026-11-09 (viewport: no `viewport-fit=cover`, fixes white strip at the bottom on phones)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -266,6 +266,7 @@ Set up 2026-11-08.
 - The public link has no Google login. Anyone with it can tag lines under password-less names or add a name. 등록시각 is the audit trail.
 - The 월별 합계 sheet counts tagged lines that BGF later canceled; the page doesn't.
 - Apps Script web apps show a "created by a Google Apps Script user" banner. Normal.
+- The page runs two iframes deep inside Google's `/exec` page, whose own background is white and can't be styled (`addMetaTag` takes only a few names; no `theme-color`). Keep the viewport meta without `viewport-fit=cover`: with it, phones draw the page under the bottom system bar, outside our frame, and Google's white shows there as a strip. `env(safe-area-inset-*)` in the CSS is harmless (0 inside the frame).
 - In Claude's Chrome tab group, the web app's inner frame sometimes stayed blank (extension-side issue). Normal Chrome tabs and phones work.
 - The BGF site page can freeze Chrome's screenshot tool (CDP timeout); use `javascript_tool` to read it instead.
 - Apps Script quotas (consumer account): UrlFetch 20k/day, total trigger runtime 90 min/day. This project uses a small fraction.

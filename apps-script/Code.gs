@@ -594,7 +594,7 @@ function ymd_(d) { return Utilities.formatDate(d, TZ, 'yyyyMMdd'); }
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('직원 취식 목록')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function bumpVersion_() {

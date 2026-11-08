@@ -73,7 +73,7 @@ refreshNow() ─► liveImport_() ────────┘        │        
 
 ### Web app — section `웹앱`
 
-- `doGet()` — serves `Index.html` with the viewport meta.
+- `doGet()` — serves `Index.html` with the viewport meta (`width=device-width, initial-scale=1`; no `viewport-fit=cover`, see DEVNOTES gotchas).
 - `bumpVersion_()`, `version_()` — data version `VER` (also clears the `members` cache key).
 - Members: `memberRows_()`, `members_()` (public shape `{full, short, hasPw}`), `memberRow_(full)` (throws if unknown), `shortName_(full)`, `addMember(full)` (public; sanitizes, appends).
 - Passwords: `secret_(name)`, `b64_`, `pwHash_(full, pw)`, `devHash_(pw)`, `token_(m)`, `authMember_(full, token)` (the auth check every write uses), `login(full, pw)` (public, rate-limited), `setPassword(full, token, newPw)` (public).
