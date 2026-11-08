@@ -8,3 +8,4 @@ node_modules/
 # app (Capacitor): generated
 app/www/page.html
 app/android/
+app/icon-preview.png
