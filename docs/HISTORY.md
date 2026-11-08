@@ -18,6 +18,7 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
 
 **Header**
 - Sync label: **`업데이트 HH:mm`** (not `폐기 HH:mm까지`; `마지막 업데이트 HH:mm` was tried and dropped because it doesn't fit next to the name at 360 px).
+- While refreshing: **`정보 가져오는 중…`** (not `폐기 가져오는 중…`).
 
 **월별 합계 tab**
 - Opens with only the main columns (취식 수량 / 원가, 근무 시간); 폐기 수량, 폐기 원가 and 근무일 sit behind **`더보기 >`** (`>` because the table grows to the right; `< 접기` closes it), so a phone shows the important numbers without sideways scrolling.
@@ -105,3 +106,4 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
 - **`f7f6db6` — 월별 합계: no 취식 매가; 취식 원가 합계 in red.** The owner asked to remove 취식 매가 and to make the 취식 원가 total stand out in red. The table is now 직원 · 취식 수량 · 취식 원가 (+ 폐기 수량 / 폐기 원가 behind `더보기 >`); the footer's 취식 원가 cell has class `hot` (`--void`, the page's red). The 월별 합계 **sheet** still has 매가 totals. Verified: syntax check; local copy of the page against the live server at 360 px (two columns, total `23,869` in red, no sideways scroll); live server serves it (`getPage`). Not checked on a phone.
 - **`383578f` — 출근 tab: `+ 근무 직접 입력`.** The owner asked to drop `(깜빡한 날)` from the add link. Verified: syntax check; live server serves it (`getPage`). Not checked on a phone.
 - **`c7df3ff` — App: pull to refresh loads new page code.** The owner had to close and reopen the app to see a code change. The app already fetched the new page at start but only switched on the next return to the front. Now pull to refresh (and a tap on the sync label) also asks `getPage(hash)` and, if the code changed, reloads into it right away; skipped while a save is on its way or a sheet is open (then the old next-return rule applies). The `/exec` link is unchanged (a browser reload already gets the new page). Verified: syntax check; local app loader + this page as the shipped copy against the live server: a synthetic pull reloaded into the server's page (hash set, `pageTry` cleared); after the deploy, a pull on the current page did not reload (no loop); live server serves it (`getPage`). Phones running an older page get this after one more restart or return to the front (that older page doesn't check on pull). Not checked in the real app.
+- **`정보 가져오는 중…` while refreshing.** The owner asked for `정보 가져오는 중…` instead of `폐기 가져오는 중…` on the sync label during a refresh (pull to refresh or a tap reloads more than 폐기). Preferences section updated. Verified: syntax check; live server serves it (`getPage`). Not checked on a phone.

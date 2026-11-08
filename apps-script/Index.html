@@ -984,7 +984,7 @@ button.srow { cursor: pointer; }
     if (!S.online) { el.className = "sync bad"; el.textContent = "연결 끊김 · 다시 시도 중"; return; }
     el.className = "sync ok";
     var l = S.live;
-    el.textContent = S.refreshing ? "폐기 가져오는 중…"
+    el.textContent = S.refreshing ? "정보 가져오는 중…"
       : l && l.label ? "업데이트 " + l.label + (l.error ? " · BGF 접속 안 됨" : "")
       : "실시간";
   }
