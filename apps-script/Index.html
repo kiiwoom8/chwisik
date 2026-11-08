@@ -99,6 +99,13 @@ main .wrap { padding-block: 8px calc(110px + env(safe-area-inset-bottom, 0px)); 
 .row.t-cancel .tagline { color: var(--muted); font-weight: 400; }
 .row.t-cancel .tagline.orphan { color: var(--void); font-weight: 500; }
 .cxnote { margin: 12px 2px 0; font-size: 13px; color: var(--muted); }
+.tot { margin-top: 12px; background: var(--band); border-radius: var(--r); padding: 10px 12px; display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.tot .tl { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.tot .tl.top { color: var(--ink); font-weight: 500; font-size: 14px; }
+.tot .tl.top b { font-size: 16px; font-weight: 700; }
+.tot.eat .tl.top b { color: var(--eat); }
+.tot .tl.me { color: var(--ink); font-weight: 500; }
+.tot .ppl { display: grid; gap: 2px; border-top: 1px dashed var(--rule); padding-top: 6px; margin-top: 2px; }
 .jeotag { color: var(--accent); font-weight: 500; }
 .empty { text-align: center; color: var(--muted); padding: 40px 12px; }
 
@@ -465,6 +472,7 @@ button.srow { cursor: pointer; }
     var list = $("list");
     list.textContent = "";
     if (S.view === "jeo") list.appendChild(mk("p", "cxnote", "BGF 저회전상품철수 상품이에요. 먹었으면 [취식]을 눌러요. 안 먹은 건 그냥 두면 돼요. 폐기로는 등록할 수 없어요."));
+    if ((S.view === "todo" || S.view === "eat") && vis.length) list.appendChild(totalEl(vis));
     var byDay = [], cur = null;
     vis.forEach(function (r) { var d = r[11] || String(r[2]).slice(0, 10); if (!cur || cur.d !== d) { cur = { d: d, rows: [] }; byDay.push(cur); } cur.rows.push(r); });
     byDay.forEach(function (g) {
@@ -485,6 +493,32 @@ button.srow { cursor: pointer; }
         : !S.rows.length ? "이 달의 폐기 목록이 아직 없어요. 오늘 폐기는 몇 분 안에 자동으로 들어와요."
         : S.view === "todo" ? "모두 등록했어요." : S.view === "all" ? "이 달의 폐기 목록이 아직 없어요." : "아직 등록된 항목이 없어요.";
     } else em.hidden = true;
+  }
+
+  /** 금액합계 card (미등록 / 취식 tabs only): total of the lines shown (원가, same as each line),
+   *  and on 취식 each person's total when more than one person is shown. */
+  function totalEl(vis) {
+    var box = mk("div", "tot" + (S.view === "eat" ? " eat" : "")), tot = { n: 0, w: 0 }, by = {};
+    vis.forEach(function (r) {
+      tot.n += r[4]; tot.w += r[6];
+      if (S.view !== "eat") return;
+      var o = by[r[9]] = by[r[9]] || { n: 0, w: 0 };
+      o.n += r[4]; o.w += r[6];
+    });
+    function line(cls, label, o) {
+      var l = mk("div", "tl " + cls);
+      l.appendChild(mk("span", "", label));
+      l.appendChild(mk("b", "num", fmt(o.n) + "개 · " + fmt(o.w) + "원"));
+      return l;
+    }
+    box.appendChild(line("top", "금액합계", tot));
+    var names = Object.keys(by).sort(function (a, b) { return by[b].w - by[a].w || a.localeCompare(b, "ko"); });
+    if (names.length > 1) {
+      var ppl = mk("div", "ppl");
+      names.forEach(function (k) { ppl.appendChild(line(k === S.me ? "me" : "", k, by[k])); });
+      box.appendChild(ppl);
+    }
+    return box;
   }
 
   function rowEl(r) {
