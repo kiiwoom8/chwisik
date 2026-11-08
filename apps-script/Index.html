@@ -489,6 +489,8 @@ button.srow { cursor: pointer; }
     var tabType = S.view === "eat" ? "취식" : S.view === "void" ? "폐기" : "";
     var btns = tabType ? [[tabType === "취식" ? "폐기" : "취식", tabType === "취식" ? "void" : "eat"], [tabType, "undo"]] : [["취식", "eat"], ["폐기", "void"]];
     if (r[13]) btns = btns.filter(function (p) { return p[0] !== "폐기"; });   // 저회전은 폐기 불가
+    // 저회전 탭: 등록 전 [취식], 등록하면 취식/폐기 탭처럼 [취소]
+    if (S.view === "jeo") btns = [["취식", r[8] === "취식" ? "undo" : "eat"]];
     btns.forEach(function (p) {
       var undo = p[1] === "undo";
       var bt = mk("button", "stamp " + (undo ? (p[0] === "취식" ? "eat" : "void") + " undo" : p[1] + (r[8] === p[0] ? " on" : "")), undo ? "취소" : p[0]); bt.type = "button";

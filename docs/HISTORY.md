@@ -51,3 +51,4 @@ Times are KST.
   - Fix: `jeoBackfill_` runs once after a successful live import: 저회전 from the earliest 일자 in 폐기목록 to today, reusing that run's login (`fetchAll_` now returns its session). Sets `JEO_BACKFILL=1` on success; a failure is logged and retried at most hourly. New menu item 저회전 지난 날짜 모두 가져오기 runs it on demand.
   - Lesson (in CODEMAP recipe): any new slip kind needs a backfill for past days.
   - Result: ran at 01:48 on the first live tick after deploy: `20261101~20261109 (저회전 지난 날짜)`, 27 slips, 40 new lines. 폐기목록 now has 저회전 lines on every day 11/1–11/8 (44 lines in all).
+- **저회전 tab: [취소] on registered lines.** The owner asked for the 저회전 tab to work like the 취식 / 폐기 tabs: a registered line's button now reads **취소** (grey undo style) instead of a highlighted 취식; unregistered lines still show **취식**. Page only (`rowEl`); checked on the mock page at 360 px.

@@ -112,7 +112,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 - Time: `toMin`, `nowMin`, `todayStr`, `curMonth`, `dur`, `dowOf`, `dayLabel`, `dayEl` (red 일 / blue 토), `addDays`, `hm`.
 - Shifts logic: `span(s, nowM)` (`{a, b, open, live, stale, e}`), `openShift`, `workedAt(member, ts, grace)`, `workersAt(ts)`, `gapsOf(d, nowM)`, `checkDays()`, `overlapsOf(…)`.
 - Name filter: `whoNames()` (per view), `curWho()`, `renderWho()`.
-- Render: `render()` (tabs, counters — 미등록 excludes 저회전, 전체 = 폐기 lines, 저회전 = 저회전 lines — then dispatch), `renderList()` (filters per view, groups by day), `rowEl(r)` (buttons per view; 폐기 button removed for 저회전 rows; disabled for other workers' rows), `renderCancels()`, `renderShifts()`, `gapEl`, `shiftEl`, `renderSum()`, `table(…)`.
+- Render: `render()` (tabs, counters — 미등록 excludes 저회전, 전체 = 폐기 lines, 저회전 = 저회전 lines — then dispatch), `renderList()` (filters per view, groups by day), `rowEl(r)` (buttons per view; 폐기 button removed for 저회전 rows; 저회전 tab = one button, 취식 → 취소 once registered; disabled for other workers' rows), `renderCancels()`, `renderShifts()`, `gapEl`, `shiftEl`, `renderSum()`, `table(…)`.
 - Tagging: `tap(r, type)` (guards: picker, other worker, 저회전 + 폐기, off-shift confirm) → `doTag` → `apply` (optimistic) + `send` (`setTag`; rolls back on error) + snack undo.
 - Shifts UI: `call(fn, args, done)` (adds token), `clock`, `openEditor(s, preset)`, `edHint`, `closeEditor`, form submit / delete handlers.
 - Dialogs: `confirmBox`, `closeConfirm`, `openPicker`, `choose`, `openPw`, `closePw`, `savePw`.

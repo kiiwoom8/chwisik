@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (저회전 one-time backfill)
+Last updated: 2026-11-09 (저회전 tab: 취소 button on registered lines)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -213,7 +213,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 - **Tabs** (8, one row, fits 360 px): 출근 · 미등록 · 취식 · 폐기 · 전체 · 취소 · **저회전** · 월별 합계. 출근 is first and always opens first.
   - 미등록 = untagged **폐기** lines (저회전 is never 미등록).
   - 취식 = every 취식 line, 폐기 and 저회전 (저회전 lines carry a green `저회전` label).
-  - 폐기 = 폐기-tagged lines. 전체 = every 폐기-slip line. 저회전 = every 저회전 line, with a one-line explanation on top and a single [취식] button per line.
+  - 폐기 = 폐기-tagged lines. 전체 = every 폐기-slip line. 저회전 = every 저회전 line, with a one-line explanation on top and a single button per line: **[취식]** before it is registered, **[취소]** after (same as the 취식 / 폐기 tabs).
   - 취소 = BGF cancel lines (both kinds; 저회전 ones say so).
 - In the 취식 / 폐기 tabs each line's right button is **취소** (removes that tag) and the left one switches to the other type (hidden for 저회전 lines). Lines tagged by another worker have disabled buttons.
 - Name filter (모두 + names that have something in that tab this month) on every tab except 미등록 and 취소. (일) is red and (토) blue in day headings.
