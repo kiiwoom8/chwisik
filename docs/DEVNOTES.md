@@ -72,6 +72,16 @@ Rules (server-side): from the page a worker can only edit or delete their own ro
 
 ### 직원
 A = full name, B = first name for 폐기 (auto: drops a 1-char surname, or a 2-char one such as 남궁/황보/제갈/선우). Staff can also add themselves from the web app (column C = "웹에서 추가").
+D = 비밀번호(암호): a salted SHA-256 hash of the worker's own password, or empty = no password. Never the password itself. Clearing the cell removes the password.
+
+## Passwords (optional, per name)
+
+- A worker can make, change or remove a password from the page (나: … **비밀번호**). 4–30 characters. No password is fine; then the name works as before.
+- Choosing a name that has a password (🔒) asks for it once per phone. The server returns a token (HMAC of name + hash with the Script Property `TOKEN_KEY`), kept in the phone's localStorage (`chwisik.tok`). Every write sends it: `setTag`, `clockIn`/`clockOut`, `saveShift`, `deleteShift`, `setPassword`. Changing the password changes the token, so other phones must enter the new one.
+- `setTag` checks the **actor** (`me`). It writes another worker's name only to undo the actor's own change (the row must be the actor's or empty at that moment).
+- 5 wrong tries for a name → that name is locked for 10 min (CacheService).
+- **Developer bypass**: spreadsheet menu → **개발자 비밀번호 설정** stores a hash in `DEV_PW_HASH`. Typing that password in any name's password box unlocks that name (then the developer can also change or remove its password from the page). Menu → **직원 비밀번호 지우기** removes one worker's password.
+- Secrets `PW_SALT`, `TOKEN_KEY` are created on first use in Script Properties. Deleting `TOKEN_KEY` logs every phone out; deleting `PW_SALT` makes every stored password invalid (clear column D then).
 
 ### 월별 합계
 A QUERY over 폐기목록 grouped by 월, 구분, 직원, 등록이름, with count, quantity, 원가, and 매가 totals.
@@ -87,6 +97,8 @@ One row per import run: time, date range, slip count, new items, result. Failure
 - **기간 지정해서 가져오기**: e.g. `20261101-20261108`.
 - **매일 자동 가져오기 켜기**: recreates the nightly trigger.
 - **실시간 가져오기 켜기 / 끄기**: the 10-min trigger and the on-open refresh. 끄기 sets `LIVE_OFF=1`; the nightly import keeps running.
+- **개발자 비밀번호 설정**: the password that opens any name (empty = remove it).
+- **직원 비밀번호 지우기**: removes one worker's password.
 
 ## BGF 점포시스템 protocol (reverse-engineered 2026-11-08)
 
@@ -117,14 +129,20 @@ If BGF changes its login (adds a captcha, OTP, or password encryption), the nigh
 
 | Function | Purpose |
 |---|---|
-| `getInit()` | members, list of months (items + shifts), data version, live-import label |
-| `getMonth(month, knownVersion)` | rows + shifts for `yyyy-MM`; returns `null` if `knownVersion` is current (cheap polling) |
-| `setTag(rowHint, key, type, memberFull, month, note)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` is kept only for 폐기. Uses LockService. Returns the fresh month. |
+| `getInit(me, token)` | members (`{full, short, hasPw}`), list of months (items + shifts), data version, live-import label, `meOk` (false = this phone must enter the password again) |
+| `getMonth(month, knownVersion)` | rows + shifts + `usual` for `yyyy-MM`; returns `null` if `knownVersion` is current (cheap polling) |
+| `setTag(rowHint, key, type, memberFull, month, note, me, token)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` is kept only for 폐기. Uses LockService. Returns the fresh month. |
 | `addMember(full)` | adds to 직원 |
-| `clockIn(memberFull, month)` / `clockOut(memberFull, month)` | start a shift now / close the open one now |
-| `saveShift(key, date, memberFull, start, end, memo, month)` | create (`key=''`) or edit own shift; checks format, overlap, future times |
-| `deleteShift(key, memberFull, month)` | delete own shift |
+| `clockIn(memberFull, month, token)` / `clockOut(…)` | start a shift now / close the open one now |
+| `saveShift(key, date, memberFull, start, end, memo, month, token)` | create (`key=''`) or edit own shift; checks format, overlap, future times |
+| `deleteShift(key, memberFull, month, token)` | delete own shift |
+| `login(full, pw)` | returns `{token}`; accepts the developer password too |
+| `setPassword(full, token, newPw)` | `newPw=''` removes it; returns `{token, members}` |
 | `refreshNow()` | live import if the last one was ≥ 2 min ago; returns `{label, error, off, added}` |
+
+Auth failures throw a message containing `[비밀번호]`; the page then opens the password box.
+
+`usual` = `{fullName: [출근, 퇴근], '*': [...]}`: the most frequent closed shift (start+end pair) per worker over the last 90 days (ties → most recent). The 근무 직접 입력 form starts with the worker's own pair, else everyone's.
 
 Row shape sent to the page: `[sheetRow, key, time, name, qty, wprice, wamt, mamt, type, memberFull, who, date, note]`.
 Shift shape: `[sheetRow, key, date, memberFull, start, end, memo]`. A month's shifts also include the last day of the month before (overnight shifts).
@@ -132,6 +150,10 @@ Shift shape: `[sheetRow, key, date, memberFull, start, end, memo]`. A month's sh
 The page polls every 5 s while visible. A Script Property `VER` changes on every write or import (tags, shifts, imports), so unchanged polls return `null`.
 
 The off-shift 폐기 check runs in the page (it already has the month's shifts): the item's 생성시각 must fall inside one of the worker's shifts, with 30 min grace either side; an open shift counts up to now. Items with only a date pass if any shift touches that day. Each item line also shows who was working at that time (`근무 지은`).
+
+**Empty-time warning (출근 tab)**: for each past day of the month, from the first recorded day to yesterday, the page joins everyone's shifts (including overnight ones from the day before) over 00:00–24:00 and lists gaps of 15 min or more ("아무도 기록하지 않은 시간"). The store is treated as **open 24 h**. A shift without 퇴근 from a past day counts as unknown, so it shows as a gap until fixed. Each gap has **내가 근무했어요**, which opens 근무 직접 입력 filled with that date and time (whole empty day → the usual times). Gaps are hidden while a name filter is on.
+
+**Page layout**: the 출근 tab is first and always opens first. Tabs other than 미등록 show a name filter (모두 + names that have something in that tab this month). (일) is red and (토) blue in day headings.
 
 ## Live import (오늘 폐기)
 
@@ -161,7 +183,8 @@ Set up 2026-11-08.
 
 ## Known limits / gotchas
 
-- 출근일지 has no PIN either: anyone can clock in under any name. The 등록시각 column and the owner's review are the check.
+- Names without a password are open: anyone can tag or clock in under them. With a password, only phones that entered it (or the developer password) can.
+- Anyone can still clear or overwrite a tag someone else made (that writes the actor's own name, not theirs).
 - The off-shift warning is advisory: the worker can still save, and the row is marked `근무외`.
 - A line is tagged as a whole. Quantity 3 cannot yet be split into 1 취식 + 2 폐기.
 - The public link has no login. Anyone with it can tag items or add a name. The sheet's 등록시각 column is the audit trail.
@@ -174,3 +197,4 @@ Set up 2026-11-08.
 - 2026-11-04: one-off. October 폐기 list copied into Excel Online; then a shared "tap to remove" page (Claude artifact, then an Apps Script web app on the sheet **10월 폐기 정리**) to split 4 people's items.
 - 2026-11-08: this project. Automated nightly import, one-tap 취식/폐기 tagging, monthly totals. Deployed as v1.
 - 2026-11-08: 출근일지 (clock in/out, manual entry, monthly hours), off-shift 폐기 warning (`근무외`), live import of today's 폐기 (on open + every 10 min, new slips only).
+- 2026-11-09: 출근 tab first/default, name filter, (일)/(토) colors, optional per-name passwords with developer bypass, usual times in 근무 직접 입력, empty-time warning for past days.

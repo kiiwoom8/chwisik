@@ -92,6 +92,9 @@ function onOpen() {
     .addItem('매일 자동 가져오기 켜기', 'installNightlyTrigger')
     .addItem('실시간 가져오기 켜기 (10분마다 + 링크 열 때)', 'menuLiveOn')
     .addItem('실시간 가져오기 끄기', 'menuLiveOff')
+    .addSeparator()
+    .addItem('개발자 비밀번호 설정', 'menuSetDevPw')
+    .addItem('직원 비밀번호 지우기', 'menuClearMemberPw')
     .addToUi();
 }
 
@@ -466,13 +469,111 @@ function bumpVersion_() {
 }
 function version_() { return PropertiesService.getScriptProperties().getProperty('VER') || '0'; }
 
-function members_() {
+/* 직원 columns: A 이름(전체), B 폐기용 이름, C 메모, D 비밀번호(암호) — D holds a salted hash, never the password */
+var MC = { FULL: 1, SHORT: 2, MEMO: 3, PW: 4 };
+var PW_HEADER = '비밀번호(암호)';
+var AUTH_TAG = '[비밀번호]';
+
+function memberRows_() {
   var sh = SpreadsheetApp.getActive().getSheetByName(SH_MEMBERS);
   var n = sh.getLastRow() - 1;
   if (n < 1) return [];
-  return sh.getRange(2, 1, n, 2).getDisplayValues()
-    .filter(function (r) { return String(r[0]).trim(); })
-    .map(function (r) { var full = String(r[0]).trim(); return { full: full, short: String(r[1]).trim() || shortName_(full) }; });
+  return sh.getRange(2, 1, n, 4).getDisplayValues().map(function (r, i) {
+    var full = String(r[0]).trim();
+    return { row: i + 2, full: full, short: String(r[1]).trim() || shortName_(full), pw: String(r[3]).trim() };
+  }).filter(function (m) { return m.full; });
+}
+function members_() {
+  return memberRows_().map(function (m) { return { full: m.full, short: m.short, hasPw: !!m.pw }; });
+}
+function memberRow_(full) {
+  var m = null;
+  memberRows_().forEach(function (x) { if (x.full === full) m = x; });
+  if (!m) throw new Error('직원 목록에 없는 이름이에요. 이름을 다시 골라 주세요.');
+  return m;
+}
+
+/* ---------- 비밀번호 ---------- */
+
+function secret_(name) {
+  var p = PropertiesService.getScriptProperties();
+  var v = p.getProperty(name);
+  if (!v) { v = Utilities.getUuid() + Utilities.getUuid(); p.setProperty(name, v); }
+  return v;
+}
+function b64_(bytes) { return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, ''); }
+function pwHash_(full, pw) {
+  return b64_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, secret_('PW_SALT') + '|' + full + '|' + pw, Utilities.Charset.UTF_8));
+}
+function devHash_(pw) {
+  return b64_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, secret_('PW_SALT') + '|개발자|' + pw, Utilities.Charset.UTF_8));
+}
+/** Changes whenever the member's password changes, so old phones must log in again. */
+function token_(m) {
+  return m.pw ? b64_(Utilities.computeHmacSha256Signature(m.full + '|' + m.pw, secret_('TOKEN_KEY'))).slice(0, 32) : '';
+}
+/** The acting worker. Throws AUTH_TAG error when their password is set and the token is missing or old. */
+function authMember_(full, token) {
+  var m = memberRow_(full);
+  if (m.pw && String(token || '') !== token_(m)) throw new Error(AUTH_TAG + ' ' + m.full + ' 님 비밀번호를 다시 입력해 주세요.');
+  return { full: m.full, short: m.short };
+}
+
+/** Password check. The developer password (Script Property DEV_PW_HASH) opens any name. */
+function login(full, pw) {
+  var m = memberRow_(full);
+  if (!m.pw) return { token: '' };
+  pw = String(pw || '');
+  var cache = CacheService.getScriptCache();
+  var ck = 'pwfail_' + b64_(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, m.full, Utilities.Charset.UTF_8));
+  var fails = Number(cache.get(ck) || 0);
+  if (fails >= 5) throw new Error('비밀번호를 여러 번 틀렸어요. 10분 뒤에 다시 해 주세요.');
+  var dev = PropertiesService.getScriptProperties().getProperty('DEV_PW_HASH');
+  if (pw && (pwHash_(m.full, pw) === m.pw || (dev && devHash_(pw) === dev))) {
+    cache.remove(ck);
+    return { token: token_(m) };
+  }
+  cache.put(ck, String(fails + 1), 600);
+  var left = 5 - fails - 1;
+  if (left <= 0) throw new Error('비밀번호를 5번 틀려서 10분 동안 이 이름을 쓸 수 없어요.');
+  throw new Error('비밀번호가 맞지 않아요.' + (left <= 2 ? ' (' + left + '번 남음)' : ''));
+}
+
+/** Set, change or remove ('') your own password. Needs your current token when one is set. */
+function setPassword(full, token, newPw) {
+  authMember_(full, token);
+  newPw = String(newPw || '');
+  if (newPw && (newPw.length < 4 || newPw.length > 30)) throw new Error('비밀번호는 4~30자로 해 주세요.');
+  return withLock_(function () {
+    var sh = SpreadsheetApp.getActive().getSheetByName(SH_MEMBERS);
+    var m = memberRow_(full);
+    if (sh.getRange(1, MC.PW).getDisplayValue() !== PW_HEADER) sh.getRange(1, MC.PW).setValue(PW_HEADER).setFontWeight('bold');
+    m.pw = newPw ? pwHash_(m.full, newPw) : '';
+    sh.getRange(m.row, MC.PW).setNumberFormat('@').setValue(m.pw);
+    bumpVersion_();
+    return { token: token_(m), members: members_() };
+  });
+}
+
+function menuSetDevPw() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt('개발자 비밀번호', '이 비밀번호는 웹앱에서 어느 직원 이름의 비밀번호 대신 쓸 수 있어요. 비우면 개발자 비밀번호를 없애요.', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var pw = r.getResponseText().trim();
+  var p = PropertiesService.getScriptProperties();
+  if (pw) { p.setProperty('DEV_PW_HASH', devHash_(pw)); ui.alert('개발자 비밀번호를 저장했어요.'); }
+  else { p.deleteProperty('DEV_PW_HASH'); ui.alert('개발자 비밀번호를 없앴어요.'); }
+}
+function menuClearMemberPw() {
+  var ui = SpreadsheetApp.getUi();
+  var r = ui.prompt('직원 비밀번호 지우기', '비밀번호를 지울 직원의 전체 이름 (예: 김성휘)', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  try {
+    var m = memberRow_(r.getResponseText().trim());
+    SpreadsheetApp.getActive().getSheetByName(SH_MEMBERS).getRange(m.row, MC.PW).setValue('');
+    bumpVersion_();
+    ui.alert(m.full + ' 님 비밀번호를 지웠어요. 이제 비밀번호 없이 쓸 수 있어요.');
+  } catch (e) { ui.alert(e.message); }
 }
 function shortName_(full) {
   full = String(full).trim();
@@ -481,20 +582,21 @@ function shortName_(full) {
   return full.length >= 2 ? full.slice(1) : full;
 }
 
-function member_(full) {
-  var mem = null;
-  members_().forEach(function (m) { if (m.full === full) mem = m; });
-  if (!mem) throw new Error('직원 목록에 없는 이름이에요. 이름을 다시 골라 주세요.');
-  return mem;
-}
-
 function withLock_(fn) {
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
-function getInit() {
+/** me/token: the name this phone remembers; meOk = false means it must enter the password again. */
+function getInit(me, token) {
+  var meOk = true;
+  if (me) { try { authMember_(me, token); } catch (e) { meOk = String(e.message).indexOf(AUTH_TAG) < 0; } }
+  var out = getInitData_();
+  out.meOk = meOk;
+  return out;
+}
+function getInitData_() {
   var ss = SpreadsheetApp.getActive();
   var months = {};
   [[ss.getSheetByName(SH_ITEMS), C.MONTH], [ss.getSheetByName(SH_SHIFTS), SC.MONTH]].forEach(function (p) {
@@ -525,16 +627,20 @@ function getMonth(month, knownVersion) {
         Number(nums[i][1]) || 0, Number(nums[i][2]) || 0, Number(nums[i][4]) || 0, r[C.TYPE - 1], r[C.MEMBER - 1], r[C.WHO - 1], r[C.DATE - 1], r[C.NOTE - 1]]);
     }
   }
-  return { version: v, month: month, rows: rows, shifts: shiftsFor_(month), members: members_() };
+  var all = readShifts_();
+  return { version: v, month: month, rows: rows, shifts: shiftsFor_(month, all), usual: usualShifts_(all), members: members_() };
 }
 
 /**
- * type: '취식' | '폐기' | '' (clear). memberFull: 전체 이름.
+ * type: '취식' | '폐기' | '' (clear). memberFull: whose tag to write (전체 이름).
  * note: '근무외' when the worker confirmed a 폐기 outside their recorded shift (kept only for 폐기).
+ * me/token: who is acting. Writing someone else's name is only allowed to undo your own change
+ * (the row must currently be yours or empty).
  */
-function setTag(rowHint, key, type, memberFull, month, note) {
+function setTag(rowHint, key, type, memberFull, month, note, me, token) {
   if (['취식', '폐기', ''].indexOf(type) < 0) throw new Error('bad type');
-  var mem = type ? member_(memberFull) : null;
+  var actor = authMember_(me || memberFull, token);
+  var mem = type ? (memberFull === actor.full ? actor : memberRow_(memberFull)) : null;
   note = type === '폐기' && note === OFFSHIFT_NOTE ? OFFSHIFT_NOTE : '';
   withLock_(function () {
     var sh = SpreadsheetApp.getActive().getSheetByName(SH_ITEMS);
@@ -543,6 +649,10 @@ function setTag(rowHint, key, type, memberFull, month, note) {
       var f = sh.getRange('A:A').createTextFinder(key).matchEntireCell(true).findNext();
       if (!f) throw new Error('항목을 찾지 못했어요. 새로고침해 주세요.');
       row = f.getRow();
+    }
+    if (mem && mem.full !== actor.full) {
+      var curMember = sh.getRange(row, C.MEMBER).getDisplayValue();
+      if (curMember && curMember !== actor.full) throw new Error('다른 직원 이름으로는 등록할 수 없어요.');
     }
     var rng = sh.getRange(row, C.TYPE, 1, 4);
     if (type) {
@@ -603,13 +713,39 @@ function readShifts_() {
 }
 
 /** Shifts that start in the month, plus the last day of the month before (overnight shifts). */
-function shiftsFor_(month) {
+function shiftsFor_(month, all) {
   if (!/^\d{4}-\d\d$/.test(month)) return [];
-  var first = month + '-01';
   var prev = Utilities.formatDate(new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7) - 1, 1) - 12 * 3600 * 1000), 'UTC', 'yyyy-MM-dd');
   var last = month + '-31';
-  return readShifts_().filter(function (s) { return s.date >= prev && s.date <= last; })
+  return (all || readShifts_()).filter(function (s) { return s.date >= prev && s.date <= last; })
     .map(function (s) { return [s.row, s.key, s.date, s.member, s.start, s.end, s.memo]; });
+}
+
+/**
+ * Most frequent (출근, 퇴근) pair per worker over the last 90 days, used as the default when
+ * entering a shift by hand. '*' = everyone. Ties go to the most recent shift.
+ */
+function usualShifts_(all) {
+  var since = Utilities.formatDate(new Date(Date.now() - 90 * 24 * 3600 * 1000), TZ, 'yyyy-MM-dd');
+  var cnt = {}, out = {};
+  all.forEach(function (s) {
+    if (!s.end || s.date < since) return;
+    [s.member, '*'].forEach(function (who) {
+      var k = s.start + '|' + s.end;
+      var c = cnt[who] = cnt[who] || {};
+      var o = c[k] = c[k] || { n: 0, last: '' };
+      o.n++; if (s.date > o.last) o.last = s.date;
+    });
+  });
+  Object.keys(cnt).forEach(function (who) {
+    var best = null, bk = '';
+    Object.keys(cnt[who]).forEach(function (k) {
+      var o = cnt[who][k];
+      if (!best || o.n > best.n || (o.n === best.n && o.last > best.last)) { best = o; bk = k; }
+    });
+    out[who] = bk.split('|');
+  });
+  return out;
 }
 
 function openShiftOf_(all, member, nowM) {
@@ -645,8 +781,8 @@ function writeShift_(sh, row, s) {
     s.memo || '', Utilities.formatDate(new Date(), TZ, 'MM/dd HH:mm'), s.date.slice(0, 7)]]);
 }
 
-function clockIn(memberFull, month) {
-  var mem = member_(memberFull);
+function clockIn(memberFull, month, token) {
+  var mem = authMember_(memberFull, token);
   withLock_(function () {
     var sh = shiftSheet_();
     var all = readShifts_(), nowM = nowMin_(), now = new Date();
@@ -663,8 +799,8 @@ function clockIn(memberFull, month) {
   return getMonth(month || '', '');
 }
 
-function clockOut(memberFull, month) {
-  var mem = member_(memberFull);
+function clockOut(memberFull, month, token) {
+  var mem = authMember_(memberFull, token);
   withLock_(function () {
     var sh = shiftSheet_();
     var all = readShifts_(), nowM = nowMin_();
@@ -678,8 +814,8 @@ function clockOut(memberFull, month) {
 }
 
 /** key '' = new. end '' = still working. */
-function saveShift(key, date, memberFull, start, end, memo, month) {
-  var mem = member_(memberFull);
+function saveShift(key, date, memberFull, start, end, memo, month, token) {
+  var mem = authMember_(memberFull, token);
   date = String(date || ''); start = String(start || '').slice(0, 5); end = String(end || '').slice(0, 5);
   memo = String(memo || '').replace(/^[=+\-@]+/, '').trim().slice(0, 40);
   if (!/^\d{4}-\d\d-\d\d$/.test(date)) throw new Error('날짜를 골라 주세요.');
@@ -713,8 +849,8 @@ function saveShift(key, date, memberFull, start, end, memo, month) {
   return getMonth(month || '', '');
 }
 
-function deleteShift(key, memberFull, month) {
-  var mem = member_(memberFull);
+function deleteShift(key, memberFull, month, token) {
+  var mem = authMember_(memberFull, token);
   withLock_(function () {
     var sh = shiftSheet_();
     var cur = null;

@@ -13,6 +13,7 @@
   --accent: #0e6b52; --accent-ink: #ffffff; --accent-soft: #dfeee8;
   --eat: #b8620e; --eat-soft: #fbead7; --eat-ink: #ffffff;
   --void: #b0442c; --void-soft: #f5e4de; --focus: #2a62d6;
+  --sun: #d1242f; --sat: #1f5fd6;
   --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
   --font-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --r: 10px; color-scheme: light;
@@ -23,6 +24,7 @@
     --accent: #4fc49d; --accent-ink: #0a1913; --accent-soft: #1b3a2f;
     --eat: #f0a35a; --eat-soft: #3a2a17; --eat-ink: #1d1206;
     --void: #ec8a71; --void-soft: #3b231d; --focus: #7aa4ff; color-scheme: dark;
+    --sun: #ff7b7b; --sat: #7aa8ff;
   }
 }
 * { box-sizing: border-box; }
@@ -97,6 +99,17 @@ tr.meRow td:first-child { color: var(--accent); font-weight: 700; }
 .sheet { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
 .sheet .card { background: var(--sheet); width: min(560px, 100%); border-radius: 16px 16px 0 0; padding: 18px max(16px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 12px; max-height: 85vh; overflow-y: auto; }
 #confirm { z-index: 35; }
+#pwSheet { z-index: 33; }
+.sun { color: var(--sun); }
+.sat { color: var(--sat); }
+.whobar { display: flex; gap: 6px; overflow-x: auto; padding: 12px 0 2px; scrollbar-width: none; }
+.whobar::-webkit-scrollbar { display: none; }
+.wchip { flex: none; border: 1px solid var(--rule); background: var(--sheet); border-radius: 999px; padding: 6px 12px; font-size: 13.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.wchip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.gapnote { margin-top: 12px; padding: 10px 12px; border-radius: var(--r); background: var(--void-soft); font-size: 13.5px; }
+.gapwarn { margin: 6px 0; padding: 8px 12px; border-radius: var(--r); background: var(--void-soft); font-size: 13px; display: grid; gap: 2px; }
+.gapwarn .gw-t { color: var(--void); font-weight: 500; }
+.gapwarn .gw-l { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .card h2 { margin: 0; font-size: 17px; }
 .card p { margin: 0; color: var(--muted); font-size: 13.5px; }
 .names { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
@@ -153,17 +166,17 @@ button.srow { cursor: pointer; }
     <h1>직원 취식 목록</h1>
     <div class="month"><button type="button" id="mPrev" aria-label="이전 달">‹</button><span class="num" id="mLabel">–</span><button type="button" id="mNext" aria-label="다음 달">›</button></div>
   </div>
-  <div class="me"><span>나:</span><b id="meName">–</b><button class="linkbtn" id="meChange" type="button">이름 바꾸기</button><button type="button" class="sync" id="sync" title="눌러서 새로고침">불러오는 중</button></div>
+  <div class="me"><span>나:</span><b id="meName">–</b><button class="linkbtn" id="meChange" type="button">이름 바꾸기</button><button class="linkbtn" id="mePw" type="button" hidden>비밀번호</button><button type="button" class="sync" id="sync" title="눌러서 새로고침">불러오는 중</button></div>
   <div class="mine">
     <div class="eat">이번 달 내 취식<b class="num" id="myEat">–</b></div>
     <div>이번 달 내 폐기<b class="num" id="myVoid">–</b></div>
   </div>
   <div class="tabs" role="tablist">
-    <button class="tab" role="tab" data-view="todo" aria-selected="true">미등록<span class="num" id="c-todo"></span></button>
+    <button class="tab" role="tab" data-view="shift" aria-selected="true">출근<span class="num" id="c-shift"></span></button>
+    <button class="tab" role="tab" data-view="todo" aria-selected="false">미등록<span class="num" id="c-todo"></span></button>
     <button class="tab" role="tab" data-view="eat" aria-selected="false">취식<span class="num" id="c-eat"></span></button>
     <button class="tab" role="tab" data-view="void" aria-selected="false">폐기<span class="num" id="c-void"></span></button>
     <button class="tab" role="tab" data-view="all" aria-selected="false">전체<span class="num" id="c-all"></span></button>
-    <button class="tab" role="tab" data-view="shift" aria-selected="false">출근<span class="num" id="c-shift"></span></button>
     <button class="tab" role="tab" data-view="sum" aria-selected="false">월별<span class="num">합계</span></button>
   </div>
   <input class="search" id="q" type="search" placeholder="상품명 검색" autocomplete="off">
@@ -171,6 +184,7 @@ button.srow { cursor: pointer; }
 
 <main><div class="wrap">
   <div class="notice" id="status" hidden></div>
+  <div class="whobar" id="whoBar" hidden aria-label="이름으로 보기"></div>
   <div id="list"></div>
   <div id="shifts" hidden></div>
   <div class="sum" id="sum" hidden></div>
@@ -210,6 +224,15 @@ button.srow { cursor: pointer; }
   </div>
 </div>
 
+<div class="sheet" id="pwSheet" hidden>
+  <form class="card" id="pwForm" role="dialog" aria-modal="true" aria-labelledby="pwTitle" novalidate>
+    <h2 id="pwTitle">비밀번호</h2>
+    <p id="pwText"></p>
+    <label class="fld">비밀번호<input type="password" id="pwInput" maxlength="30" autocomplete="current-password"></label>
+    <div class="btnrow"><button type="button" class="ghost danger" id="pwRemove" hidden>없애기</button><span class="sp"></span><button type="button" class="ghost" id="pwCancel">취소</button><button type="submit" class="primary" id="pwOk">확인</button></div>
+  </form>
+</div>
+
 <div class="snack" id="snack" hidden role="status" aria-live="polite"><span id="snackText"></span><button type="button" id="snackUndo">되돌리기</button></div>
 
 <script>
@@ -219,17 +242,20 @@ button.srow { cursor: pointer; }
   var GRACE_MIN = 30;          // 근무 시작 전/끝난 뒤 이 시간까지는 근무 중으로 봄 (폐기 경고)
   var OPEN_MAX_MIN = 16 * 60;  // 퇴근 안 찍은 근무는 16시간까지만 근무 중
   var OFFSHIFT = "근무외";
+  var GAP_MIN = 15;            // 지난 날 근무 기록 사이 이보다 긴 빈 시간은 경고 (가게는 24시간 기준)
   var DOW = ["일", "월", "화", "수", "목", "금", "토"];
-  var VIEWS = ["todo", "eat", "void", "all", "shift", "sum"];
-  var K_ME = "chwisik.me", K_VIEW = "chwisik.view";
-  var S = { months: [], month: "", version: "", rows: [], shifts: [], members: [], me: "", view: "todo", q: "", busy: 0, live: null, refreshing: false, online: true };
+  var K_ME = "chwisik.me", K_TOK = "chwisik.tok";
+  var S = { months: [], month: "", version: "", rows: [], shifts: [], usual: {}, members: [], me: "", view: "shift", who: "", q: "", busy: 0, live: null, refreshing: false, online: true };
   var $ = function (id) { return document.getElementById(id); };
   var fmt = function (n) { return Number(n || 0).toLocaleString("ko-KR"); };
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function mk(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   S.me = lsGet(K_ME) || "";
-  (function () { var v = lsGet(K_VIEW); if (VIEWS.indexOf(v) >= 0) S.view = v; })();
+  var TOK = (function () { try { return JSON.parse(lsGet(K_TOK) || "{}") || {}; } catch (e) { return {}; } })();
+  function tok(name) { return TOK[name || S.me] || ""; }
+  function setTok(name, t) { if (t) TOK[name] = t; else delete TOK[name]; lsSet(K_TOK, JSON.stringify(TOK)); }
+  function isAuthErr(e) { return String((e && e.message) || "").indexOf("[비밀번호]") >= 0; }
 
   function run(fn) {
     var args = Array.prototype.slice.call(arguments, 1);
@@ -238,7 +264,7 @@ button.srow { cursor: pointer; }
       r[fn].apply(r, args);
     });
   }
-  function errMsg(e, dflt) { return (e && e.message) || dflt || "연결을 확인해 주세요"; }
+  function errMsg(e, dflt) { return String((e && e.message) || dflt || "연결을 확인해 주세요").replace(/^(Error|Exception):\s*/, "").replace("[비밀번호] ", ""); }
   function status(msg) { var el = $("status"); el.hidden = !msg; el.textContent = msg || ""; }
   function memberOf(full) { for (var i = 0; i < S.members.length; i++) if (S.members[i].full === full) return S.members[i]; return null; }
   function shortOf(full) { var m = memberOf(full); return m ? m.short : full; }
@@ -249,7 +275,17 @@ button.srow { cursor: pointer; }
   function todayStr() { return new Date(Date.now() + 540 * 60000).toISOString().slice(0, 10); }
   function curMonth() { return todayStr().slice(0, 7); }
   function dur(m) { m = Math.max(0, Math.round(m)); var h = Math.floor(m / 60), r = m % 60; return h ? h + "시간" + (r ? " " + r + "분" : "") : r + "분"; }
-  function dayLabel(d) { var y = +d.slice(0, 4), m = +d.slice(5, 7), dd = +d.slice(8, 10); return m + "월 " + dd + "일 (" + DOW[new Date(y, m - 1, dd).getDay()] + ")"; }
+  function dowOf(d) { return new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)).getDay(); }
+  function dayLabel(d) { return +d.slice(5, 7) + "월 " + +d.slice(8, 10) + "일 (" + DOW[dowOf(d)] + ")"; }
+  /** Day heading: (일) in red, (토) in blue */
+  function dayEl(d) {
+    var b = mk("b", "", +d.slice(5, 7) + "월 " + +d.slice(8, 10) + "일 ");
+    var w = dowOf(d);
+    b.appendChild(mk("span", w === 0 ? "sun" : w === 6 ? "sat" : "", "(" + DOW[w] + ")"));
+    return b;
+  }
+  function addDays(d, n) { return new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10) + n)).toISOString().slice(0, 10); }
+  function hm(min) { min = ((min % 1440) + 1440) % 1440; return ("0" + Math.floor(min / 60)).slice(-2) + ":" + ("0" + (min % 60)).slice(-2); }
 
   /* shift: [sheetRow, key, date, memberFull, start, end, memo] */
   function span(s, nowM) {
@@ -278,6 +314,58 @@ button.srow { cursor: pointer; }
       return sp.a - grace <= hi && lo <= sp.e + grace;
     });
   }
+  /** Stretches of a past day nobody recorded: [[fromMin, toMin], …] (minutes on the toMin() line). */
+  function gapsOf(d, nowM) {
+    var d0 = toMin(d, "00:00"), d1 = d0 + 1440, prev = addDays(d, -1);
+    var segs = [];
+    S.shifts.forEach(function (s) {
+      if (s[2] !== d && s[2] !== prev) return;
+      var sp = span(s, nowM);
+      if (sp.open && !sp.live) return; // 퇴근 기록 없는 지난 근무는 끝을 모르니 빈 시간으로 봄
+      var a = Math.max(sp.a, d0), b = Math.min(sp.e, d1);
+      if (b > a) segs.push([a, b]);
+    });
+    segs.sort(function (x, y) { return x[0] - y[0]; });
+    var gaps = [], at = d0;
+    segs.forEach(function (g) { if (g[0] - at >= GAP_MIN) gaps.push([at, g[0]]); at = Math.max(at, g[1]); });
+    if (d1 - at >= GAP_MIN) gaps.push([at, d1]);
+    return gaps;
+  }
+  /** Past days of this month that should be checked: from the first recorded day to yesterday. */
+  function checkDays() {
+    var first = null, today = todayStr(), out = [];
+    S.shifts.forEach(function (s) { if (s[2].slice(0, 7) === S.month && (!first || s[2] < first)) first = s[2]; });
+    if (!first) return out;
+    for (var d = first; d < today && d.slice(0, 7) === S.month; d = addDays(d, 1)) out.push(d);
+    return out;
+  }
+  /** Names that have something in the current tab this month (for the name filter). */
+  function whoNames() {
+    var set = {};
+    if (S.view === "shift" || S.view === "sum") S.shifts.forEach(function (s) { if (s[2].slice(0, 7) === S.month) set[s[3]] = 1; });
+    if (S.view !== "shift") S.rows.forEach(function (r) {
+      if (!r[8] || !r[9]) return;
+      if (S.view === "eat" && r[8] !== "취식") return;
+      if (S.view === "void" && r[8] !== "폐기") return;
+      set[r[9]] = 1;
+    });
+    return Object.keys(set).sort(function (a, b) { return a === S.me ? -1 : b === S.me ? 1 : a.localeCompare(b, "ko"); });
+  }
+  function curWho() { return S.view !== "todo" && S.who && whoNames().indexOf(S.who) >= 0 ? S.who : ""; }
+  function renderWho() {
+    var bar = $("whoBar"); bar.textContent = "";
+    var names = S.view === "todo" ? [] : whoNames();
+    bar.hidden = !names.length;
+    if (!names.length) return;
+    var cur = curWho();
+    [""].concat(names).forEach(function (n) {
+      var b = mk("button", "wchip", n || "모두"); b.type = "button";
+      b.setAttribute("aria-pressed", n === cur ? "true" : "false");
+      b.addEventListener("click", function () { S.who = n; render(); });
+      bar.appendChild(b);
+    });
+  }
+
   function workersAt(ts) {
     var seen = {};
     return S.shifts.filter(function (s) {
@@ -312,6 +400,9 @@ button.srow { cursor: pointer; }
     $("myEat").textContent = fmt(myEat.n) + "개 · " + fmt(myEat.w) + "원";
     $("myVoid").textContent = fmt(myVoid.n) + "개 · " + fmt(myVoid.w) + "원";
     renderSync();
+    renderWho();
+    $("mePw").textContent = mm && mm.hasPw ? "비밀번호 🔒" : "비밀번호";
+    $("mePw").hidden = !mm;
 
     var isSum = S.view === "sum", isShift = S.view === "shift";
     $("list").hidden = isSum || isShift; $("sum").hidden = !isSum; $("shifts").hidden = !isShift; $("q").hidden = isSum || isShift;
@@ -321,9 +412,10 @@ button.srow { cursor: pointer; }
   }
 
   function renderList() {
-    var q = S.q.trim().toLowerCase();
+    var q = S.q.trim().toLowerCase(), who = curWho();
     var vis = S.rows.filter(function (r) {
       var t = r[8];
+      if (who && r[9] !== who) return false;
       if (S.view === "todo" && t) return false;
       if (S.view === "eat" && t !== "취식") return false;
       if (S.view === "void" && t !== "폐기") return false;
@@ -337,7 +429,7 @@ button.srow { cursor: pointer; }
     byDay.forEach(function (g) {
       var sec = mk("section", "day");
       var head = mk("div", "day-head");
-      head.appendChild(mk("b", "", dayLabel(g.d)));
+      head.appendChild(dayEl(g.d));
       head.appendChild(mk("span", "num", g.rows.length + "건"));
       var rows = mk("div", "rows");
       g.rows.forEach(function (r) { rows.appendChild(rowEl(r)); });
@@ -347,6 +439,7 @@ button.srow { cursor: pointer; }
     if (!vis.length) {
       em.hidden = false;
       em.textContent = q ? "‘" + S.q.trim() + "’에 맞는 항목이 없어요."
+        : who ? who + " 님 항목이 없어요."
         : !S.rows.length ? "이 달의 폐기 목록이 아직 없어요. 오늘 폐기는 몇 분 안에 자동으로 들어와요."
         : S.view === "todo" ? "모두 등록했어요." : "아직 등록된 항목이 없어요.";
     } else em.hidden = true;
@@ -410,24 +503,54 @@ button.srow { cursor: pointer; }
     }
     box.appendChild(card);
 
-    var mine = S.shifts.filter(function (s) { return s[2].slice(0, 7) === S.month; })
-      .sort(function (a, b) { return a[2] !== b[2] ? (a[2] < b[2] ? 1 : -1) : (a[4] < b[4] ? -1 : a[4] > b[4] ? 1 : 0); });
-    var byDay = [], cur = null;
-    mine.forEach(function (s) { if (!cur || cur.d !== s[2]) { cur = { d: s[2], list: [] }; byDay.push(cur); } cur.list.push(s); });
-    byDay.forEach(function (g) {
+    var who = curWho();
+    var byDate = {};
+    S.shifts.forEach(function (s) { if (s[2].slice(0, 7) === S.month && (!who || s[3] === who)) (byDate[s[2]] = byDate[s[2]] || []).push(s); });
+    var gapsBy = {}, gapDays = 0;
+    if (!who) checkDays().forEach(function (d) { var g = gapsOf(d, nowM); if (g.length) { gapsBy[d] = g; gapDays++; } });
+    if (gapDays) {
+      var nt = mk("div", "gapnote", "지난 " + gapDays + "일에 아무도 기록하지 않은 시간이 있어요. 그때 근무했으면 ‘내가 근무했어요’를 눌러 적어 주세요.");
+      box.appendChild(nt);
+    }
+    var dates = Object.keys(byDate).concat(Object.keys(gapsBy).filter(function (d) { return !byDate[d]; })).sort().reverse();
+    dates.forEach(function (d) {
+      var list = (byDate[d] || []).sort(function (a, b) { return a[4] < b[4] ? -1 : a[4] > b[4] ? 1 : 0; });
       var sec = mk("section", "day");
       var head = mk("div", "day-head");
       var total = 0;
-      g.list.forEach(function (s) { var sp = span(s, nowM); if (!sp.open) total += sp.b - sp.a; });
-      head.appendChild(mk("b", "", dayLabel(g.d)));
-      head.appendChild(mk("span", "num", g.list.length + "명" + (total ? " · " + dur(total) : "")));
-      var rows = mk("div", "rows");
-      g.list.forEach(function (s) { rows.appendChild(shiftEl(s, nowM)); });
-      sec.appendChild(head); sec.appendChild(rows); box.appendChild(sec);
+      list.forEach(function (s) { var sp = span(s, nowM); if (!sp.open) total += sp.b - sp.a; });
+      head.appendChild(dayEl(d));
+      head.appendChild(mk("span", "num", list.length ? list.length + "명" + (total ? " · " + dur(total) : "") : "기록 없음"));
+      sec.appendChild(head);
+      if (gapsBy[d]) sec.appendChild(gapEl(d, gapsBy[d]));
+      if (list.length) {
+        var rows = mk("div", "rows");
+        list.forEach(function (s) { rows.appendChild(shiftEl(s, nowM)); });
+        sec.appendChild(rows);
+      }
+      box.appendChild(sec);
     });
     var em = $("emptyMsg");
-    em.hidden = !!byDay.length;
-    em.textContent = "이 달의 근무 기록이 아직 없어요. 출근할 때 [출근]을 눌러 주세요.";
+    em.hidden = !!dates.length;
+    em.textContent = who ? who + " 님의 이 달 근무 기록이 없어요." : "이 달의 근무 기록이 아직 없어요. 출근할 때 [출근]을 눌러 주세요.";
+  }
+
+  function gapEl(d, gaps) {
+    var box = mk("div", "gapwarn");
+    var whole = gaps.length === 1 && gaps[0][1] - gaps[0][0] >= 1440;
+    box.appendChild(mk("div", "gw-t", whole ? "⚠ 이날 근무 기록이 하나도 없어요. 누가 근무했나요?" : "⚠ 아무도 기록하지 않은 시간이 있어요. 누가 근무했나요?"));
+    gaps.forEach(function (g) {
+      var line = mk("div", "gw-l");
+      var len = g[1] - g[0];
+      line.appendChild(mk("span", "num", whole ? "하루 종일" : hm(g[0]) + " – " + (g[1] - toMin(d, "00:00") >= 1440 ? "24:00" : hm(g[1])) + " (" + dur(len) + ")"));
+      var b = mk("button", "linkbtn", "내가 근무했어요"); b.type = "button";
+      b.addEventListener("click", function () {
+        openEditor(null, whole ? { date: d } : { date: d, start: hm(g[0]), end: hm(g[1]), memo: "빈 시간 채움" });
+      });
+      line.appendChild(b);
+      box.appendChild(line);
+    });
+    return box;
   }
 
   function shiftEl(s, nowM) {
@@ -455,9 +578,10 @@ button.srow { cursor: pointer; }
 
   function renderSum() {
     var box = $("sum"); box.textContent = "";
-    var by = {}, tot = { en: 0, ew: 0, em: 0, vn: 0, vw: 0 }, todo = { n: 0, w: 0 };
+    var by = {}, tot = { en: 0, ew: 0, em: 0, vn: 0, vw: 0 }, todo = { n: 0, w: 0 }, who = curWho();
     S.rows.forEach(function (r) {
       if (!r[8]) { todo.n += r[4]; todo.w += r[6]; return; }
+      if (who && r[9] !== who) return;
       var k = r[9] || "(이름 없음)";
       var o = by[k] = by[k] || { en: 0, ew: 0, em: 0, vn: 0, vw: 0 };
       if (r[8] === "취식") { o.en += r[4]; o.ew += r[6]; o.em += r[7]; tot.en += r[4]; tot.ew += r[6]; tot.em += r[7]; }
@@ -472,7 +596,7 @@ button.srow { cursor: pointer; }
 
     var nowM = nowMin(), hb = {}, totM = 0, openN = 0;
     S.shifts.forEach(function (s) {
-      if (s[2].slice(0, 7) !== S.month) return;
+      if (s[2].slice(0, 7) !== S.month || (who && s[3] !== who)) return;
       var sp = span(s, nowM);
       if (sp.open) { openN++; return; }
       var o = hb[s[3]] = hb[s[3]] || { days: {}, m: 0 };
@@ -547,24 +671,26 @@ button.srow { cursor: pointer; }
   }
   function send(r, type, prev, asMember, note) {
     S.busy++;
-    run("setTag", r[0], r[1], type, asMember || S.me, S.month, note || "").then(function (res) {
+    run("setTag", r[0], r[1], type, asMember || S.me, S.month, note || "", S.me, tok()).then(function (res) {
       S.busy--;
       if (S.busy === 0 && res) take(res);
       setOnline(true);
     }, function (e) {
       S.busy--;
       r[8] = prev.type; r[9] = prev.member; r[10] = prev.who; r[12] = prev.note || ""; render();
+      if (isAuthErr(e)) { openPw("login", S.me); snack(errMsg(e)); return; }
       setOnline(false);
       snack("저장하지 못했어요: " + errMsg(e));
     });
   }
 
   /* ---------- 출근일지 ---------- */
+  /** Shift calls; the token is always the last argument. */
   function call(fn, args, done) {
     S.busy++;
-    return run.apply(null, [fn].concat(args)).then(function (res) {
+    return run.apply(null, [fn].concat(args, [tok()])).then(function (res) {
       S.busy--; setOnline(true); take(res, true); if (done) done(res);
-    }, function (e) { S.busy--; snack(errMsg(e)); throw e; });
+    }, function (e) { S.busy--; if (isAuthErr(e)) openPw("login", S.me); snack(errMsg(e)); throw e; });
   }
   function clock(fn, btn) {
     if (!memberOf(S.me)) { openPicker(); return; }
@@ -575,17 +701,21 @@ button.srow { cursor: pointer; }
   }
 
   var ED = null;
-  function openEditor(s) {
+  /** s = existing shift to edit, or null for a new one. preset = {date, start, end, memo} for a new one. */
+  function openEditor(s, preset) {
     var m = memberOf(S.me);
     if (!m) { openPicker(); return; }
     ED = s;
+    preset = preset || {};
+    var usual = S.usual[S.me] || S.usual["*"] || null;
+    var useUsual = !s && !preset.start && usual;
     $("sfTitle").textContent = s ? "근무 기록 고치기" : "근무 직접 입력";
-    $("sfWho").textContent = m.full + " 님의 기록";
-    $("sfDate").value = s ? s[2] : todayStr();
+    $("sfWho").textContent = m.full + " 님의 기록" + (useUsual ? " · 자주 하던 시간으로 채웠어요" : "");
+    $("sfDate").value = s ? s[2] : preset.date || todayStr();
     $("sfDate").max = todayStr();
-    $("sfStart").value = s ? s[4] : "";
-    $("sfEnd").value = s ? s[5] : "";
-    $("sfMemo").value = s ? s[6] : "";
+    $("sfStart").value = s ? s[4] : preset.start || (usual ? usual[0] : "");
+    $("sfEnd").value = s ? s[5] : preset.end || (usual ? usual[1] : "");
+    $("sfMemo").value = s ? s[6] : preset.memo || "";
     $("sfDel").hidden = !s;
     $("sfSave").disabled = false;
     edHint();
@@ -643,7 +773,7 @@ button.srow { cursor: pointer; }
   function take(res, force) {
     if (!res || res.month !== S.month) return;
     if (!force && S.busy) return;
-    S.version = res.version; S.rows = res.rows; S.shifts = res.shifts || []; if (res.members) S.members = res.members;
+    S.version = res.version; S.rows = res.rows; S.shifts = res.shifts || []; S.usual = res.usual || {}; if (res.members) S.members = res.members;
     render();
   }
   function load(force) {
@@ -675,15 +805,72 @@ button.srow { cursor: pointer; }
   }
 
   /* ---------- name picker ---------- */
+  function choose(full) { S.me = full; lsSet(K_ME, S.me); $("picker").hidden = true; S.who = ""; render(); }
   function openPicker() {
     var box = $("names"); box.textContent = "";
     S.members.forEach(function (m) {
-      var b = mk("button", m.full === S.me ? "cur" : "", m.full); b.type = "button";
-      b.addEventListener("click", function () { S.me = m.full; lsSet(K_ME, S.me); $("picker").hidden = true; render(); });
+      var b = mk("button", m.full === S.me ? "cur" : "", m.full + (m.hasPw ? " 🔒" : "")); b.type = "button";
+      b.addEventListener("click", function () {
+        if (m.hasPw && !tok(m.full)) { openPw("login", m.full); return; }
+        choose(m.full);
+      });
       box.appendChild(b);
     });
     $("picker").hidden = false;
   }
+
+  /* ---------- 비밀번호 ---------- */
+  var PW = { mode: "", name: "" };
+  /** mode 'login': enter the password of `name`. mode 'set': make / change / remove my password. */
+  function openPw(mode, name) {
+    var m = memberOf(name);
+    if (!m) return;
+    PW = { mode: mode, name: m.full };
+    var login = mode === "login";
+    $("pwTitle").textContent = login ? m.full + " 님 비밀번호" : m.hasPw ? "비밀번호 바꾸기" : "비밀번호 만들기";
+    $("pwText").textContent = login ? "이 이름은 비밀번호가 있어요. 잊었으면 점장님께 말해 주세요."
+      : m.hasPw ? "새 비밀번호를 적거나, 비밀번호 없이 쓰려면 [없애기]를 눌러요."
+      : "다른 사람이 내 이름으로 등록하지 못하게 비밀번호를 만들 수 있어요. 없어도 괜찮아요. (4자 이상)";
+    $("pwInput").value = ""; $("pwInput").autocomplete = login ? "current-password" : "new-password";
+    $("pwInput").placeholder = login ? "비밀번호" : "새 비밀번호 (4자 이상)";
+    $("pwRemove").hidden = login || !m.hasPw;
+    $("pwOk").textContent = login ? "확인" : "저장";
+    $("pwOk").disabled = false;
+    $("pwSheet").hidden = false;
+    setTimeout(function () { $("pwInput").focus(); }, 50);
+  }
+  function closePw() { $("pwSheet").hidden = true; }
+  function savePw(newPw) {
+    $("pwOk").disabled = true;
+    run("setPassword", PW.name, tok(PW.name), newPw).then(function (res) {
+      setTok(PW.name, res.token); S.members = res.members; closePw(); render();
+      snack(newPw ? "비밀번호를 저장했어요." : "비밀번호를 없앴어요.");
+    }, function (e) {
+      $("pwOk").disabled = false;
+      if (isAuthErr(e)) { openPw("login", PW.name); }
+      snack(errMsg(e));
+    });
+  }
+  $("pwForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var v = $("pwInput").value;
+    if (PW.mode === "set") {
+      if (v.length < 4) { snack("비밀번호는 4자 이상으로 해 주세요."); return; }
+      savePw(v); return;
+    }
+    if (!v) { snack("비밀번호를 적어 주세요."); return; }
+    $("pwOk").disabled = true;
+    var name = PW.name;
+    run("login", name, v).then(function (res) {
+      setTok(name, res.token); closePw(); choose(name); snack(name + " 님, 확인됐어요.");
+    }, function (err) { $("pwOk").disabled = false; snack(errMsg(err)); });
+  });
+  $("pwRemove").addEventListener("click", function () {
+    confirmBox("비밀번호를 없앨까요?", "없애면 누구나 이 이름으로 등록할 수 있어요.", "없애기", true, function () { savePw(""); });
+  });
+  $("pwCancel").addEventListener("click", closePw);
+  $("pwSheet").addEventListener("click", function (e) { if (e.target === this) closePw(); });
+  $("mePw").addEventListener("click", function () { if (memberOf(S.me)) openPw("set", S.me); });
   $("meChange").addEventListener("click", openPicker);
   $("picker").addEventListener("click", function (e) { if (e.target === this && memberOf(S.me)) this.hidden = true; });
   $("addBtn").addEventListener("click", function () {
@@ -693,7 +880,9 @@ button.srow { cursor: pointer; }
     run("addMember", v).then(function (mem) {
       btn.disabled = false; S.members = mem; $("newName").value = "";
       var clean = v.replace(/[=+\-@'"<>]/g, "").trim().slice(0, 10);
-      S.me = clean; lsSet(K_ME, S.me); $("picker").hidden = true; render();
+      var m = memberOf(clean);
+      if (m && m.hasPw && !tok(clean)) { openPw("login", clean); return; }
+      choose(clean);
     }, function (e) { btn.disabled = false; snack(errMsg(e, "추가하지 못했어요.")); });
   });
 
@@ -707,7 +896,7 @@ button.srow { cursor: pointer; }
   }
   $("snackUndo").addEventListener("click", function () { var fn = snackUndoFn; snackUndoFn = null; $("snack").hidden = true; if (fn) fn(); });
   var tabsEls = document.querySelectorAll(".tab");
-  for (var i = 0; i < tabsEls.length; i++) tabsEls[i].addEventListener("click", function () { S.view = this.getAttribute("data-view"); lsSet(K_VIEW, S.view); render(); window.scrollTo(0, 0); });
+  for (var i = 0; i < tabsEls.length; i++) tabsEls[i].addEventListener("click", function () { S.view = this.getAttribute("data-view"); render(); window.scrollTo(0, 0); });
   $("q").addEventListener("input", function () { S.q = this.value; render(); });
   function goMonth(delta) {
     var i = S.months.indexOf(S.month) + delta;
@@ -720,6 +909,7 @@ button.srow { cursor: pointer; }
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     if (!$("confirm").hidden) closeConfirm();
+    else if (!$("pwSheet").hidden) closePw();
     else if (!$("shiftEd").hidden) closeEditor();
     else if (!$("picker").hidden && memberOf(S.me)) $("picker").hidden = true;
   });
@@ -727,10 +917,11 @@ button.srow { cursor: pointer; }
 
   /* ---------- boot ---------- */
   render();
-  run("getInit").then(function (init) {
+  run("getInit", S.me, tok()).then(function (init) {
     S.members = init.members; S.months = init.months; S.month = init.months[0]; S.live = init.live;
     render();
     if (!memberOf(S.me)) openPicker();
+    else if (init.meOk === false) { setTok(S.me, ""); openPw("login", S.me); }
     load(true);
     refreshLive();
     setInterval(function () { if (!document.hidden) load(false); }, POLL_MS);

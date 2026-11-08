@@ -18,7 +18,8 @@ Goal: staff get an app icon on their phone that opens straight to the list, with
 ## Phase 2 — Features staff asked for or will likely need
 
 - **Split quantity**: a line with qty 3 can be 1 취식 + 2 폐기, possibly by different people.
-- **Light identity**: a 4-digit PIN per staff member, so others can't tag in their name. Keep it optional so the link stays one tap.
+- ~~**Light identity**: a PIN per staff member~~ Done 2026-11-09 (optional password per name, developer bypass).
+- Store hours setting for the empty-time warning (today it assumes 24 h).
 - **Admin view**: lock a month once settled, export the month (CSV / Excel), and correct tags made by mistake.
 - **Monthly report** emailed or messaged to the owner on the 1st: totals per person, 취식 원가/매가.
 - **Reminders**: on the morning after import, show staff how many items are still 미등록.
