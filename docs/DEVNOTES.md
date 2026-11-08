@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (출근 tab: one row per person per day; a night worker's two shifts on one day share a row and a bar)
+Last updated: 2026-11-09 (출근 tab: one row per person per day; merged night rows show `22:30 – 00:00`; rows ordered by latest start)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -230,7 +230,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 - Header "이번 달 내 취식 / 폐기" and the 월별 합계 table count 저회전 취식 as 취식; its footer shows only 미등록 **폐기**.
 - Off-shift 폐기 check runs in the page: the line's 생성시각 must fall inside one of the worker's shifts, 30 min grace either side; an open shift counts up to now. Lines with only a date pass if any shift touches that day. Each line shows who was working then (`근무 지은`).
 - **Empty-time warning (출근 tab)**: for each past day of the month, from the first recorded day to yesterday, the page joins everyone's shifts (including overnight ones from the day before) over 00:00–24:00 and lists gaps ≥ 15 min. The store is treated as **open 24 h**. A shift without 퇴근 from a past day counts as unknown. Each gap has **내가 근무했어요**, which opens 근무 직접 입력 prefilled. Hidden while a name filter is on.
-- 출근 timeline bars: overlap with 2 people = yellow, 3+ = red, with "겹침 N분". Overnight shifts also show on the next day as `00:00 – 퇴근`. One row per person per day: when a person has more than one shift on a day (a night worker: last night's shift ending + tonight's start), they share one row with each time and length listed and one bar with all parts; on your own merged row each time is its own button to edit that shift.
+- 출근 timeline bars: overlap with 2 people = yellow, 3+ = red, with "겹침 N분". Overnight shifts also show on the next day as `00:00 – 퇴근`. One row per person per day: when a person has more than one shift on a day (a night worker: last night's shift ending + tonight's start), they share one row with each time and length listed and one bar with all parts; on your own merged row each time is its own button to edit that shift. In a merged row, tonight's shift shows only this day's part (`22:30 – 00:00`, `이날 1시간 30분`); a lone shift still shows `22:30 – 08:00 (+1)`. Rows in a day are ordered by each person's latest start that day, so the night worker (who comes in last) is at the bottom; a shift carried over from the night before counts as starting at 00:00.
 
 ## App (Android, and the installable page)
 

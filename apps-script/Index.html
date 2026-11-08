@@ -626,6 +626,11 @@ button.srow { cursor: pointer; }
           if (!(s[3] in gi)) { gi[s[3]] = groups.length; groups.push([]); }
           groups[gi[s[3]]].push(s);
         });
+        // 이날 가장 늦게 시작한 근무 순서로: 야간(이날 밤 출근)은 맨 아래
+        var day0 = toMin(d, "00:00");
+        function lateKey(g) { return Math.max.apply(null, g.map(function (s) { return Math.max(day0, span(s, nowM).a); })); }
+        function earlyKey(g) { return Math.min.apply(null, g.map(function (s) { return Math.max(day0, span(s, nowM).a); })); }
+        groups.sort(function (x, y) { return lateKey(x) - lateKey(y) || earlyKey(x) - earlyKey(y); });
         groups.forEach(function (g) { rows.appendChild(shiftEl(g, nowM, d)); });
         sec.appendChild(rows);
       }
@@ -677,11 +682,15 @@ button.srow { cursor: pointer; }
       var cont = d !== s[2], sp = span(s, nowM);
       var blk = mk(mine && multi ? "button" : "div", "part");
       if (mine && multi) { blk.type = "button"; blk.addEventListener("click", function () { openEditor(s); }); blk.setAttribute("aria-label", s[2] + " " + s[4] + " 근무 기록 고치기"); }
+      // 합친 줄에서 이날 밤 출근해 자정을 넘기는 근무는 이날 몫만: 22:30 – 00:00 (나머지는 다음 날 줄에)
+      var cut = multi && !cont && !sp.open && sp.b > day0 + 1440;
       blk.appendChild(mk("div", "tm num", cont ? "00:00 – " + (s[5] || "")
+        : cut ? s[4] + " – 00:00"
         : s[4] + " – " + (s[5] ? s[5] + (sp.b - sp.a > 0 && toMin(s[2], s[5]) < sp.a ? " (+1)" : "") : "")));
       blk.appendChild(sp.live ? mk("div", "dur live", "근무 중 · " + dur(nowM - sp.a))
         : sp.open ? mk("div", "dur stale", "퇴근 기록 없음")
-        : mk("div", "dur num", cont ? "이날 " + dur(Math.min(sp.b, day0 + 1440) - day0) : dur(sp.b - sp.a)));
+        : mk("div", "dur num", cont ? "이날 " + dur(Math.min(sp.b, day0 + 1440) - day0)
+          : cut ? "이날 " + dur(day0 + 1440 - sp.a) : dur(sp.b - sp.a)));
       right.appendChild(blk);
       var bar = mk("i"); place(bar, sp.a, sp.e); track.appendChild(bar);
       overlapsOf(s, sp, nowM, day0, day0 + 1440).forEach(function (g) {
