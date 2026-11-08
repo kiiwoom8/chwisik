@@ -39,6 +39,7 @@ var LIVE_TRIGGER_MIN = 10;   // 아무도 안 열어도 이 간격으로 오늘 
 /* ======================= 시트 준비 / 메뉴 ======================= */
 
 function setup() {
+  adminOnly_();
   var ss = SpreadsheetApp.getActive();
   ss.setSpreadsheetTimeZone(TZ);
 
@@ -78,7 +79,7 @@ function setup() {
   if (def && def.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(def);
 
   installNightlyTrigger();
-  installLiveTrigger();
+  installLiveTrigger_();
   return 'ok';
 }
 
@@ -104,14 +105,16 @@ function menuLiveNow() {
   ui.alert(r.error ? '가져오지 못했어요:\n' + r.error : '오늘 폐기 새 품목 ' + r.added + '건 추가 (' + (r.ms / 1000).toFixed(1) + '초)');
 }
 function menuLiveOn() {
+  var ui = SpreadsheetApp.getUi();   // first: throws when called from the web page
   PropertiesService.getScriptProperties().deleteProperty('LIVE_OFF');
-  installLiveTrigger();
-  SpreadsheetApp.getUi().alert('실시간 가져오기를 켰어요. 10분마다, 그리고 직원이 링크를 열 때 (2분에 한 번까지) 오늘 폐기를 가져옵니다.');
+  installLiveTrigger_();
+  ui.alert('실시간 가져오기를 켰어요. 10분마다, 그리고 직원이 링크를 열 때 (2분에 한 번까지) 오늘 폐기를 가져옵니다.');
 }
 function menuLiveOff() {
+  var ui = SpreadsheetApp.getUi();   // first: throws when called from the web page
   PropertiesService.getScriptProperties().setProperty('LIVE_OFF', '1');
   removeLiveTrigger_();
-  SpreadsheetApp.getUi().alert('실시간 가져오기를 껐어요. 매일 밤 00:01 가져오기는 그대로 돌아갑니다.');
+  ui.alert('실시간 가져오기를 껐어요. 매일 밤 00:01 가져오기는 그대로 돌아갑니다.');
 }
 
 function menuSetPassword() {
@@ -135,11 +138,12 @@ function menuImportRange() {
   if (r.getSelectedButton() !== ui.Button.OK) return;
   var m = r.getResponseText().replace(/\s/g, '').match(/^(\d{8})(?:-(\d{8}))?$/);
   if (!m) { ui.alert('형식이 맞지 않아요. 예: 20261101-20261107'); return; }
-  var res = importRange(m[1], m[2] || m[1]);
+  var res = importRange_(m[1], m[2] || m[1]);
   ui.alert(res);
 }
 
 function installNightlyTrigger() {
+  adminOnly_();
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'nightly') ScriptApp.deleteTrigger(t);
   });
@@ -147,7 +151,7 @@ function installNightlyTrigger() {
   return '매일 00:01 무렵 자동 가져오기가 켜졌어요.';
 }
 
-function installLiveTrigger() {
+function installLiveTrigger_() {
   removeLiveTrigger_();
   ScriptApp.newTrigger('liveTick').timeBased().everyMinutes(LIVE_TRIGGER_MIN).create();
   PropertiesService.getScriptProperties().setProperty('LIVE_TRIGGER', '1');
@@ -161,24 +165,43 @@ function removeLiveTrigger_() {
 }
 
 /** Time trigger: 오늘(과 어제) 폐기 중 새 전표만 가져옴. */
-function liveTick() { refreshNow(); }
+function liveTick(e) { if (!fromTrigger_(e)) adminOnly_(); refreshNow(); }
+
+/*
+ * Every top-level function whose name does not end in '_' can be called by anyone who has the
+ * /exec link (google.script.run from the browser console), running as the owner. So the ones meant
+ * only for the menu, the editor or a trigger check who is calling.
+ */
+/** Owner / spreadsheet editor (menu, script editor). Anonymous web callers have no active user. */
+function adminOnly_() {
+  var a = '';
+  try { a = Session.getActiveUser().getEmail(); } catch (e) {}
+  if (!a || a !== Session.getEffectiveUser().getEmail()) throw new Error('관리자만 할 수 있어요.');
+}
+/** True when called by one of this project's own triggers (the event carries the trigger's id). */
+function fromTrigger_(e) {
+  var id = e && e.triggerUid ? String(e.triggerUid) : '';
+  return !!id && ScriptApp.getProjectTriggers().some(function (t) { return t.getUniqueId() === id; });
+}
 
 /* ======================= 매일 가져오기 ======================= */
 
-function nightly() {
+function nightly(e) {
+  if (!fromTrigger_(e)) adminOnly_();
   var now = new Date();
   var d1 = ymd_(new Date(now.getTime() - 24 * 3600 * 1000));
   var d2 = ymd_(new Date(now.getTime() - 2 * 24 * 3600 * 1000));
-  return importRange(d2, d1);
+  return importRange_(d2, d1);
 }
 
 function importThisMonth() {
+  adminOnly_();
   var now = new Date();
   var first = Utilities.formatDate(now, TZ, 'yyyyMM') + '01';
-  return importRange(first, ymd_(now));
+  return importRange_(first, ymd_(now));
 }
 
-function importRange(fromYmd, toYmd) {
+function importRange_(fromYmd, toYmd) {
   try {
     var r = fetchPyegi_(fromYmd, toYmd);
     var added = appendItems_(r.items);
@@ -230,7 +253,7 @@ function refreshNow() {
   var p = PropertiesService.getScriptProperties();
   var props = p.getProperties();
   if (props.LIVE_OFF === '1') return liveInfo_(props, 0);
-  if (props.LIVE_TRIGGER !== '1') { try { installLiveTrigger(); } catch (e) {} }
+  if (props.LIVE_TRIGGER !== '1') { try { installLiveTrigger_(); } catch (e) {} }
   if (Date.now() - Number(props.LIVE_AT || 0) < LIVE_MIN_GAP_S * 1000) return liveInfo_(props, 0);
   var cache = CacheService.getScriptCache();
   if (cache.get('live_running')) return liveInfo_(props, 0);
@@ -616,19 +639,69 @@ function getMonth(month, knownVersion) {
   if (knownVersion && knownVersion === v) return null;
   var sh = SpreadsheetApp.getActive().getSheetByName(SH_ITEMS);
   var n = sh.getLastRow() - 1;
-  var rows = [];
+  var rows = [], cancels = [];
   if (n > 0) {
     var vals = sh.getRange(2, 1, n, NCOL).getDisplayValues();
     var nums = sh.getRange(2, C.QTY, n, 5).getValues();
+    var cx = cancelMatch_(vals, nums);
+    var when = function (k) { return vals[k][C.TIME - 1] || vals[k][C.DATE - 1]; };
     for (var i = 0; i < vals.length; i++) {
       var r = vals[i];
       if (r[C.MONTH - 1] !== month) continue;
-      rows.push([i + 2, r[C.KEY - 1], r[C.TIME - 1] || r[C.DATE - 1], r[C.NAME - 1], Number(nums[i][0]) || 0,
-        Number(nums[i][1]) || 0, Number(nums[i][2]) || 0, Number(nums[i][4]) || 0, r[C.TYPE - 1], r[C.MEMBER - 1], r[C.WHO - 1], r[C.DATE - 1], r[C.NOTE - 1]]);
+      if (cx.neg[i]) {
+        // [time, name, qty, wamt, date, [[time, qty, type, member], …] canceled lines (empty = no earlier 폐기)]
+        cancels.push([when(i), r[C.NAME - 1], Number(nums[i][0]) || 0, Number(nums[i][2]) || 0, r[C.DATE - 1],
+          cx.neg[i].map(function (m) { var o = vals[m[0]]; return [when(m[0]), m[1], o[C.TYPE - 1], o[C.MEMBER - 1]]; })]);
+        continue;
+      }
+      var q = Number(nums[i][0]) || 0, wamt = Number(nums[i][2]) || 0, mamt = Number(nums[i][4]) || 0;
+      if (cx.left[i] !== undefined) {
+        if (cx.left[i] <= 0) continue;            // fully canceled
+        wamt = Math.round(wamt * cx.left[i] / q); mamt = Math.round(mamt * cx.left[i] / q); q = cx.left[i];
+      }
+      rows.push([i + 2, r[C.KEY - 1], when(i), r[C.NAME - 1], q,
+        Number(nums[i][1]) || 0, wamt, mamt, r[C.TYPE - 1], r[C.MEMBER - 1], r[C.WHO - 1], r[C.DATE - 1], r[C.NOTE - 1]]);
     }
   }
   var all = readShifts_();
-  return { version: v, month: month, rows: rows, shifts: shiftsFor_(month, all), usual: usualShifts_(all), members: members_() };
+  return { version: v, month: month, rows: rows, cancels: cancels, shifts: shiftsFor_(month, all), usual: usualShifts_(all), members: members_() };
+}
+
+/**
+ * BGF 폐기 취소: a line with a negative 수량/단가/금액 cancels an earlier 폐기 line of the same product
+ * (same 상품코드, or 품명 when there is no code). Lines are walked in time order over the whole sheet,
+ * so a cancel early next month still finds last month's line. Each cancel uses up the quantity of the
+ * newest earlier line(s), untagged lines first. A cancel with no earlier line is simply ignored.
+ * Returns neg: { index: [[matchedIndex, qty], …] } for every negative line (all are hidden),
+ * left: { index: qty still standing } for positive lines touched by a cancel (0 = hide).
+ */
+function cancelMatch_(vals, nums) {
+  var order = vals.map(function (r, i) { return i; });
+  var t = function (i) { return vals[i][C.TIME - 1] || vals[i][C.DATE - 1]; };
+  order.sort(function (a, b) { return t(a) < t(b) ? -1 : t(a) > t(b) ? 1 : a - b; });
+  var open = {}, left = {}, rem = {}, neg = {};
+  order.forEach(function (i) {
+    var r = vals[i], x = nums[i];
+    var q = Number(x[0]) || 0;
+    var prod = String(r[C.CODE - 1] || r[C.NAME - 1]);
+    var isNeg = [0, 1, 2, 3, 4].some(function (k) { return (Number(x[k]) || 0) < 0; });
+    if (!isNeg) {
+      if (q > 0) { rem[i] = q; (open[prod] = open[prod] || []).push(i); }
+      return;
+    }
+    var need = Math.abs(q) || 1, got = [], list = open[prod] || [];
+    [true, false].forEach(function (untaggedOnly) {
+      for (var j = list.length - 1; j >= 0 && need > 0; j--) {
+        var k = list[j];
+        if (!rem[k] || (untaggedOnly && vals[k][C.TYPE - 1])) continue;
+        var take = Math.min(rem[k], need);
+        rem[k] -= take; need -= take; left[k] = rem[k];
+        got.push([k, take]);
+      }
+    });
+    neg[i] = got;
+  });
+  return { neg: neg, left: left };
 }
 
 /**
@@ -650,9 +723,16 @@ function setTag(rowHint, key, type, memberFull, month, note, me, token) {
       if (!f) throw new Error('항목을 찾지 못했어요. 새로고침해 주세요.');
       row = f.getRow();
     }
+    var cache = CacheService.getScriptCache(), ck = 'undo|' + key;
+    var cur = sh.getRange(row, C.TYPE, 1, 3).getDisplayValues()[0];   // [구분, 등록이름, 직원]
     if (mem && mem.full !== actor.full) {
-      var curMember = sh.getRange(row, C.MEMBER).getDisplayValue();
-      if (curMember && curMember !== actor.full) throw new Error('다른 직원 이름으로는 등록할 수 없어요.');
+      // Only to undo: this actor just replaced or cleared mem's tag on this row.
+      if ((cur[2] && cur[2] !== actor.full) || cache.get(ck) !== actor.full + '|' + mem.full + '|' + type) {
+        throw new Error('다른 직원 이름으로는 등록할 수 없어요.');
+      }
+      cache.remove(ck);
+    } else if (cur[2] && cur[2] !== actor.full) {
+      cache.put(ck, actor.full + '|' + cur[2] + '|' + cur[0], 600);
     }
     var rng = sh.getRange(row, C.TYPE, 1, 4);
     if (type) {

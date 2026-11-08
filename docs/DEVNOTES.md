@@ -52,6 +52,8 @@ Deployment settings: **Execute as: Me**, **Who has access: Anyone**.
 
 Columns A–F and L–R are plain text (`@`) so dates and codes are not auto-converted.
 
+**Canceled 폐기 (BGF 취소)**: a line with a negative 수량 / 단가 / 금액 cancels an earlier 폐기 of the same product (same 상품코드, else 품명). `cancelMatch_()` walks the whole sheet in 생성시각 order and uses up the quantity of the newest earlier line(s), untagged lines first; a partial cancel leaves the rest standing (amounts scaled). A negative line with no earlier match is ignored. The sheet is not changed: `getMonth` leaves canceled lines and all negative lines out of `rows` and lists the negatives in `cancels` (the page's 취소 tab). The sheet's 월별 합계 QUERY still counts a tagged line that was later canceled.
+
 ### 출근일지 (one row per shift)
 
 Created on the first 출근 / save if missing (or by `setup()`).
@@ -130,7 +132,7 @@ If BGF changes its login (adds a captcha, OTP, or password encryption), the nigh
 | Function | Purpose |
 |---|---|
 | `getInit(me, token)` | members (`{full, short, hasPw}`), list of months (items + shifts), data version, live-import label, `meOk` (false = this phone must enter the password again) |
-| `getMonth(month, knownVersion)` | rows + shifts + `usual` for `yyyy-MM`; returns `null` if `knownVersion` is current (cheap polling) |
+| `getMonth(month, knownVersion)` | rows + cancels + shifts + `usual` for `yyyy-MM`; returns `null` if `knownVersion` is current (cheap polling) |
 | `setTag(rowHint, key, type, memberFull, month, note, me, token)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` is kept only for 폐기. Uses LockService. Returns the fresh month. |
 | `addMember(full)` | adds to 직원 |
 | `clockIn(memberFull, month, token)` / `clockOut(…)` | start a shift now / close the open one now |
@@ -142,9 +144,14 @@ If BGF changes its login (adds a captcha, OTP, or password encryption), the nigh
 
 Auth failures throw a message containing `[비밀번호]`; the page then opens the password box.
 
+**Anything public is callable.** Every top-level function in Code.gs whose name does not end in `_` can be called by anyone with the /exec link (`google.script.run` from the browser console), running as the owner. Keep helpers private with a trailing `_`. Menu / editor / trigger functions guard themselves: menu items call `SpreadsheetApp.getUi()` first (throws outside the spreadsheet), `setup`, `installNightlyTrigger`, `importThisMonth` call `adminOnly_()` (active user must be the owner or an editor), and the trigger handlers `nightly(e)` / `liveTick(e)` accept their own trigger's `triggerUid` or else `adminOnly_()`.
+
+`setTag` writes another worker's name only to undo: the actor must have just cleared or replaced that worker's tag on the same row (10-min cache entry `undo|key`), and the row must be empty or the actor's.
+
 `usual` = `{fullName: [출근, 퇴근], '*': [...]}`: the most frequent closed shift (start+end pair) per worker over the last 90 days (ties → most recent). The 근무 직접 입력 form starts with the worker's own pair, else everyone's.
 
 Row shape sent to the page: `[sheetRow, key, time, name, qty, wprice, wamt, mamt, type, memberFull, who, date, note]`.
+Cancel shape: `[time, name, qty, wamt, date, [[origTime, qty, type, memberFull], …]]` (empty list = no earlier 폐기, ignored).
 Shift shape: `[sheetRow, key, date, memberFull, start, end, memo]`. A month's shifts also include the last day of the month before (overnight shifts).
 
 The page polls every 5 s while visible. A Script Property `VER` changes on every write or import (tags, shifts, imports), so unchanged polls return `null`.
@@ -153,7 +160,7 @@ The off-shift 폐기 check runs in the page (it already has the month's shifts):
 
 **Empty-time warning (출근 tab)**: for each past day of the month, from the first recorded day to yesterday, the page joins everyone's shifts (including overnight ones from the day before) over 00:00–24:00 and lists gaps of 15 min or more ("아무도 기록하지 않은 시간"). The store is treated as **open 24 h**. A shift without 퇴근 from a past day counts as unknown, so it shows as a gap until fixed. Each gap has **내가 근무했어요**, which opens 근무 직접 입력 filled with that date and time (whole empty day → the usual times). Gaps are hidden while a name filter is on.
 
-**Page layout**: the 출근 tab is first and always opens first. Tabs other than 미등록 show a name filter (모두 + names that have something in that tab this month). (일) is red and (토) blue in day headings.
+**Page layout**: the 출근 tab is first and always opens first. In the 취식 / 폐기 tabs each line's right button is **취소** (removes that tag) and the left one switches to the other type. The 취소 tab lists BGF-canceled 폐기. Tabs other than 미등록 and 취소 show a name filter (모두 + names that have something in that tab this month). (일) is red and (토) blue in day headings.
 
 ## Live import (오늘 폐기)
 

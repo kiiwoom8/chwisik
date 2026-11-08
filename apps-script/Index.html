@@ -56,8 +56,8 @@ h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .mine div { background: var(--band); border-radius: var(--r); padding: 8px 10px; font-size: 12.5px; color: var(--muted); }
 .mine b { display: block; color: var(--ink); font-size: 16px; font-weight: 500; }
 .mine .eat b { color: var(--eat); }
-.tabs { display: grid; grid-template-columns: repeat(6, 1fr); background: var(--band); border-radius: var(--r); padding: 3px; gap: 3px; }
-.tab { border: 0; background: transparent; padding: 7px 2px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); line-height: 1.2; }
+.tabs { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--band); border-radius: var(--r); padding: 3px; gap: 3px; }
+.tab { border: 0; background: transparent; padding: 7px 1px; white-space: nowrap; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); line-height: 1.2; }
 .tab .num { display: block; font-size: 11.5px; }
 .tab[aria-selected="true"] { background: var(--sheet); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 .search { width: 100%; padding: 9px 12px; border-radius: var(--r); border: 1px solid var(--rule); background: var(--paper); font-size: 15px; }
@@ -84,8 +84,11 @@ main .wrap { padding-block: 8px calc(110px + env(safe-area-inset-bottom, 0px)); 
 .stamp.void { color: var(--void); border-color: color-mix(in srgb, var(--void) 45%, var(--rule)); }
 .stamp.eat.on { background: var(--eat); color: var(--eat-ink); border-color: var(--eat); }
 .stamp.void.on { background: var(--void); color: #fff; border-color: var(--void); }
+.stamp.undo { color: var(--muted); }
 .stamp:disabled { opacity: .5; }
 .neg { color: var(--void); }
+.row.t-cancel .tagline { color: var(--muted); font-weight: 400; }
+.cxnote { margin: 12px 2px 0; font-size: 13px; color: var(--muted); }
 .empty { text-align: center; color: var(--muted); padding: 40px 12px; }
 
 .sum { margin-top: 14px; display: grid; gap: 14px; }
@@ -164,7 +167,7 @@ button.srow { cursor: pointer; }
 .snack { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(560px, calc(100% - 32px)); background: var(--ink); color: var(--paper); border-radius: 12px; padding: 10px 10px 10px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.25); z-index: 40; font-size: 14px; }
 .snack span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snack button { border: 0; background: transparent; color: var(--accent); font-weight: 700; padding: 8px 10px; cursor: pointer; filter: brightness(1.3); }
-@media (max-width: 380px) { .stamp { min-width: 46px; font-size: 13px; } }
+@media (max-width: 380px) { .stamp { min-width: 46px; font-size: 13px; } .tab { font-size: 12px; } }
 </style>
 </head>
 <body>
@@ -184,6 +187,7 @@ button.srow { cursor: pointer; }
     <button class="tab" role="tab" data-view="eat" aria-selected="false">취식<span class="num" id="c-eat"></span></button>
     <button class="tab" role="tab" data-view="void" aria-selected="false">폐기<span class="num" id="c-void"></span></button>
     <button class="tab" role="tab" data-view="all" aria-selected="false">전체<span class="num" id="c-all"></span></button>
+    <button class="tab" role="tab" data-view="cancel" aria-selected="false">취소<span class="num" id="c-cancel"></span></button>
     <button class="tab" role="tab" data-view="sum" aria-selected="false">월별<span class="num">합계</span></button>
   </div>
   <input class="search" id="q" type="search" placeholder="상품명 검색" autocomplete="off">
@@ -252,7 +256,7 @@ button.srow { cursor: pointer; }
   var GAP_MIN = 15;            // 지난 날 근무 기록 사이 이보다 긴 빈 시간은 경고 (가게는 24시간 기준)
   var DOW = ["일", "월", "화", "수", "목", "금", "토"];
   var K_ME = "chwisik.me", K_TOK = "chwisik.tok";
-  var S = { months: [], month: "", version: "", rows: [], shifts: [], usual: {}, members: [], me: "", view: "shift", who: "", q: "", busy: 0, live: null, refreshing: false, online: true };
+  var S = { months: [], month: "", version: "", rows: [], cancels: [], shifts: [], usual: {}, members: [], me: "", view: "shift", who: "", q: "", busy: 0, live: null, refreshing: false, online: true };
   var $ = function (id) { return document.getElementById(id); };
   var fmt = function (n) { return Number(n || 0).toLocaleString("ko-KR"); };
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -358,10 +362,10 @@ button.srow { cursor: pointer; }
     });
     return Object.keys(set).sort(function (a, b) { return a === S.me ? -1 : b === S.me ? 1 : a.localeCompare(b, "ko"); });
   }
-  function curWho() { return S.view !== "todo" && S.who && whoNames().indexOf(S.who) >= 0 ? S.who : ""; }
+  function curWho() { return S.view !== "todo" && S.view !== "cancel" && S.who && whoNames().indexOf(S.who) >= 0 ? S.who : ""; }
   function renderWho() {
     var bar = $("whoBar"); bar.textContent = "";
-    var names = S.view === "todo" ? [] : whoNames();
+    var names = S.view === "todo" || S.view === "cancel" ? [] : whoNames();
     bar.hidden = !names.length;
     if (!names.length) return;
     var cur = curWho();
@@ -403,6 +407,7 @@ button.srow { cursor: pointer; }
     S.shifts.forEach(function (s) { if (span(s, nowM).live) working[s[3]] = 1; });
     var nWork = Object.keys(working).length;
     $("c-todo").textContent = fmt(cTodo); $("c-eat").textContent = fmt(cEat); $("c-void").textContent = fmt(cVoid); $("c-all").textContent = fmt(S.rows.length);
+    $("c-cancel").textContent = fmt(S.cancels.length);
     $("c-shift").textContent = nWork ? nWork + "명" : "일지";
     $("myEat").textContent = fmt(myEat.n) + "개 · " + fmt(myEat.w) + "원";
     $("myVoid").textContent = fmt(myVoid.n) + "개 · " + fmt(myVoid.w) + "원";
@@ -415,6 +420,7 @@ button.srow { cursor: pointer; }
     $("list").hidden = isSum || isShift; $("sum").hidden = !isSum; $("shifts").hidden = !isShift; $("q").hidden = isSum || isShift;
     if (isSum) { renderSum(); $("emptyMsg").hidden = true; return; }
     if (isShift) { renderShifts(); return; }
+    if (S.view === "cancel") { renderCancels(); return; }
     renderList();
   }
 
@@ -464,14 +470,52 @@ button.srow { cursor: pointer; }
       info.appendChild(t);
     }
     var acts = mk("div", "acts");
-    [["취식", "eat"], ["폐기", "void"]].forEach(function (p) {
-      var bt = mk("button", "stamp " + p[1] + (r[8] === p[0] ? " on" : ""), p[0]); bt.type = "button";
-      bt.setAttribute("aria-pressed", r[8] === p[0] ? "true" : "false");
+    // 취식 / 폐기 탭: 다른 쪽 버튼은 왼쪽, 오른쪽은 [취소] (이 탭의 등록을 지움)
+    var tabType = S.view === "eat" ? "취식" : S.view === "void" ? "폐기" : "";
+    var btns = tabType ? [[tabType === "취식" ? "폐기" : "취식", tabType === "취식" ? "void" : "eat"], [tabType, "undo"]] : [["취식", "eat"], ["폐기", "void"]];
+    btns.forEach(function (p) {
+      var undo = p[1] === "undo";
+      var bt = mk("button", "stamp " + (undo ? (p[0] === "취식" ? "eat" : "void") + " undo" : p[1] + (r[8] === p[0] ? " on" : "")), undo ? "취소" : p[0]); bt.type = "button";
+      if (undo) bt.setAttribute("aria-label", p[0] + " 취소"); else bt.setAttribute("aria-pressed", r[8] === p[0] ? "true" : "false");
       bt.addEventListener("click", function () { tap(r, p[0]); });
       acts.appendChild(bt);
     });
     el.appendChild(info); el.appendChild(acts);
     return el;
+  }
+
+  /** BGF에서 취소된 폐기 (음수 줄). 원래 폐기와 함께 다른 탭에서는 빠져 있어요. */
+  function renderCancels() {
+    var q = S.q.trim().toLowerCase();
+    var vis = S.cancels.filter(function (c) { return !q || String(c[1]).toLowerCase().indexOf(q) >= 0; })
+      .sort(function (a, b) { return a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0; });
+    var list = $("list"); list.textContent = "";
+    if (S.cancels.length) list.appendChild(mk("p", "cxnote", "BGF에서 취소된 폐기예요. 취소된 폐기와 원래 폐기는 다른 탭과 합계에서 빠져요."));
+    var byDay = [], cur = null;
+    vis.forEach(function (c) { var d = c[4] || String(c[0]).slice(0, 10); if (!cur || cur.d !== d) { cur = { d: d, rows: [] }; byDay.push(cur); } cur.rows.push(c); });
+    byDay.forEach(function (g) {
+      var sec = mk("section", "day"), head = mk("div", "day-head");
+      head.appendChild(dayEl(g.d));
+      head.appendChild(mk("span", "num", g.rows.length + "건"));
+      var rows = mk("div", "rows");
+      g.rows.forEach(function (c) {
+        var el = mk("div", "row t-cancel"), info = mk("div", "info");
+        info.appendChild(mk("div", "n", c[1]));
+        info.appendChild(mk("div", "meta num", String(c[0]).slice(11, 16) + " · " + c[2] + "개 · " + fmt(c[3]) + "원"));
+        var orig = c[5] || [];
+        if (!orig.length) info.appendChild(mk("div", "tagline", "앞에 같은 상품 폐기가 없어서 무시했어요"));
+        orig.forEach(function (o) {
+          var same = String(o[0]).slice(0, 10) === String(c[0]).slice(0, 10);
+          var when = (same ? "" : +String(o[0]).slice(5, 7) + "/" + +String(o[0]).slice(8, 10) + " ") + String(o[0]).slice(11, 16);
+          info.appendChild(mk("div", "tagline", "원래 폐기 " + when + " · " + o[1] + "개" + (o[2] ? " · " + o[2] + " " + shortOf(o[3]) + " 등록 빠짐" : "")));
+        });
+        el.appendChild(info); rows.appendChild(el);
+      });
+      sec.appendChild(head); sec.appendChild(rows); list.appendChild(sec);
+    });
+    var em = $("emptyMsg");
+    em.hidden = !!vis.length;
+    em.textContent = q ? "‘" + S.q.trim() + "’에 맞는 항목이 없어요." : "이 달에 취소된 폐기가 없어요.";
   }
 
   function renderShifts() {
@@ -842,7 +886,7 @@ button.srow { cursor: pointer; }
   function take(res, force) {
     if (!res || res.month !== S.month) return;
     if (!force && S.busy) return;
-    S.version = res.version; S.rows = res.rows; S.shifts = res.shifts || []; S.usual = res.usual || {}; if (res.members) S.members = res.members;
+    S.version = res.version; S.rows = res.rows; S.cancels = res.cancels || []; S.shifts = res.shifts || []; S.usual = res.usual || {}; if (res.members) S.members = res.members;
     render();
   }
   function load(force) {
@@ -970,7 +1014,7 @@ button.srow { cursor: pointer; }
   function goMonth(delta) {
     var i = S.months.indexOf(S.month) + delta;
     if (i < 0 || i >= S.months.length) return;
-    S.month = S.months[i]; S.rows = []; S.shifts = []; S.version = ""; render(); load(true);
+    S.month = S.months[i]; S.rows = []; S.cancels = []; S.shifts = []; S.version = ""; render(); load(true);
   }
   $("mPrev").addEventListener("click", function () { goMonth(1); });
   $("mNext").addEventListener("click", function () { goMonth(-1); });
