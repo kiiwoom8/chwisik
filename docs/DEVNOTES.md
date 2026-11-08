@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (header sync label: 업데이트 HH:mm)
+Last updated: 2026-11-09 (월별 합계 더보기; 취소 tab ⚠ text)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -86,7 +86,7 @@ Columns A–F and L–S are plain text (`@`) so dates and codes are not auto-con
 
 Rules:
 - A 저회전 row can only be `취식` or empty. `setTag` refuses `폐기` on it (server), and the page hides the 폐기 button.
-- **Canceled lines (BGF 취소)**: a line with a negative 수량 / 단가 / 금액 cancels an earlier line of the same product (same 상품코드, else 품명) **and the same slip kind** (폐기 and 저회전 never cancel each other). `cancelMatch_()` walks the whole sheet in 생성시각 order and uses up the quantity of the newest earlier line(s), untagged lines first; a partial cancel leaves the rest standing (amounts scaled). A negative line with no earlier match is ignored (shown with ⚠). The sheet itself is not changed: `getMonth` leaves canceled lines and all negative lines out of `rows` and lists the negatives in `cancels` (the 취소 tab). The sheet's 월별 합계 QUERY still counts a tagged line that was later canceled.
+- **Canceled lines (BGF 취소)**: a line with a negative 수량 / 단가 / 금액 cancels an earlier line of the same product (same 상품코드, else 품명) **and the same slip kind** (폐기 and 저회전 never cancel each other). `cancelMatch_()` walks the whole sheet in 생성시각 order and uses up the quantity of the newest earlier line(s), untagged lines first; a partial cancel leaves the rest standing (amounts scaled). A negative line with no earlier match is ignored (shown with `⚠ 앞에 같은 상품 폐기가 없어요`). The sheet itself is not changed: `getMonth` leaves canceled lines and all negative lines out of `rows` and lists the negatives in `cancels` (the 취소 tab). The sheet's 월별 합계 QUERY still counts a tagged line that was later canceled.
 
 ### 출근일지 (one row per shift)
 
@@ -229,6 +229,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 - In the 취식 / 폐기 tabs each line's right button is **취소** (removes that tag) and the left one switches to the other type (hidden for 저회전 lines). Lines tagged by another worker have disabled buttons.
 - Name filter (모두 + names that have something in that tab this month) on every tab except 미등록 and 취소. (일) is red and (토) blue in day headings.
 - Header "이번 달 내 취식 / 폐기" and the 월별 합계 table count 저회전 취식 as 취식; its footer shows only 미등록 **폐기**.
+- 월별 합계 tab opens short for phones: 직원 · 취식 수량 · 취식 원가 · 취식 매가 and 직원 · 근무 시간. **더보기** (beside each table title) shows 폐기 수량, 폐기 원가 and 근무일; **접기** hides them again. One switch for both tables (`S.sumMore`, kept while the page is open, not saved).
 - Off-shift 폐기 check runs in the page: the line's 생성시각 must fall inside one of the worker's shifts, 30 min grace either side; an open shift counts up to now. Lines with only a date pass if any shift touches that day. Each line shows who was working then (`근무 지은`).
 - **Empty-time warning (출근 tab)**: for each past day of the month, from the first recorded day to yesterday, the page joins everyone's shifts (including overnight ones from the day before) over 00:00–24:00 and lists gaps ≥ 15 min. The store is treated as **open 24 h**. A shift without 퇴근 from a past day counts as unknown. Each gap has **내가 근무했어요**, which opens 근무 직접 입력 prefilled. Hidden while a name filter is on.
 - 출근 timeline bars: overlap with 2 people = yellow, 3+ = red, with "겹침 N분". Overnight shifts also show on the next day as `00:00 – 퇴근`. One row per person per day: when a person has more than one shift on a day (a night worker: last night's shift ending + tonight's start), they share one row with each time and length listed and one bar with all parts; on your own merged row each time is its own button to edit that shift. In a merged row the times are listed latest first (`22:30 – 24:00` above `00:00 – 08:00`, like the newest-first day list), and tonight's shift shows only this day's part (`22:30 – 24:00`, `당일 1시간 30분`); a lone finished shift still shows `22:30 – 08:00 (+1)`. The part after midnight is labeled `다음날 N` (`00:00 – 08:00 · 다음날 8시간`), the part before it `당일 N`. A shift still running past midnight shows `22:30 – 24:00` (done) on its start day and `00:00 – · 근무 중 · 당일 N` (time since 00:00; a finished after-midnight part says `다음날`) on today's row. Rows in a day are ordered by each person's latest start that day, latest first (야간 → 오후 → 오전 from the top, like the newest-first day list); a shift carried over from the night before counts as starting at 00:00.
