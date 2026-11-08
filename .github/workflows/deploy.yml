@@ -1,0 +1,58 @@
+name: Deploy to Apps Script
+
+# Every push to main that touches apps-script/ updates the live script
+# and the existing web app deployment (same /exec link, new version).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps-script/**"
+      - ".clasp.json"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-apps-script
+  cancel-in-progress: false
+
+env:
+  # Web app deployment behind the staff /exec link. Do not change unless the link changes.
+  DEPLOYMENT_ID: AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check JS syntax
+        run: |
+          cp apps-script/Code.gs /tmp/code.js && node --check /tmp/code.js
+          python3 - <<'PY'
+          import re
+          s = open('apps-script/Index.html', encoding='utf-8').read()
+          open('/tmp/page.js', 'w', encoding='utf-8').write(re.search(r'<script>(.*)</script>', s, re.S).group(1))
+          PY
+          node --check /tmp/page.js
+
+      - name: Install clasp
+        run: npm install -g @google/clasp@2.4.2
+
+      - name: Write clasp credentials
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then echo "::error::Repository secret CLASPRC_JSON is missing (see docs/DEVNOTES.md, Auto-deploy)"; exit 1; fi
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+
+      - name: Push code to Apps Script
+        run: clasp push --force
+
+      - name: Update the web app deployment (new version, same link)
+        run: |
+          MSG="$(git log -1 --pretty=%s | cut -c1-90)"
+          clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "${GITHUB_SHA::7} $MSG"
