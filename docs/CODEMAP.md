@@ -26,7 +26,7 @@ Naming rule in Code.gs: a name ending in `_` is private. **Any other top-level f
 | `PYEGI_DIV` | `'10'`, S312 search code for 폐기 |
 | `JEO`, `JEO_CHIT_ID`, `CHIT_DIV_CODE` | `'저회전'`, CHIT_ID `'24'`, common code `'S312'` |
 | `SC`, `SNCOL`, `SHIFT_HEADERS`, `OPEN_SHIFT_MAX_H` | 출근일지 columns; an open shift counts for 16 h max |
-| `LIVE_MIN_GAP_S`, `LIVE_TRIGGER_MIN` | live import: ≥ 120 s between BGF logins; trigger every 10 min |
+| `LIVE_MIN_GAP_S`, `LIVE_TRIGGER_MIN`, `BGF_SESSION_MIN` | live import: ≥ 50 s between BGF reads; trigger every 5 min; kept BGF login reused for 60 min |
 | `MC`, `PW_HEADER`, `AUTH_TAG` | 직원 columns; `[비밀번호]` marks auth errors for the page |
 | `RS`, `US`, `SS_VARS` | SSV separators; BGF session variables sent with every call |
 
@@ -36,7 +36,7 @@ Naming rule in Code.gs: a name ending in `_` is private. **Any other top-level f
 - `onOpen()` — builds the 취식 관리 menu. Each item maps to a `menu…` function or `nightly` / `installNightlyTrigger`.
 - `menuLiveNow`, `menuJeoBackfill`, `menuLiveOn`, `menuLiveOff`, `menuSetPassword`, `menuImportRange`, `menuSetDevPw`, `menuClearMemberPw` — menu handlers; each calls `SpreadsheetApp.getUi()` first so web callers fail.
 - `installNightlyTrigger()` (admin), `installLiveTrigger_()`, `removeLiveTrigger_()` — trigger management.
-- `liveTick(e)` — 10-min trigger → `refreshNow()`.
+- `liveTick(e)` — 5-min trigger → `refreshNow()`.
 - `adminOnly_()` — throws unless the active user is the owner. `fromTrigger_(e)` — true when `e.triggerUid` is one of this project's triggers.
 
 ### Import — sections `매일 가져오기`, `실시간 가져오기`, `BGF 점포시스템 통신`
@@ -57,8 +57,9 @@ refreshNow() ─► liveImport_() ────────┘        │        
 - `importRange_(from, to)` — full re-read (no `known`), logs to 가져오기 기록, emails the owner on failure, rethrows.
 - `itemsSheet_()` — returns 폐기목록, adding missing columns and the 전표 header (one-time migration). Used by `appendItems_` and `getMonth`.
 - `appendItems_(items)` — under the script lock: skips keys already in the sheet **or earlier in the same batch**, sorts by time, writes rows (전표 = `it.src`), bumps `VER`.
-- `refreshNow()` (public, no auth: it only imports) — throttle gate (`LIVE_OFF`, `LIVE_AT` ≥ 120 s, cache flag `live_running`), installs the live trigger if missing, → `liveImport_()`; returns `liveInfo_`.
-- `liveImport_()` — yesterday..today with `knownChits_()` so only new slips get detail calls. Never throws; stores `LIVE_OK_AT` / `LIVE_MS` / `LIVE_ERR` / `JEO_ERR`; logs when lines were added or a failure streak starts. Then calls `jeoBackfill_(session)` (does nothing once `JEO_BACKFILL=1`) and `octImport_(session)` (does nothing once `OCT_IMPORT=1`).
+- `refreshNow()` (public, no auth: it only imports) — throttle gate (`LIVE_OFF`, `LIVE_AT` ≥ 50 s, cache flag `live_running`), installs the live trigger if `LIVE_TRIGGER` ≠ `LIVE_TRIGGER_MIN`, → `liveImport_()`; returns `liveInfo_`.
+- `liveImport_()` — yesterday..today through `liveFetch_()` with `knownChits_()` so only new slips get detail calls. Never throws; stores `LIVE_OK_AT` / `LIVE_MS` / `LIVE_ERR` / `JEO_ERR`; logs when lines were added or a failure streak starts. Then calls `jeoBackfill_(session)` (does nothing once `JEO_BACKFILL=1`) and `octImport_(session)` (does nothing once `OCT_IMPORT=1`).
+- `liveFetch_(from, to, known)` — `fetchAll_` on the kept BGF session (`keptSession_()`, CacheService `bgf_session`, ≤ `BGF_SESSION_MIN`); if it throws, finds no slips or 저회전 fails, logs in fresh and reads again; `keepSession_()` stores the session that worked (keeps its first login time).
 - `jeoBackfill_(session, force)` — one-time 저회전 import from the earliest 일자 in 폐기목록 to today; reuses the live run's login; retries at most hourly unless `force`. Never throws.
 - `octImport_(session)` — one-time import of October 2026 (폐기 + 저회전, 20261001–20261031) for bringing in October's 취식 split and 근무시간; reuses the live run's login; sets `OCT_IMPORT=1` on success, retries at most hourly (`OCT_IMPORT_TRY`). Never throws.
 - `octApply_()` (in `apps-script/Oct2026.gs`) — one-time: writes `OCT_TAGS` (564 October 취식 tags: 폐기목록 key, 직원, 등록시각) onto untagged October 폐기 lines and appends `OCT_SHIFTS` (93 October shifts, keys `oct000`…) to 출근일지, skipping a shift that overlaps one already there. Called (through `octApplyAll_`) at the top of `refreshNow()` once `OCT_IMPORT=1`; sets `OCT_APPLY=1`; a failed try waits 10 min (`OCT_APPLY_TRY`); logs to 가져오기 기록. The file can be deleted after it ran.
@@ -108,7 +109,7 @@ CSS: tokens on `:root` with a dark-mode override; `.row.t-eat` / `.t-void` / `.t
 
 ### State
 
-`S = { months, month, version, rows, cancels, shifts, usual, members, me, view, who, q, busy, live, refreshing, online }`. `S.me` and tokens persist in localStorage (`chwisik.me`, `chwisik.tok`). Constants: `POLL_MS` 5 s, `LIVE_MS` 3 min, `GRACE_MIN` 30, `OPEN_MAX_MIN` 16 h, `GAP_MIN` 15, `OFFSHIFT`, `JEO`.
+`S = { months, month, version, rows, cancels, shifts, usual, members, me, view, who, q, busy, live, refreshing, online }`. `S.me` and tokens persist in localStorage (`chwisik.me`, `chwisik.tok`). Constants: `POLL_MS` 5 s, `LIVE_MS` 1 min, `GRACE_MIN` 30, `OPEN_MAX_MIN` 16 h, `GAP_MIN` 15, `OFFSHIFT`, `JEO`.
 
 Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mamt, type, memberFull, who, date, note, src]`.
 
@@ -127,7 +128,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 - App update: `checkAppUpdate(now)` (app only: `getPage(CHWISIK_PAGE_HASH)` → localStorage `chwisik.page`; `now` (pull to refresh, sync tap) → `location.reload()` at once unless `S.busy` or a sheet is open; else reload on next `visibilitychange`). The script's first lines clear `chwisik.pageTry` (tells the loader the page started).
 - Pull to refresh: an IIFE after the sync button handler; `touchstart`/`touchmove`/`touchend` on `document`, `.ptr` spinner element; on release past `GO` calls `refreshLive()` + `load(true)`.
 - Sticky bar hide / show: an IIFE right after pull to refresh; `check()` on `scroll` (passive) moves `.top` with `place(px, glide)` (inline `transform`; `shift` = px moved up) after an offset (`.hdr` + `.top` height): follows the scroll both ways; `settle()` after `SETTLE_MS` 120 glides a part-way bar in (last move `UP_TOL` 5 px+ up) or to the nearer end, glide length `GLIDE_MIN`–`GLIDE_MAX` ms by distance; never moved while `#q` has focus or a sheet is open.
-- Boot: `loadCache()` draws the last data → `getBoot` → pick name / password → `refreshLive()` + `checkAppUpdate()` → intervals (poll 5 s, live 3 min, re-render 출근 every minute).
+- Boot: `loadCache()` draws the last data → `getBoot` → pick name / password → `refreshLive()` + `checkAppUpdate()` → intervals (poll 5 s, live 1 min, re-render 출근 every minute).
 
 ---
 

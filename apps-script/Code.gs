@@ -1,7 +1,7 @@
 /**
  * 직원 취식 목록
  * - 매일 00:01 무렵 BGF 점포시스템에서 어제(와 그제) 폐기 전표를 가져와 '폐기목록' 시트에 추가
- * - 낮에도 오늘 폐기를 바로 가져옴: 직원이 링크를 열 때(2분에 한 번까지) + 10분마다 자동
+ * - 낮에도 오늘 폐기를 바로 가져옴: 링크가 열려 있으면 1분마다 + 아무도 안 열어도 5분마다 자동
  * - 웹앱: 직원이 자기 이름을 한 번 고르고, 품목마다 [취식] / [폐기] 를 한 번 눌러 등록
  *   취식 → 전체 이름(김성휘), 폐기 → 이름만(성휘)
  * - 출근일지: [출근] / [퇴근] 한 번 누르거나 직접 입력. 다른 직원 근무 시간도 날짜별로 보임
@@ -41,8 +41,9 @@ var SHIFT_HEADERS = ['키', '날짜', '직원', '출근', '퇴근', '근무시�
 var OPEN_SHIFT_MAX_H = 16;   // 퇴근을 안 찍은 근무는 이 시간까지만 '근무 중'으로 봄
 
 // 실시간 가져오기
-var LIVE_MIN_GAP_S = 120;    // BGF 에 이보다 자주 접속하지 않음
-var LIVE_TRIGGER_MIN = 10;   // 아무도 안 열어도 이 간격으로 오늘 폐기를 가져옴
+var LIVE_MIN_GAP_S = 50;     // BGF 에 이보다 자주 접속하지 않음 (페이지는 1분마다 부름)
+var LIVE_TRIGGER_MIN = 5;    // 아무도 안 열어도 이 간격으로 오늘 폐기를 가져옴 (1, 5, 10, 15, 30 중 하나)
+var BGF_SESSION_MIN = 60;    // BGF 로그인 쿠키를 이 시간까지 다시 씀 (매번 로그인하지 않음)
 
 /* ======================= 시트 준비 / 메뉴 ======================= */
 
@@ -100,7 +101,7 @@ function onOpen() {
     .addItem('저회전 지난 날짜 모두 가져오기', 'menuJeoBackfill')
     .addSeparator()
     .addItem('매일 자동 가져오기 켜기', 'installNightlyTrigger')
-    .addItem('실시간 가져오기 켜기 (10분마다 + 링크 열 때)', 'menuLiveOn')
+    .addItem('실시간 가져오기 켜기 (5분마다 + 링크 열려 있으면 1분마다)', 'menuLiveOn')
     .addItem('실시간 가져오기 끄기', 'menuLiveOff')
     .addSeparator()
     .addItem('개발자 비밀번호 설정', 'menuSetDevPw')
@@ -123,7 +124,7 @@ function menuLiveOn() {
   var ui = SpreadsheetApp.getUi();   // first: throws when called from the web page
   PropertiesService.getScriptProperties().deleteProperty('LIVE_OFF');
   installLiveTrigger_();
-  ui.alert('실시간 가져오기를 켰어요. 10분마다, 그리고 직원이 링크를 열 때 (2분에 한 번까지) 오늘 폐기를 가져옵니다.');
+  ui.alert('실시간 가져오기를 켰어요. 5분마다, 그리고 직원이 링크를 열어 두면 1분마다 오늘 폐기를 가져옵니다.');
 }
 function menuLiveOff() {
   var ui = SpreadsheetApp.getUi();   // first: throws when called from the web page
@@ -169,7 +170,7 @@ function installNightlyTrigger() {
 function installLiveTrigger_() {
   removeLiveTrigger_();
   ScriptApp.newTrigger('liveTick').timeBased().everyMinutes(LIVE_TRIGGER_MIN).create();
-  PropertiesService.getScriptProperties().setProperty('LIVE_TRIGGER', '1');
+  PropertiesService.getScriptProperties().setProperty('LIVE_TRIGGER', String(LIVE_TRIGGER_MIN));
   return LIVE_TRIGGER_MIN + '분마다 오늘 폐기 가져오기가 켜졌어요.';
 }
 function removeLiveTrigger_() {
@@ -273,7 +274,7 @@ function appendItems_(items) {
 /* ======================= 실시간 가져오기 (오늘 폐기) ======================= */
 
 /**
- * Called by the page on open / every few minutes, and by the 10-minute trigger.
+ * Called by the page on open / every minute while it is open, and by the 5-minute trigger.
  * Hits BGF at most once per LIVE_MIN_GAP_S across all callers; otherwise returns at once.
  */
 function refreshNow() {
@@ -286,7 +287,8 @@ function refreshNow() {
     try { octApplyAll_(); } catch (e) { logImport_('2026-10 (10월 취식·근무 넣기)', '', '', '실패: ' + String(e && e.message || e).slice(0, 200)); }
   }
   if (props.LIVE_OFF === '1') return liveInfo_(props, 0);
-  if (props.LIVE_TRIGGER !== '1') { try { installLiveTrigger_(); } catch (e) {} }
+  // LIVE_TRIGGER holds the trigger's minutes, so changing LIVE_TRIGGER_MIN reinstalls it
+  if (props.LIVE_TRIGGER !== String(LIVE_TRIGGER_MIN)) { try { installLiveTrigger_(); } catch (e) {} }
   if (Date.now() - Number(props.LIVE_AT || 0) < LIVE_MIN_GAP_S * 1000) return liveInfo_(props, 0);
   var cache = CacheService.getScriptCache();
   if (cache.get('live_running')) return liveInfo_(props, 0);
@@ -304,7 +306,7 @@ function liveImport_() {
   var now = new Date(t0);
   var from = ymd_(new Date(t0 - 24 * 3600 * 1000)), to = ymd_(now);
   try {
-    var r = fetchAll_(from, to, knownChits_());
+    var r = liveFetch_(from, to, knownChits_());
     var added = appendItems_(r.items);
     var ms = Date.now() - t0;
     p.setProperties({ LIVE_OK_AT: String(t0), LIVE_MS: String(ms), LIVE_ERR: '' });
@@ -323,6 +325,39 @@ function liveImport_() {
     p.setProperty('LIVE_ERR', msg);
     return { added: 0, ms: Date.now() - t0, error: msg };
   }
+}
+
+/**
+ * fetchAll_ with the BGF login kept between runs (CacheService), so a run every minute
+ * doesn't log in every minute. A kept session that errors, or answers with no slips at all or
+ * a 저회전 error, is not trusted: log in again and read once more (so an expired session can
+ * never hide slips). The session that worked is kept for the next run.
+ */
+function liveFetch_(from, to, known) {
+  var r = null, s = keptSession_();
+  if (s) {
+    try { r = fetchAll_(from, to, known, s); } catch (e) { r = null; }
+    if (r && (!r.chits || r.jeoErr)) r = null;
+  }
+  if (!r) r = fetchAll_(from, to, known);
+  keepSession_(r.session, s && r.session === s);
+  return r;
+}
+function keptSession_() {
+  try {
+    var c = JSON.parse(CacheService.getScriptCache().get('bgf_session') || 'null');
+    if (!c || !c.jar || Date.now() - Number(c.at || 0) > BGF_SESSION_MIN * 60 * 1000) return null;
+    var s = new Session_();
+    s.jar = c.jar;
+    s.loginAt = Number(c.at);
+    return s;
+  } catch (e) { return null; }
+}
+function keepSession_(s, reused) {
+  try {
+    var at = reused && s.loginAt ? s.loginAt : Date.now();
+    CacheService.getScriptCache().put('bgf_session', JSON.stringify({ jar: s.jar, at: at }), BGF_SESSION_MIN * 60);
+  } catch (e) {}
 }
 
 function liveInfo_(props, added) {

@@ -281,7 +281,7 @@ button.srow { cursor: pointer; }
 <script>
 (function () {
   "use strict";
-  var POLL_MS = 5000, LIVE_MS = 3 * 60 * 1000;
+  var POLL_MS = 5000, LIVE_MS = 60 * 1000;
   var GRACE_MIN = 30;          // 근무 시작 전/끝난 뒤 이 시간까지는 근무 중으로 봄 (폐기 경고)
   var OPEN_MAX_MIN = 16 * 60;  // 퇴근 안 찍은 근무는 16시간까지만 근무 중
   var OFFSHIFT = "근무외";
@@ -1011,7 +1011,7 @@ button.srow { cursor: pointer; }
       if (res && S.busy === 0 && month === S.month) take(res);
     }, function () { setOnline(false); });
   }
-  /** Ask the server to pull today's 폐기 from BGF (it throttles to once per 2 min for everyone). */
+  /** Ask the server to pull today's 폐기 from BGF (it throttles to once per 50 s for everyone). */
   function refreshLive() {
     if (S.refreshing) return;
     S.refreshing = true; renderSync();

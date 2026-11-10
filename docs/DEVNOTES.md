@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-10 (October 2026: lines nobody took on 10월 폐기 정리 are 이국환's 취식)
+Last updated: 2026-11-10 (faster live import: every 1 min while the page is open, trigger every 5 min, BGF login kept between runs)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -17,7 +17,7 @@ Read this first if you are a person or an AI agent about to change the code. Rel
 A tracker for CU store **25377**: which expired items (폐기) a worker ate (취식) and which they threw away (폐기), plus a shift log (출근일지).
 
 - **Every night around 00:01 (Asia/Seoul)** a time trigger logs in to the BGF 점포시스템, downloads the **폐기** and **저회전상품철수** slips for **yesterday and the day before**, and appends new lines to the **폐기목록** sheet. The day before is re-read so late slips are not missed. Lines already in the sheet are skipped (by key).
-- **During the day (실시간 가져오기)** today's and yesterday's new slips are pulled when a worker opens the link, every 3 min while the page is open, and every 10 min by a trigger even if nobody has it open. BGF is hit at most once per 2 min overall. See *Live import*.
+- **During the day (실시간 가져오기)** today's and yesterday's new slips are pulled when a worker opens the link, every 1 min while the page is open, and every 5 min by a trigger even if nobody has it open. BGF is hit at most once per 50 s overall, and the BGF login is kept between runs (re-login only when needed). See *Live import*.
 - **Staff open the Android app or one link** (no Google login). The app (see *App*) shows the same page without Google's wrapper and banner. They pick their name once (stored on the phone), then tap **[취식]** or **[폐기]** on each line.
   - 취식 → records the **full name** (김성휘)
   - 폐기 → records the **first name only** (성휘)
@@ -41,7 +41,7 @@ Everything runs on Google's servers. The owner's computer can be off.
 | GitHub repo | source of truth; push to `main` deploys (see *Auto-deploy*) |
 | Google account | noerror96@gmail.com (the script runs as this account) |
 | Trigger `nightly` | time-driven, daily, `atHour(0).nearMinute(1)`, Asia/Seoul. Google fires it within about ±15 min. |
-| Trigger `liveTick` | every 10 min. Installs itself the first time the page calls `refreshNow` (Script Property `LIVE_TRIGGER=1`). |
+| Trigger `liveTick` | every 5 min (`LIVE_TRIGGER_MIN`). Installs itself when the page calls `refreshNow` and Script Property `LIVE_TRIGGER` isn't the current minutes (so changing `LIVE_TRIGGER_MIN` reinstalls it). |
 
 Web app settings (`apps-script/appsscript.json`): **Execute as: Me (owner)**, **Who has access: Anyone, even anonymous** (`ANYONE_ANONYMOUS`). Changing access locks staff out.
 
@@ -125,7 +125,7 @@ One row per import run: time, date range, slip count, new lines, result. Nightly
 | `LIVE_AT` | live import | start of the last live attempt (throttle) |
 | `LIVE_OK_AT`, `LIVE_MS`, `LIVE_ERR` | live import | last success time, its duration, last error ('' = ok) |
 | `LIVE_OFF` | menu 실시간 끄기 | `1` = live import off |
-| `LIVE_TRIGGER` | `installLiveTrigger_` | `1` = the 10-min trigger exists |
+| `LIVE_TRIGGER` | `installLiveTrigger_` | minutes of the live trigger that exists (`5`); any other value → `refreshNow` reinstalls it. (Was `1` for the old 10-min trigger.) |
 | `JEO_DIV` | `jeoDiv_` | cached 전표구분 search code for 저회전상품철수 (from common code S312). Delete it to look it up again. |
 | `JEO_ERR` | live import | last 저회전 error ('' = ok); only the first failure of a streak is logged |
 | `JEO_BACKFILL` | `jeoBackfill_` | `1` = 저회전 for all past dates in the sheet was imported once. Delete it (or use the menu item) to run it again. |
@@ -203,7 +203,7 @@ The page calls the server with `run(fn, …args)`. On the `/exec` link that is `
 | `deleteShift(key, memberFull, month, token)` | delete own shift |
 | `login(full, pw)` | returns `{token}`; accepts the developer password too |
 | `setPassword(full, token, newPw)` | `newPw=''` removes it; returns `{token, members}` |
-| `refreshNow()` | live import if the last one was ≥ 2 min ago; returns `{label, error, off, added}` |
+| `refreshNow()` | live import if the last one was ≥ 50 s ago; returns `{label, error, off, added}` |
 
 Shapes sent to the page:
 - Row: `[sheetRow, key, time, name, qty, wprice, wamt, mamt, type, memberFull, who, date, note, src]` — `src` (index 13) is `''` for 폐기, `'저회전'` for 저회전.
@@ -254,11 +254,12 @@ Why: the `/exec` link is slow to open (Google's wrapper page, two iframes, then 
 
 ## Live import (오늘 폐기·저회전)
 
-- `refreshNow()` (page) and `liveTick()` (10-min trigger) go through the same gate: `LIVE_AT` must be ≥ `LIVE_MIN_GAP_S` = 120 s old, and a 90 s cache flag stops two runs at once. So BGF sees **at most one login per 2 min**, and only while someone has the page open; otherwise one per 10 min.
+- `refreshNow()` (page, every 1 min while visible) and `liveTick()` (5-min trigger) go through the same gate: `LIVE_AT` must be ≥ `LIVE_MIN_GAP_S` = 50 s old, and a 90 s cache flag stops two runs at once. So BGF is read **at most once per 50 s**, and only while someone has the page open; otherwise once per 5 min. A new BGF slip shows on the page within about 1 min while it is open (plus the 5 s data poll on other phones).
+- **Kept login** (`liveFetch_`): the BGF cookie jar is kept in CacheService (`bgf_session`) and reused for up to `BGF_SESSION_MIN` = 60 min after its login, so most runs skip the login (fewer BGF logins than the old 2-min pace). A kept session is only trusted when it answers cleanly: if it throws, returns no slips at all for yesterday..today, or the 저회전 list fails, the run logs in fresh and reads again, so an expired session can't hide slips. Not confirmed yet how BGF answers an expired session (the fallback covers both an error and an empty answer). Delete the cache by waiting 60 min, or change `BGF_SESSION_MIN` to 0 to log in every run.
 - **Past days**: the live import only reads yesterday..today, so on its own it would never fill 저회전 for days before 저회전 import existed (2026-11-09: only 11/8 came in). After a successful live run, `jeoBackfill_` imports 저회전 once for the whole range from the earliest 일자 in 폐기목록 to today, reusing the same login, then sets `JEO_BACKFILL=1`. The log row says `(저회전 지난 날짜)`. Any new slip kind added later needs the same kind of backfill.
-- One run = login + 폐기 list + 저회전 list (+ the S312 lookup once, until `JEO_DIV` is cached) + detail calls **only for slips not fully in the sheet** (`knownChits_()` counts lines per 전표번호 and compares with `ITEM_CNT`). The nightly import re-reads every slip as a safety net.
+- One run = login (unless kept) + 폐기 list + 저회전 list (+ the S312 lookup once, until `JEO_DIV` is cached) + detail calls **only for slips not fully in the sheet** (`knownChits_()` counts lines per 전표번호 and compares with `ITEM_CNT`). The nightly import re-reads every slip as a safety net.
 - `LIVE_OK_AT` = start of the last successful run → the page header shows "업데이트 21:31 ↻" (another day: "업데이트 11/8 21:31 ↻"). The whole label is one round button (text + ↻ icon); tapping it = pull to refresh; the icon spins during `정보 가져오는 중…`, is green when connected and red when not. `LIVE_ERR` holds the last error; only the first failure of a streak goes to 가져오기 기록, and live failures don't email (the nightly one does).
-- Load: 144 trigger runs/day × a few seconds ≈ 10 min of the 90 min/day trigger quota; UrlFetch stays far below 20k/day.
+- Load: 288 trigger runs/day × 2–8 s ≈ 10–40 min of the 90 min/day trigger quota (page calls don't count against it). With the page open all day: ≤ 1,700 runs × ~3–5 fetches ≈ 5–8k UrlFetch/day, under the 20k limit. (Measured 2026-11-10: a live run ≈ 6–8 s with login, a gated no-op call ≈ 2 s.) Don't make the trigger every 1 min: 1,440 runs would pass the 90 min quota.
 - **Watch out:** if BGF ever logs the store PC out when the same account logs in elsewhere, turn live import off (menu → 실시간 가져오기 끄기).
 
 ## Auto-deploy (GitHub → Apps Script)
