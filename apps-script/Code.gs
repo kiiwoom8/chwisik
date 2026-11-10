@@ -280,10 +280,10 @@ function refreshNow() {
   var p = PropertiesService.getScriptProperties();
   var props = p.getProperties();
   // one time: October 2026 취식 + 근무 (Oct2026.gs); a failed try waits 10 min
-  if (props.OCT_APPLY !== '1' && props.OCT_IMPORT === '1' && typeof octApply_ === 'function' &&
+  if ((props.OCT_APPLY !== '1' || props.OCT_APPLY2 !== '1') && props.OCT_IMPORT === '1' && typeof octApplyAll_ === 'function' &&
       Date.now() - Number(props.OCT_APPLY_TRY || 0) > 600 * 1000) {
     p.setProperty('OCT_APPLY_TRY', String(Date.now()));
-    try { octApply_(); } catch (e) { logImport_('2026-10 (10월 취식·근무 넣기)', '', '', '실패: ' + String(e && e.message || e).slice(0, 200)); }
+    try { octApplyAll_(); } catch (e) { logImport_('2026-10 (10월 취식·근무 넣기)', '', '', '실패: ' + String(e && e.message || e).slice(0, 200)); }
   }
   if (props.LIVE_OFF === '1') return liveInfo_(props, 0);
   if (props.LIVE_TRIGGER !== '1') { try { installLiveTrigger_(); } catch (e) {} }
