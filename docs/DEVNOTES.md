@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-11 (loading screen instead of empty-list text before data arrives)
+Last updated: 2026-11-11 (loading screen also blanks the counters while a month loads)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -229,7 +229,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 ## Page behavior (Index.html)
 
 - **Start**: if localStorage `chwisik.cache` holds this month's data (saved on every `take` of the newest month), the page draws it at once, then one `getBoot` call replaces it. So a returning phone sees the list right away even while Apps Script is slow. The Google Fonts stylesheet loads without blocking the first draw (`media=print` swap).
-- **Loading screen**: until this month's data has arrived (`S.ready`, set in `take()`), the page shows `#loading` (spinner + `목록 불러오는 중…` + shimmer placeholder rows) instead of the lists and the empty texts (`아직 기록이 없어요`, `이 달의 폐기 목록이 아직 없어요` …), so a slow first load doesn't look like an empty month. Switching month resets `S.ready`, so the loader shows again until that month answers. If `getBoot` fails, the loader hides (`S.failed`) and only the `#status` error shows. A cached start (`chwisik.cache`) skips the loader.
+- **Loading screen**: until this month's data has arrived (`S.ready`, set in `take()`), the page shows `#loading` (spinner + `목록 불러오는 중…` + shimmer placeholder rows) instead of the lists and the empty texts (`아직 기록이 없어요`, `이 달의 폐기 목록이 아직 없어요` …), so a slow first load doesn't look like an empty month. The tab counters and `이번 달 취식 / 폐기` show `–` meanwhile instead of `0`. Switching month resets `S.ready`, so the loader shows again until that month answers. If `getBoot` fails, the loader hides (`S.failed`) and only the `#status` error shows. A cached start (`chwisik.cache`) skips the loader.
 
 - **Pull to refresh**: at the top of the page, drag down and let go (pull past 64 px; the spinner turns green) = tap on the sync label: `refreshLive()` + `load(true)` + `checkAppUpdate(true)` (app only: new page code → reload into it); the spinner stays until the reload answers (at least 0.45 s). Ignored when the page is scrolled down, a bottom sheet is open, or the swipe is sideways or upward. `overscroll-behavior-y: contain` stops the browser's own pull-to-refresh (which would reload the whole page) where the page is the top-level document.
 - **Tabs** (8, one row, fits 360 px): 출근 · 미등록 · 취식 · 폐기 · 전체 · 취소 · **저회전** · 월별 합계. 출근 is first and always opens first.

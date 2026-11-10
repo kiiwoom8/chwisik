@@ -511,7 +511,10 @@ button.srow { cursor: pointer; }
     // 이 달 데이터가 아직 안 왔으면 '기록이 없어요' 대신 불러오는 화면 (실패하면 위 안내 문구만)
     var wait = !S.ready;
     $("loading").hidden = !wait || S.failed;
-    if (wait) { $("list").hidden = true; $("shifts").hidden = true; $("sum").hidden = true; $("emptyMsg").hidden = true; $("pin").hidden = true; }
+    if (wait) {
+      ["c-todo", "c-eat", "c-void", "c-all", "c-jeo", "c-cancel"].forEach(function (id) { $(id).textContent = "–"; });
+      $("myEat").textContent = "– 개 · – 원"; $("myVoid").textContent = "– 개 · – 원";
+      $("list").hidden = true; $("shifts").hidden = true; $("sum").hidden = true; $("emptyMsg").hidden = true; $("pin").hidden = true; }
   }
 
   function renderList() {
