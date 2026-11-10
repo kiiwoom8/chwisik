@@ -94,8 +94,9 @@ refreshNow() ─► liveImport_() ────────┘        │        
 
 - `shiftSheet_()`, `readShifts_()`, `writeShift_(sh, row, s)`.
 - Time helpers: `toMin_(date, hhmm)` (minutes on a KST number line), `nowMin_()`, `shiftSpan_(s)` (overnight aware), `shiftHours_`.
-- `shiftsFor_(month, all)`, `usualShifts_(all)`, `openShiftOf_(all, member, nowM)`, `overlapOf_(…)`.
-- Public (all check `authMember_`): `clockIn`, `clockOut`, `saveShift`, `deleteShift`.
+- `shiftsFor_(month, all)`, `usualShifts_(all)`, `isLive_(s, nowM)` (open and within −15 min … 16 h), `openShiftOf_(all, member, nowM)`, `overlapOf_(…)`.
+- Button-time rules (constants `SLOT_MIN`, `HANDOVER_MIN`, `AUTO_OUT_MIN_H`, `AUTO_OUT_MEMO`, `AUTO_OUT_CONFIRM_H`): `roundSlot_(m, tieUp)`, `minDate_(m)` / `minHm_(m)` (minutes → `yyyy-MM-dd` / `HH:mm`), `handoverAt_(all, member, t, which, after)` (another worker's nearest 퇴근 (1) / 출근 (0) in [t−30, t+15]), `isAutoOut_(s)`, `dropAutoOut_(memo)`, `planClockIn_(all, member, nowM)` (→ `{start, closed}`; sets `end`/memo on the shifts it closes, no writes), `planClockOut_(all, member, open, nowM)` (→ end minute).
+- Public (all check `authMember_`): `clockIn` (plan → write closed shifts + new row → `res.clock`), `clockOut` (open shift → plan; none open → confirm a recent `자동 퇴근`), `saveShift`, `deleteShift`.
 
 ---
 
@@ -121,7 +122,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 - Name filter: `whoNames()` (per view), `curWho()`, `renderWho()`.
 - Render: `render()` (tabs, counters — 미등록 excludes 저회전, 전체 = 폐기 lines, 저회전 = 저회전 lines — then dispatch), `renderList()` (filters per view, groups by day; 미등록 / 취식 put `totalEl(vis)` in the header's `#pinTot`; `render()` moves `#whoBar` into `#pin` on those tabs and back above `#list` on others), `totalEl(vis)` (금액합계 card: 수량 · 원가 total of the shown lines; on 취식 also per person when 2+ people), `rowEl(r)` (buttons per view; 폐기 button removed for 저회전 rows; 저회전 tab = one button, 취식 → 취소 once registered; disabled for other workers' rows), `renderCancels()`, `renderShifts()` (one row per shift, each day's shifts + carry-overs sorted by start on that day, latest on top: 야간 → 오후 → 오전 → carried-over 야간), `gapEl`, `shiftEl(s, nowM, d)` (one shift's row on day d: `00:00 –` part for a carry-over, `– 24:00` part when the rest has a next-day row; own row = edit button), `renderSum()`, `table(title, heads, rows, foot, note)`.
 - Tagging: `tap(r, type)` (guards: picker, other worker, 저회전 + 폐기, off-shift confirm) → `doTag` → `apply` (optimistic) + `send` (`setTag`; rolls back on error) + snack undo.
-- Shifts UI: `call(fn, args, done)` (adds token), `clock`, `openEditor(s, preset)`, `edHint`, `closeEditor`, form submit / delete handlers.
+- Shifts UI: `call(fn, args, done)` (adds token), `autoOutShift(member, nowM)` (my unconfirmed `자동 퇴근` in the last 2 h → the card shows 자동 퇴근 + [퇴근]), `clock` (snack from `res.clock`), `openEditor(s, preset)`, `edHint`, `closeEditor`, form submit / delete handlers.
 - Dialogs: `confirmBox`, `closeConfirm`, `openPicker`, `choose`, `openPw`, `closePw`, `savePw`.
 - Data: `take(res, force)` (also `saveCache`), `saveCache(res)` / `loadCache()` (localStorage `chwisik.cache`: newest month's data for an instant start), `load(force)` (poll with version; returns a promise), `refreshLive()` (`refreshNow`), `setOnline`, `renderSync` (picks the text), `setSync(cls, text)` (writes the `#sync` button: text + `.ico` ↻; class `go` spins it).
 - Misc: `snack(text, undo)`, tab click handlers, search, `goMonth`, Esc handling, `visibilitychange`.

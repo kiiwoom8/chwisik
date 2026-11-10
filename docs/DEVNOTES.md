@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-10 (faster live import: every 1 min while the page is open, trigger every 5 min, BGF login kept between runs)
+Last updated: 2026-11-10 (출근/퇴근 buttons: 30-min rounding, handover snap, 자동 퇴근 when the next worker clocks in)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -107,6 +107,13 @@ Created on the first 출근 / save if missing (or by `setup()`).
 
 Rules (server-side): from the page a worker can only edit or delete their own rows; one worker's shifts may not overlap; an open shift counts as "근무 중" for 16 h at most (after that the page shows "퇴근 기록 없음" until someone fixes it); no future times (+60 min slack). The owner can edit the sheet directly.
 
+**[출근] / [퇴근] button times** (`clockIn` / `clockOut`; hand entry via `saveShift` is kept as typed). The store counts work in 30-min slots, so:
+- **Rounding:** the press is rounded to the nearest :00 / :30 (`SLOT_MIN` 30). A press at exactly :15 / :45 goes the worker's way: 출근 down, 퇴근 up. 09:13 출근 → 09:00; 09:18 → 09:30; 22:07 퇴근 → 22:00; 22:16 → 22:30. A rounded-up 출근 can be up to 14 min ahead of now, so an open shift counts as 근무 중 from 15 min before its start (server `isLive_`, page `span`).
+- **Handover snap:** if another worker's 퇴근 lies between 30 min before and 15 min after the 출근 press (`HANDOVER_MIN`), the 출근 takes that exact time (09:18 출근 after a 09:00 퇴근 → 09:00), so the two shifts meet with no gap and no overlap. Same for 퇴근: another worker's 출근 (later than my own 출근) in that window → my 퇴근 = their 출근.
+- **자동 퇴근:** pressing 출근 while another worker is still 근무 중 (forgot 퇴근) closes that worker's shift at the same (rounded) time and adds `자동 퇴근` to its memo, but only if that leaves them at least 1 h (`AUTO_OUT_MIN_H`; someone who started within the hour is taken to be working alongside). Stale open shifts (16 h+) are left alone.
+- **Confirming it:** for 2 h after (`AUTO_OUT_CONFIRM_H`) that worker's page shows **자동 퇴근** with a [퇴근] button. Pressing it within 30 min of the 자동 퇴근 time keeps the time (the store doesn't count the extra 1–29 min); later than that, the 퇴근 moves to the press, rounded (they stayed on). Either way the `자동 퇴근` mark leaves the memo, so a memo still showing it means the worker never confirmed.
+- A 퇴근 that would round onto the 출근 time (pressed within ~15 min of 출근) is refused: delete the record instead.
+
 ### 직원
 A = full name, B = first name for 폐기 (auto: drops a 1-char surname, or a 2-char one such as 남궁/황보/제갈/선우), C = memo ("웹에서 추가" when a worker added themself), D = 비밀번호(암호): salted SHA-256 hash of the worker's password, or empty = no password. Never the password itself. Clearing D removes the password.
 
@@ -198,7 +205,7 @@ The page calls the server with `run(fn, …args)`. On the `/exec` link that is `
 | `getMonth(month, knownVersion)` | rows + cancels + shifts + `usual` for `yyyy-MM`; `null` if `knownVersion` is current (cheap polling) |
 | `setTag(rowHint, key, type, memberFull, month, note, me, token)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` kept only for 폐기. Refuses rows another worker tagged, and 폐기 on 저회전 rows. Returns the fresh month. |
 | `addMember(full)` | adds to 직원 |
-| `clockIn(memberFull, month, token)` / `clockOut(…)` | start a shift now / close the open one now |
+| `clockIn(memberFull, month, token)` / `clockOut(…)` | start a shift now / close the open one now (times rounded and snapped, see 출근일지). The month object gets `clock`: `{start, closed: [[member, end]]}` for 출근, `{end, kept?, moved?}` for 퇴근, for the snack |
 | `saveShift(key, date, memberFull, start, end, memo, month, token)` | create (`key=''`) or edit own shift; checks format, overlap, future times |
 | `deleteShift(key, memberFull, month, token)` | delete own shift |
 | `login(full, pw)` | returns `{token}`; accepts the developer password too |

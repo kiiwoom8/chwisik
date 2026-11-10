@@ -39,6 +39,11 @@ var SC = { KEY: 1, DATE: 2, MEMBER: 3, START: 4, END: 5, HOURS: 6, MEMO: 7, AT: 
 var SNCOL = 9;
 var SHIFT_HEADERS = ['키', '날짜', '직원', '출근', '퇴근', '근무시간', '메모', '등록시각', '월'];
 var OPEN_SHIFT_MAX_H = 16;   // 퇴근을 안 찍은 근무는 이 시간까지만 '근무 중'으로 봄
+var SLOT_MIN = 30;           // 출근/퇴근 버튼 시간은 가까운 30분으로 맞춤 (가게는 30분 단위로 셈)
+var HANDOVER_MIN = 30;       // 앞 사람 퇴근 뒤 30분 안에 출근하면 그 퇴근 시간으로 (교대, 빈 시간 없음)
+var AUTO_OUT_MIN_H = 1;      // 다음 사람 출근 때 1시간 넘게 근무 중인 사람은 자동 퇴근
+var AUTO_OUT_MEMO = '자동 퇴근';   // 메모에 이 표시가 있으면 본인이 아직 퇴근을 안 누른 것
+var AUTO_OUT_CONFIRM_H = 2;  // 자동 퇴근 뒤 이 시간 안에 본인이 [퇴근]을 누를 수 있음
 
 // 실시간 가져오기
 var LIVE_MIN_GAP_S = 50;     // BGF 에 이보다 자주 접속하지 않음 (페이지는 1분마다 부름)
@@ -1042,14 +1047,58 @@ function usualShifts_(all) {
   return out;
 }
 
+/** An open shift counts as "근무 중" from 15 min before its start (a rounded-up 출근) for 16 h. */
+function isLive_(s, nowM) {
+  if (s.end) return false;
+  var a = shiftSpan_(s)[0];
+  return a <= nowM + SLOT_MIN / 2 && nowM - a < OPEN_SHIFT_MAX_H * 60;
+}
+
 function openShiftOf_(all, member, nowM) {
   var best = null;
   all.forEach(function (s) {
-    if (s.member !== member || s.end) return;
-    var a = shiftSpan_(s)[0];
-    if (a <= nowM + 5 && nowM - a < OPEN_SHIFT_MAX_H * 60 && (!best || a > shiftSpan_(best)[0])) best = s;
+    if (s.member !== member || !isLive_(s, nowM)) return;
+    if (!best || shiftSpan_(s)[0] > shiftSpan_(best)[0]) best = s;
   });
   return best;
+}
+
+/* ---- 출근/퇴근 버튼 시간 맞추기 (30분 단위 + 교대) ----
+ * The store counts work in 30-min slots, so a button press is rounded to the nearest slot
+ * (:15 / :45 → 출근 down, 퇴근 up: ties go the worker's way).
+ * Handover: if another worker's 퇴근 (or 출근) is close to the press — from 15 min after it to
+ * 30 min before it — the press takes that exact time, so the two shifts meet with no gap and no
+ * overlap (09:18 출근 after a 09:00 퇴근 → 09:00).
+ * When someone presses 출근 while another worker is still 근무 중 (forgot 퇴근), that worker is
+ * closed at the same time (memo `자동 퇴근`), if that leaves them at least 1 h. If they press
+ * 퇴근 (page shows it for 2 h) within 30 min of it, the time stays; later than that, it moves to
+ * their press (they stayed). Either way the memo mark goes away. */
+function roundSlot_(m, tieUp) {
+  var r = ((m % SLOT_MIN) + SLOT_MIN) % SLOT_MIN, h = SLOT_MIN / 2;
+  return r < h || (r === h && !tieUp) ? m - r : m - r + SLOT_MIN;
+}
+function minDate_(m) { return Utilities.formatDate(new Date(m * 60000), 'UTC', 'yyyy-MM-dd'); }
+function minHm_(m) { return Utilities.formatDate(new Date(m * 60000), 'UTC', 'HH:mm'); }
+
+/**
+ * The other worker's 퇴근 (which = 1) or 출근 (which = 0) nearest to t, among times in
+ * [t - HANDOVER_MIN, t + SLOT_MIN / 2]; null if none. `after` = only times later than this.
+ */
+function handoverAt_(all, member, t, which, after) {
+  var best = null;
+  all.forEach(function (s) {
+    if (s.member === member) return;
+    var x = shiftSpan_(s)[which];
+    if (x === null || x <= after) return;
+    if (x < t - HANDOVER_MIN || x > t + SLOT_MIN / 2) return;
+    if (best === null || Math.abs(x - t) < Math.abs(best - t)) best = x;
+  });
+  return best;
+}
+
+function isAutoOut_(s) { return String(s.memo || '').split(' · ').indexOf(AUTO_OUT_MEMO) >= 0; }
+function dropAutoOut_(memo) {
+  return String(memo || '').split(' · ').filter(function (p) { return p && p !== AUTO_OUT_MEMO; }).join(' · ');
 }
 
 function overlapOf_(all, member, a, b, skipKey, nowM) {
@@ -1075,36 +1124,94 @@ function writeShift_(sh, row, s) {
     s.memo || '', Utilities.formatDate(new Date(), TZ, 'MM/dd HH:mm'), s.date.slice(0, 7)]]);
 }
 
+/**
+ * Plan a 출근 at nowM (no writes): { start (minutes), closed: [shift with .end set] }.
+ * Pure apart from reading `all`, so it can be tested on its own.
+ */
+function planClockIn_(all, member, nowM) {
+  var start = roundSlot_(nowM, false), closed = [];
+  all.forEach(function (s) {
+    if (s.member === member || !isLive_(s, nowM)) return;
+    if (start - shiftSpan_(s)[0] < AUTO_OUT_MIN_H * 60) return; // 막 출근한 사람: 같이 일하는 중
+    s.end = minHm_(start);
+    s.memo = (dropAutoOut_(s.memo) ? dropAutoOut_(s.memo) + ' · ' : '') + AUTO_OUT_MEMO;
+    closed.push(s);
+  });
+  if (!closed.length) {
+    var e = handoverAt_(all, member, nowM, 1, -Infinity);
+    if (e !== null) start = e;
+  }
+  return { start: start, closed: closed };
+}
+
+/** Plan a 퇴근 for `open` at nowM: end in minutes. */
+function planClockOut_(all, member, open, nowM) {
+  var a = shiftSpan_(open)[0];
+  var end = roundSlot_(nowM, true);
+  var s = handoverAt_(all, member, nowM, 0, a);
+  return s !== null ? s : end;
+}
+
 function clockIn(memberFull, month, token) {
-  var mem = authMember_(memberFull, token);
+  var mem = authMember_(memberFull, token), info = null;
   withLock_(function () {
     var sh = shiftSheet_();
     var all = readShifts_(), nowM = nowMin_(), now = new Date();
     var open = openShiftOf_(all, mem.full, nowM);
     if (open) throw new Error('이미 ' + open.start + '에 출근했어요. 끝났으면 [퇴근]을 눌러 주세요.');
-    var hit = overlapOf_(all, mem.full, nowM, null, '', nowM);
+    var p = planClockIn_(all, mem.full, nowM);
+    var hit = overlapOf_(all, mem.full, p.start, null, '', nowM);
     if (hit) throw new Error('지금 시간이 이미 근무 기록(' + hit.start + '–' + hit.end + ') 안에 있어요.');
+    p.closed.forEach(function (s) { writeShift_(sh, s.row, s); });
     writeShift_(sh, sh.getLastRow() + 1, {
       key: 's' + now.getTime().toString(36) + Math.floor(Math.random() * 1296).toString(36),
-      date: Utilities.formatDate(now, TZ, 'yyyy-MM-dd'), member: mem.full, start: Utilities.formatDate(now, TZ, 'HH:mm'), end: '', memo: ''
+      date: minDate_(p.start), member: mem.full, start: minHm_(p.start), end: '', memo: ''
     });
+    info = { start: minHm_(p.start), closed: p.closed.map(function (s) { return [s.member, s.end]; }) };
     bumpVersion_();
   });
-  return getMonth(month || '', '');
+  var res = getMonth(month || '', '');
+  if (res) res.clock = info;
+  return res;
 }
 
 function clockOut(memberFull, month, token) {
-  var mem = authMember_(memberFull, token);
+  var mem = authMember_(memberFull, token), info = null;
   withLock_(function () {
     var sh = shiftSheet_();
     var all = readShifts_(), nowM = nowMin_();
     var open = openShiftOf_(all, mem.full, nowM);
-    if (!open) throw new Error('지금 출근 중인 기록이 없어요. [직접 입력]으로 적어 주세요.');
-    open.end = Utilities.formatDate(new Date(), TZ, 'HH:mm');
+    if (!open) {
+      // 다음 사람이 출근하면서 자동 퇴근된 근무: 30분 안에 누르면 그 시간 그대로, 넘으면 지금 시간으로.
+      var last = null;
+      all.forEach(function (s) {
+        if (s.member !== mem.full || !s.end || !isAutoOut_(s)) return;
+        var b = shiftSpan_(s)[1];
+        if (b > nowM + SLOT_MIN / 2 || nowM - b > AUTO_OUT_CONFIRM_H * 60 + 15) return;
+        if (!last || b > shiftSpan_(last)[1]) last = s;
+      });
+      if (!last) throw new Error('지금 출근 중인 기록이 없어요. [직접 입력]으로 적어 주세요.');
+      var lb = shiftSpan_(last)[1];
+      var kept = nowM - lb < HANDOVER_MIN;
+      if (!kept) last.end = minHm_(roundSlot_(nowM, true));
+      last.memo = dropAutoOut_(last.memo);
+      writeShift_(sh, last.row, last);
+      info = kept ? { end: last.end, kept: true } : { end: last.end, moved: true };
+      bumpVersion_();
+      return;
+    }
+    var end = planClockOut_(all, mem.full, open, nowM);
+    if (end <= shiftSpan_(open)[0]) {
+      throw new Error(open.start + ' 출근과 퇴근이 같은 시간이 돼요. 잘못 눌렀으면 근무 기록을 눌러 지워 주세요.');
+    }
+    open.end = minHm_(end);
     writeShift_(sh, open.row, open);
+    info = { end: open.end };
     bumpVersion_();
   });
-  return getMonth(month || '', '');
+  var res = getMonth(month || '', '');
+  if (res) res.clock = info;
+  return res;
 }
 
 /** key '' = new. end '' = still working. */

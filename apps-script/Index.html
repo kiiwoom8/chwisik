@@ -284,6 +284,7 @@ button.srow { cursor: pointer; }
   var POLL_MS = 5000, LIVE_MS = 60 * 1000;
   var GRACE_MIN = 30;          // 근무 시작 전/끝난 뒤 이 시간까지는 근무 중으로 봄 (폐기 경고)
   var OPEN_MAX_MIN = 16 * 60;  // 퇴근 안 찍은 근무는 16시간까지만 근무 중
+  var AUTO_OUT = "자동 퇴근", AUTO_OUT_MIN = 2 * 60;  // 다음 사람 출근으로 자동 퇴근된 뒤 2시간은 [퇴근] 버튼
   var OFFSHIFT = "근무외";
   var JEO = "저회전";          // 저회전상품철수 줄 (row[13]): 취식만 가능, 등록 안 해도 됨
   var GAP_MIN = 15;            // 지난 날 근무 기록 사이 이보다 긴 빈 시간은 경고 (가게는 24시간 기준)
@@ -343,8 +344,19 @@ button.srow { cursor: pointer; }
     var a = toMin(s[2], s[4]), b = null;
     if (s[5]) { b = toMin(s[2], s[5]); if (b < a) b += 1440; }
     var open = b === null;
-    var live = open && a <= nowM + 5 && nowM - a < OPEN_MAX_MIN;
+    var live = open && a <= nowM + 15 && nowM - a < OPEN_MAX_MIN; // 출근이 30분 단위로 올림돼 조금 뒤일 수 있음
     return { a: a, b: b, open: open, live: live, stale: open && !live && a < nowM, e: open ? Math.max(a, Math.min(nowM, a + OPEN_MAX_MIN)) : b };
+  }
+  /** member's shift closed by the next worker's 출근 that they haven't confirmed yet (last 2 h) */
+  function autoOutShift(member, nowM) {
+    var best = null;
+    S.shifts.forEach(function (s) {
+      if (s[3] !== member || !s[5] || String(s[6] || "").split(" · ").indexOf(AUTO_OUT) < 0) return;
+      var b = span(s, nowM).b;
+      if (b > nowM + 15 || nowM - b > AUTO_OUT_MIN) return;
+      if (!best || b > span(best, nowM).b) best = s;
+    });
+    return best;
   }
   function openShift(member, nowM) {
     var best = null;
@@ -612,17 +624,21 @@ button.srow { cursor: pointer; }
 
     var card = mk("div", "mycard");
     if (S.month === curMonth() && me) {
-      var open = openShift(S.me, nowM);
+      var open = openShift(S.me, nowM), auto = open ? null : autoOutShift(S.me, nowM);
       var st = mk("div", "mystate");
-      if (open) {
+      if (auto) {
+        st.appendChild(mk("b", "", "자동 퇴근"));
+        st.appendChild(document.createTextNode("다음 사람이 출근해서 " + auto[5] + " 퇴근으로 적었어요. 맞으면 [퇴근]을 눌러 주세요."));
+      } else if (open) {
         st.appendChild(mk("b", "", "근무 중"));
         st.appendChild(document.createTextNode(open[4] + " 출근 · " + dur(nowM - span(open, nowM).a) + "째"));
       } else {
         st.appendChild(mk("b", "", me.full + " 님"));
-        st.appendChild(document.createTextNode("지금은 근무 중이 아니에요."));
+        st.appendChild(document.createTextNode("지금은 근무 중이 아니에요. 출근·퇴근은 30분 단위로 적혀요."));
       }
-      var bt = mk("button", "clock" + (open ? " out" : ""), open ? "퇴근" : "출근"); bt.type = "button";
-      bt.addEventListener("click", function () { clock(open ? "clockOut" : "clockIn", bt); });
+      var out = !!(open || auto);
+      var bt = mk("button", "clock" + (out ? " out" : ""), out ? "퇴근" : "출근"); bt.type = "button";
+      bt.addEventListener("click", function () { clock(out ? "clockOut" : "clockIn", bt); });
       card.appendChild(st); card.appendChild(bt);
     } else if (!me) {
       card.appendChild(mk("div", "mystate", "이름을 먼저 골라 주세요."));
@@ -906,8 +922,18 @@ button.srow { cursor: pointer; }
   function clock(fn, btn) {
     if (!memberOf(S.me)) { openPicker(); return; }
     btn.disabled = true;
-    var t = new Date(Date.now() + 540 * 60000).toISOString().slice(11, 16);
-    call(fn, [S.me, S.month], function () { snack((fn === "clockIn" ? "출근 " : "퇴근 ") + t + " 기록했어요"); })
+    call(fn, [S.me, S.month], function (res) {
+      var c = res && res.clock;
+      if (!c) { snack(fn === "clockIn" ? "출근 기록했어요" : "퇴근 기록했어요"); return; }
+      if (fn === "clockOut") {
+        snack(c.kept ? "퇴근 " + c.end + " 그대로 뒀어요 (다음 사람 출근 시간)"
+          : "퇴근 " + c.end + " 기록했어요" + (c.moved ? " (자동 퇴근을 고쳤어요)" : ""));
+        return;
+      }
+      var msg = "출근 " + c.start + " 기록했어요";
+      (c.closed || []).forEach(function (x) { msg += " · " + x[0] + " " + x[1] + " 자동 퇴근"; });
+      snack(msg);
+    })
       .catch(function () {}).then(function () { btn.disabled = false; });
   }
 
