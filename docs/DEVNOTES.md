@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-10 (one-time October 2026 import, for bringing in October's 취식 split and 근무시간)
+Last updated: 2026-11-10 (October 2026 brought in: 폐기·저회전 import, 취식 tags from 10월 폐기 정리, 근무시간 from the owner's Excel)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -51,6 +51,7 @@ Web app settings (`apps-script/appsscript.json`): **Execute as: Me (owner)**, **
 |---|---|
 | `apps-script/Code.gs` | Server: BGF login + import (nightly, live), sheet setup, web app API, passwords, 출근일지 |
 | `apps-script/Index.html` | The staff page: HTML + CSS + one `<script>` block (no build step, no libraries) |
+| `apps-script/Oct2026.gs` | One-time October 2026 data (취식 tags + shifts) and `octApply_()`; can be deleted after it ran (`OCT_APPLY=1`) |
 | `apps-script/appsscript.json` | Manifest: timezone, V8, web app access |
 | `.clasp.json` | clasp config (`rootDir: apps-script`) |
 | `.github/workflows/deploy.yml` | Syntax check → `clasp push` → `clasp deploy` on the staff deployment |
@@ -130,6 +131,7 @@ One row per import run: time, date range, slip count, new lines, result. Nightly
 | `JEO_BACKFILL` | `jeoBackfill_` | `1` = 저회전 for all past dates in the sheet was imported once. Delete it (or use the menu item) to run it again. |
 | `JEO_BACKFILL_TRY` | `jeoBackfill_` | time of the last backfill try; a failed try waits 1 h before the next automatic one |
 | `OCT_IMPORT`, `OCT_IMPORT_TRY` | `octImport_` | `1` = October 2026 (폐기 + 저회전) was imported once; time of the last try (a failed try waits 1 h). |
+| `OCT_APPLY`, `OCT_APPLY_TRY` | `octApply_` (Oct2026.gs) | `1` = October 취식 tags and shifts were written once; time of the last try (a failed try waits 10 min). |
 | `PW_SALT`, `TOKEN_KEY` | first use | password hashing salt / token HMAC key. Deleting `TOKEN_KEY` logs every phone out; deleting `PW_SALT` invalidates every stored password |
 | `DEV_PW_HASH` | menu 개발자 비밀번호 설정 | hash of the developer bypass password |
 
