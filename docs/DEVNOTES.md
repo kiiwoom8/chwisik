@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-09 (sticky bar follows the scroll both ways, glides to an end when scrolling stops)
+Last updated: 2026-11-10 (one-time October 2026 import, for bringing in October's 취식 split and 근무시간)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -129,6 +129,7 @@ One row per import run: time, date range, slip count, new lines, result. Nightly
 | `JEO_ERR` | live import | last 저회전 error ('' = ok); only the first failure of a streak is logged |
 | `JEO_BACKFILL` | `jeoBackfill_` | `1` = 저회전 for all past dates in the sheet was imported once. Delete it (or use the menu item) to run it again. |
 | `JEO_BACKFILL_TRY` | `jeoBackfill_` | time of the last backfill try; a failed try waits 1 h before the next automatic one |
+| `OCT_IMPORT`, `OCT_IMPORT_TRY` | `octImport_` | `1` = October 2026 (폐기 + 저회전) was imported once; time of the last try (a failed try waits 1 h). |
 | `PW_SALT`, `TOKEN_KEY` | first use | password hashing salt / token HMAC key. Deleting `TOKEN_KEY` logs every phone out; deleting `PW_SALT` invalidates every stored password |
 | `DEV_PW_HASH` | menu 개발자 비밀번호 설정 | hash of the developer bypass password |
 

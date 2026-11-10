@@ -309,6 +309,7 @@ function liveImport_() {
       logImport_(from + '~' + to + ' (실시간)', r.chits, added, 'OK · ' + (ms / 1000).toFixed(1) + '초, 상세 ' + r.fetched + '장' + jeoNote_(r));
     }
     if (!r.jeoErr) added += jeoBackfill_(r.session, false).added || 0;
+    added += octImport_(r.session).added || 0;
     return { added: added, ms: Date.now() - t0 };
   } catch (e) {
     var msg = String(e && e.message || e).slice(0, 200);
@@ -502,6 +503,28 @@ function jeoBackfill_(session, force) {
     var msg = String(e && e.message || e).slice(0, 200);
     logImport_(range + ' (' + JEO + ' 지난 날짜)', '', '', '실패: ' + msg);
     return { added: 0, error: msg };
+  }
+}
+/**
+ * One time (owner's ask, 2026-11-10): October 2026 폐기 + 저회전 from BGF, so October's 취식 list
+ * (the 10월 폐기 정리 split) and 근무시간 can be brought in. Runs after a live import until it succeeds
+ * once (OCT_IMPORT=1); a failed try waits an hour (OCT_IMPORT_TRY). Never throws.
+ */
+function octImport_(session) {
+  var p = PropertiesService.getScriptProperties();
+  if (p.getProperty('OCT_IMPORT') === '1') return { added: 0 };
+  if (Date.now() - Number(p.getProperty('OCT_IMPORT_TRY') || 0) < 3600 * 1000) return { added: 0 };
+  p.setProperty('OCT_IMPORT_TRY', String(Date.now()));
+  var range = '20261001~20261031 (10월 한 번)';
+  try {
+    var r = fetchAll_('20261001', '20261031', null, session);
+    var added = appendItems_(r.items);
+    logImport_(range, r.chits, added, 'OK' + jeoNote_(r));
+    if (!r.jeoErr) p.setProperty('OCT_IMPORT', '1');
+    return { added: added };
+  } catch (e) {
+    logImport_(range, '', '', '실패: ' + String(e && e.message || e).slice(0, 200));
+    return { added: 0 };
   }
 }
 function jeoNote_(r) { return r.jeoErr ? ' · ' + JEO + ' 실패: ' + r.jeoErr : r.jeoChits ? ' · ' + JEO + ' ' + r.jeoChits + '장' : ''; }

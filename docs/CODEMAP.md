@@ -58,8 +58,9 @@ refreshNow() ─► liveImport_() ────────┘        │        
 - `itemsSheet_()` — returns 폐기목록, adding missing columns and the 전표 header (one-time migration). Used by `appendItems_` and `getMonth`.
 - `appendItems_(items)` — under the script lock: skips keys already in the sheet **or earlier in the same batch**, sorts by time, writes rows (전표 = `it.src`), bumps `VER`.
 - `refreshNow()` (public, no auth: it only imports) — throttle gate (`LIVE_OFF`, `LIVE_AT` ≥ 120 s, cache flag `live_running`), installs the live trigger if missing, → `liveImport_()`; returns `liveInfo_`.
-- `liveImport_()` — yesterday..today with `knownChits_()` so only new slips get detail calls. Never throws; stores `LIVE_OK_AT` / `LIVE_MS` / `LIVE_ERR` / `JEO_ERR`; logs when lines were added or a failure streak starts. Then calls `jeoBackfill_(session)` (does nothing once `JEO_BACKFILL=1`).
+- `liveImport_()` — yesterday..today with `knownChits_()` so only new slips get detail calls. Never throws; stores `LIVE_OK_AT` / `LIVE_MS` / `LIVE_ERR` / `JEO_ERR`; logs when lines were added or a failure streak starts. Then calls `jeoBackfill_(session)` (does nothing once `JEO_BACKFILL=1`) and `octImport_(session)` (does nothing once `OCT_IMPORT=1`).
 - `jeoBackfill_(session, force)` — one-time 저회전 import from the earliest 일자 in 폐기목록 to today; reuses the live run's login; retries at most hourly unless `force`. Never throws.
+- `octImport_(session)` — one-time import of October 2026 (폐기 + 저회전, 20261001–20261031) for bringing in October's 취식 split and 근무시간; reuses the live run's login; sets `OCT_IMPORT=1` on success, retries at most hourly (`OCT_IMPORT_TRY`). Never throws.
 - `liveInfo_(props, added)` — `{label, off, error, added}` for the page header.
 - `knownChits_()` — `{CHIT_NO: lines in sheet}`.
 - `logImport_(range, chits, added, result)` — appends to 가져오기 기록.
