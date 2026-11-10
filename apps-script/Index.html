@@ -292,7 +292,7 @@ button.srow { cursor: pointer; }
   var K_ME = "chwisik.me", K_TOK = "chwisik.tok";
   var S = { months: [], month: "", version: "", rows: [], cancels: [], shifts: [], usual: {}, members: [], me: "", view: "shift", who: "", q: "", busy: 0, live: null, refreshing: false, online: true };
   var $ = function (id) { return document.getElementById(id); };
-  var fmt = function (n) { return Number(n || 0).toLocaleString("ko-KR"); };
+  var fmt = function (n) { return Math.round(Number(n || 0)).toLocaleString("ko-KR"); };  // whole numbers only (원가 has no decimals)
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function mk(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }

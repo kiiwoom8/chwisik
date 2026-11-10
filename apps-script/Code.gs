@@ -647,7 +647,7 @@ function fetchSlips_(s, divCode, onlyChitId, src, fromYmd, toYmd, known) {
           date: cy.slice(0, 4) + '-' + cy.slice(4, 6) + '-' + cy.slice(6, 8),
           time: cre.slice(0, 4) + '-' + cre.slice(4, 6) + '-' + cre.slice(6, 8) + ' ' + cre.slice(8, 10) + ':' + cre.slice(10, 12) + ':' + cre.slice(12, 14),
           name: d.ITEM_NM, code: d.ITEM_CD || '', cat: d.LARGE_NM || '',
-          qty: Number(d.QTY) || 0, wprice: Number(d.WONGA_PRICE) || 0, wamt: Number(d.WONGA_AMT) || 0,
+          qty: Number(d.QTY) || 0, wprice: Math.round(Number(d.WONGA_PRICE) || 0), wamt: Math.round(Number(d.WONGA_AMT) || 0),  // 원가 is whole won (BGF sends decimals)
           mprice: Number(d.MAEGA_PRICE) || 0, mamt: Number(d.MAEGA_AMT) || 0, chit: d.CHIT_NO, src: src || ''
         });
       });
@@ -872,17 +872,18 @@ function getMonth(month, knownVersion) {
       if (r[C.MONTH - 1] !== month) continue;
       if (cx.neg[i]) {
         // [time, name, qty, wamt, date, [[time, qty, type, member], …] canceled lines (empty = no earlier line), src]
-        cancels.push([when(i), r[C.NAME - 1], Number(nums[i][0]) || 0, Number(nums[i][2]) || 0, r[C.DATE - 1],
+        cancels.push([when(i), r[C.NAME - 1], Number(nums[i][0]) || 0, Math.round(Number(nums[i][2]) || 0), r[C.DATE - 1],
           cx.neg[i].map(function (m) { var o = vals[m[0]]; return [when(m[0]), m[1], o[C.TYPE - 1], o[C.MEMBER - 1]]; }), r[C.SRC - 1]]);
         continue;
       }
-      var q = Number(nums[i][0]) || 0, wamt = Number(nums[i][2]) || 0, mamt = Number(nums[i][4]) || 0;
+      // 원가 is shown in whole won: round each line (older sheet rows can hold BGF's decimals), so totals are whole too
+      var q = Number(nums[i][0]) || 0, wamt = Math.round(Number(nums[i][2]) || 0), mamt = Number(nums[i][4]) || 0;
       if (cx.left[i] !== undefined) {
         if (cx.left[i] <= 0) continue;            // fully canceled
         wamt = Math.round(wamt * cx.left[i] / q); mamt = Math.round(mamt * cx.left[i] / q); q = cx.left[i];
       }
       rows.push([i + 2, r[C.KEY - 1], when(i), r[C.NAME - 1], q,
-        Number(nums[i][1]) || 0, wamt, mamt, r[C.TYPE - 1], r[C.MEMBER - 1], r[C.WHO - 1], r[C.DATE - 1], r[C.NOTE - 1], r[C.SRC - 1]]);
+        Math.round(Number(nums[i][1]) || 0), wamt, mamt, r[C.TYPE - 1], r[C.MEMBER - 1], r[C.WHO - 1], r[C.DATE - 1], r[C.NOTE - 1], r[C.SRC - 1]]);
     }
   }
   var all = readShifts_();

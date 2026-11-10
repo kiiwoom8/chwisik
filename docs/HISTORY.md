@@ -17,6 +17,9 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
 - **[출근] / [퇴근] times are in 30-min slots** (owner: the store rarely counts 1–29 min). Rounded to the nearest slot, snapped to the other worker's 퇴근 / 출근 when it's within 30 min (09:13 → 09:00; 09:18 → 09:00 when the last 퇴근 was 09:00), and pressing 출근 closes a worker who forgot 퇴근 (`자동 퇴근`); their own 퇴근 press within 30 min doesn't move it. The owner said "within 10 min"; the 30-min window covers that and matches the 30-min counting. Hand entry is not rounded.
 - The add link is **`+ 근무 직접 입력`** (no `(깜빡한 날)`).
 
+**원가 (취식 / 폐기 amounts)**
+- **Whole won, no decimal point** (owner, 2026-11-10). BGF's 원가 has decimals; it's rounded per line (import + `getMonth`), and totals add the rounded lines.
+
 **Header**
 - Sync label: **`업데이트 HH:mm`** (not `폐기 HH:mm까지`; `마지막 업데이트 HH:mm` was tried and dropped because it doesn't fit next to the name at 360 px).
 - While refreshing: **`정보 가져오는 중…`** (not `폐기 가져오는 중…`).
@@ -158,3 +161,4 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
   - Snack shows the recorded time and anyone closed (`출근 09:00 기록했어요 · 김성휘 09:00 자동 퇴근`). The 출근 card says `출근·퇴근은 30분 단위로 적혀요.`
   - A rounded-up 출근 can be up to 14 min ahead, so 근무 중 now starts 15 min before a shift's start (was 5) on server and page.
   - Tested: node scenario test of the rounding / snap / 자동 퇴근 rules (15 cases incl. both of the owner's examples, midnight rollover) passed; `node --check` on both files. Live: `getPage` on the /exec link served the new page about 1 min after the push. Not checked: a real 출근/퇴근 press on a phone.
+- **(this commit) — 취식 원가 without decimals.** The owner: round 취식 원가 so no decimal point remains. BGF's WONGA_AMT / WONGA_PRICE can have decimals, and the page showed them (`toLocaleString` keeps up to 3 places). Now: `fetchSlips_` stores 원가단가 / 원가금액 rounded for new rows; `getMonth` rounds each line's 원가 (and each cancel line's) so older sheet rows with decimals show whole too, and all page totals (이번 달 취식, 금액합계, 월별 합계) are sums of the rounded lines; the page's `fmt` rounds as a last guard. Applies to 폐기 원가 too (same numbers). The 월별 합계 sheet's QUERY still sums the raw column (shown as `#,##0`, so no decimals there either, but it may differ from the page by a won or so). Checked: `node --check` on both files. Not checked: the live page on a phone.

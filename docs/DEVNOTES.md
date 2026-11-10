@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-10 (출근/퇴근 buttons: 30-min rounding, handover snap, 자동 퇴근 when the next worker clocks in)
+Last updated: 2026-11-10 (원가 in whole won: no decimals on the page)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -213,7 +213,7 @@ The page calls the server with `run(fn, …args)`. On the `/exec` link that is `
 | `refreshNow()` | live import if the last one was ≥ 50 s ago; returns `{label, error, off, added}` |
 
 Shapes sent to the page:
-- Row: `[sheetRow, key, time, name, qty, wprice, wamt, mamt, type, memberFull, who, date, note, src]` — `src` (index 13) is `''` for 폐기, `'저회전'` for 저회전.
+- Row: `[sheetRow, key, time, name, qty, wprice, wamt, mamt, type, memberFull, who, date, note, src]` — `src` (index 13) is `''` for 폐기, `'저회전'` for 저회전. `wprice` / `wamt` (원가) are rounded to whole won per line (BGF sends decimals; new rows are also stored rounded by the import), so every 원가 total on the page is whole won too. The page's `fmt` also rounds.
 - Cancel: `[time, name, qty, wamt, date, [[origTime, qty, type, memberFull], …], src]` (empty list = no earlier line, ignored).
 - Shift: `[sheetRow, key, date, memberFull, start, end, memo]`. A month's shifts also include the last day of the month before (overnight shifts).
 - `usual` = `{fullName: [출근, 퇴근], '*': [...]}`: the most frequent closed shift pair per worker over the last 90 days (ties → most recent).
