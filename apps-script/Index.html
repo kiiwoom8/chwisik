@@ -69,10 +69,25 @@ h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .mine div { background: var(--band); border-radius: var(--r); padding: 8px 10px; font-size: 12.5px; color: var(--muted); }
 .mine b { display: block; color: var(--ink); font-size: 16px; font-weight: 500; }
 .mine .eat b { color: var(--eat); }
-.tabs { display: grid; grid-template-columns: repeat(8, 1fr); background: var(--band); border-radius: var(--r); padding: 3px; gap: 3px; }
+.tabs { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--band); border-radius: var(--r); padding: 3px; gap: 3px; }
 .tab { border: 0; background: transparent; padding: 7px 1px; white-space: nowrap; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); line-height: 1.2; }
 .tab .num { display: block; font-size: 11.5px; }
 .tab[aria-selected="true"] { background: var(--sheet); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+/* [더보기] tab + its menu (전체 / 취소). The tab shows the picked view's name and count while one of them is open. */
+.tabwrap { position: relative; }
+.tab.more .num { display: flex; align-items: center; justify-content: center; gap: 3px; min-height: 1.2em; }
+.chev { display: inline-block; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform .18s ease; }
+.tab.more[aria-expanded="true"] .chev { transform: translateY(1px) rotate(-135deg); }
+.moremenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 6; min-width: 210px; padding: 4px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 10px 28px rgba(0,0,0,.16); display: grid; gap: 2px; transform-origin: top right; animation: menuin .14s ease-out; }
+@keyframes menuin { from { opacity: 0; transform: translateY(-4px) scale(.97); } }
+.mi { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 48px; padding: 8px 12px; border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer; }
+.mi b { display: block; font-size: 14.5px; font-weight: 500; }
+.mi small { display: block; font-size: 12px; color: var(--muted); }
+.mi .num { font-size: 13px; color: var(--muted); }
+.mi:active { background: var(--band); }
+.mi[aria-checked="true"] { background: var(--accent-soft); }
+.mi[aria-checked="true"] b { color: var(--accent); font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .moremenu { animation: none; } .chev { transition: none; } }
 /* 미등록 / 취식: name filter + 금액합계 card ride in the sticky bar so they stay on screen */
 .pin { display: grid; gap: 8px; }
 .pin .whobar { padding: 0; }
@@ -228,15 +243,21 @@ button.srow { cursor: pointer; }
   </div>
 </div></header>
 <div class="top"><div class="wrap">
+  <div class="tabwrap">
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" data-view="shift" aria-selected="true">출근<span class="num" id="c-shift"></span></button>
     <button class="tab" role="tab" data-view="todo" aria-selected="false">미등록<span class="num" id="c-todo"></span></button>
     <button class="tab" role="tab" data-view="eat" aria-selected="false">취식<span class="num" id="c-eat"></span></button>
     <button class="tab" role="tab" data-view="void" aria-selected="false">폐기<span class="num" id="c-void"></span></button>
-    <button class="tab" role="tab" data-view="all" aria-selected="false">전체<span class="num" id="c-all"></span></button>
-    <button class="tab" role="tab" data-view="cancel" aria-selected="false">취소<span class="num" id="c-cancel"></span></button>
     <button class="tab" role="tab" data-view="jeo" aria-selected="false">저회전<span class="num" id="c-jeo"></span></button>
     <button class="tab" role="tab" data-view="sum" aria-selected="false">월별<span class="num">합계</span></button>
+    <button class="tab more" id="moreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu" aria-selected="false"><span id="moreLbl">더보기</span><span class="num"><span id="c-more"></span><i class="chev" aria-hidden="true"></i></span></button>
+  </div>
+  <!-- 전체 / 취소: 자주 안 쓰는 목록이라 [더보기] 안에 -->
+  <div class="moremenu" id="moreMenu" role="menu" aria-label="더보기" hidden>
+    <button type="button" class="mi" role="menuitemradio" aria-checked="false" data-view="all"><span><b>전체</b><small>이 달 폐기 목록 전부</small></span><span class="num" id="c-all"></span></button>
+    <button type="button" class="mi" role="menuitemradio" aria-checked="false" data-view="cancel"><span><b>취소</b><small>BGF에서 취소된 폐기</small></span><span class="num" id="c-cancel"></span></button>
+  </div>
   </div>
   <input class="search" id="q" type="search" placeholder="상품명 검색" autocomplete="off">
   <div class="pin" id="pin" hidden><div id="pinTot"></div></div>
@@ -467,8 +488,11 @@ button.srow { cursor: pointer; }
   /* ---------- render ---------- */
   /* row: [sheetRow, key, time, name, qty, wprice, wamt, mamt, type, memberFull, who, date, note, src]  src: "" = 폐기, "저회전" */
   function render() {
-    var tabs = document.querySelectorAll(".tab");
-    for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute("aria-selected", tabs[i].getAttribute("data-view") === S.view ? "true" : "false");
+    var tabs = document.querySelectorAll("[data-view]");
+    for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute(tabs[i].className === "mi" ? "aria-checked" : "aria-selected", tabs[i].getAttribute("data-view") === S.view ? "true" : "false");
+    var inMore = S.view === "all" || S.view === "cancel";
+    $("moreBtn").setAttribute("aria-selected", inMore ? "true" : "false");
+    $("moreLbl").textContent = S.view === "all" ? "전체" : S.view === "cancel" ? "취소" : "더보기";
     $("mLabel").textContent = S.month ? S.month.replace("-", "년 ") + "월" : "–";
     var mi = S.months.indexOf(S.month);
     $("mPrev").disabled = mi < 0 || mi >= S.months.length - 1;
@@ -488,6 +512,7 @@ button.srow { cursor: pointer; }
     var nWork = Object.keys(working).length;
     $("c-todo").textContent = fmt(cTodo); $("c-eat").textContent = fmt(cEat); $("c-void").textContent = fmt(cVoid); $("c-all").textContent = fmt(cAll); $("c-jeo").textContent = fmt(cJeo);
     $("c-cancel").textContent = fmt(S.cancels.length);
+    $("c-more").textContent = inMore ? $("c-" + S.view).textContent : "";
     $("c-shift").textContent = nWork ? nWork + "명" : "일지";
     $("myEat").textContent = fmt(myEat.n) + "개 · " + fmt(myEat.w) + "원";
     $("myVoid").textContent = fmt(myVoid.n) + "개 · " + fmt(myVoid.w) + "원";
@@ -513,6 +538,7 @@ button.srow { cursor: pointer; }
     $("loading").hidden = !wait || S.failed;
     if (wait) {
       ["c-todo", "c-eat", "c-void", "c-all", "c-jeo", "c-cancel"].forEach(function (id) { $(id).textContent = "–"; });
+      if (inMore) $("c-more").textContent = "–";
       $("myEat").textContent = "– 개 · – 원"; $("myVoid").textContent = "– 개 · – 원";
       $("list").hidden = true; $("shifts").hidden = true; $("sum").hidden = true; $("emptyMsg").hidden = true; $("pin").hidden = true; }
   }
@@ -1185,8 +1211,19 @@ button.srow { cursor: pointer; }
     snackTimer = setTimeout(function () { $("snack").hidden = true; snackUndoFn = null; }, 5000);
   }
   $("snackUndo").addEventListener("click", function () { var fn = snackUndoFn; snackUndoFn = null; $("snack").hidden = true; if (fn) fn(); });
-  var tabsEls = document.querySelectorAll(".tab");
-  for (var i = 0; i < tabsEls.length; i++) tabsEls[i].addEventListener("click", function () { S.view = this.getAttribute("data-view"); render(); window.scrollTo(0, 0); });
+  var tabsEls = document.querySelectorAll("[data-view]");
+  for (var i = 0; i < tabsEls.length; i++) tabsEls[i].addEventListener("click", function () { closeMore(); S.view = this.getAttribute("data-view"); render(); window.scrollTo(0, 0); });
+  // [더보기]: 전체 / 취소 메뉴. 밖을 누르거나, 스크롤하거나, Esc면 닫힘
+  var moreY = 0;
+  function closeMore() { $("moreMenu").hidden = true; $("moreBtn").setAttribute("aria-expanded", "false"); }
+  $("moreBtn").addEventListener("click", function () {
+    if (!$("moreMenu").hidden) { closeMore(); return; }
+    moreY = window.scrollY; $("moreMenu").hidden = false; this.setAttribute("aria-expanded", "true");
+  });
+  document.addEventListener("pointerdown", function (e) {
+    if (!$("moreMenu").hidden && !(e.target.closest && e.target.closest("#moreMenu, #moreBtn"))) closeMore();
+  });
+  window.addEventListener("scroll", function () { if (!$("moreMenu").hidden && Math.abs(window.scrollY - moreY) > 12) closeMore(); }, { passive: true });
   $("q").addEventListener("input", function () { S.q = this.value; render(); });
   function goMonth(delta) {
     var i = S.months.indexOf(S.month) + delta;
@@ -1292,7 +1329,8 @@ button.srow { cursor: pointer; }
 
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
-    if (!$("confirm").hidden) closeConfirm();
+    if (!$("moreMenu").hidden) { closeMore(); $("moreBtn").focus(); }
+    else if (!$("confirm").hidden) closeConfirm();
     else if (!$("pwSheet").hidden) closePw();
     else if (!$("shiftEd").hidden) closeEditor();
     else if (!$("picker").hidden && memberOf(S.me)) $("picker").hidden = true;

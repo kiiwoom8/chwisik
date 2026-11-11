@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-11 (loading screen also blanks the counters while a month loads)
+Last updated: 2026-11-11 (전체 / 취소 moved into a [더보기] menu at the end of the tab bar)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -232,7 +232,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 - **Loading screen**: until this month's data has arrived (`S.ready`, set in `take()`), the page shows `#loading` (spinner + `목록 불러오는 중…` + shimmer placeholder rows) instead of the lists and the empty texts (`아직 기록이 없어요`, `이 달의 폐기 목록이 아직 없어요` …), so a slow first load doesn't look like an empty month. The tab counters and `이번 달 취식 / 폐기` show `–` meanwhile instead of `0`. Switching month resets `S.ready`, so the loader shows again until that month answers. If `getBoot` fails, the loader hides (`S.failed`) and only the `#status` error shows. A cached start (`chwisik.cache`) skips the loader.
 
 - **Pull to refresh**: at the top of the page, drag down and let go (pull past 64 px; the spinner turns green) = tap on the sync label: `refreshLive()` + `load(true)` + `checkAppUpdate(true)` (app only: new page code → reload into it); the spinner stays until the reload answers (at least 0.45 s). Ignored when the page is scrolled down, a bottom sheet is open, or the swipe is sideways or upward. `overscroll-behavior-y: contain` stops the browser's own pull-to-refresh (which would reload the whole page) where the page is the top-level document.
-- **Tabs** (8, one row, fits 360 px): 출근 · 미등록 · 취식 · 폐기 · 전체 · 취소 · **저회전** · 월별 합계. 출근 is first and always opens first.
+- **Tabs** (7, one row, fits 360 px): 출근 · 미등록 · 취식 · 폐기 · **저회전** · 월별 합계 · **더보기**. 출근 is first and always opens first. **전체** and **취소** are rarely used, so they sit in a small menu under **더보기** (tap → menu drops down under the tab, right-aligned; each item shows its name, a one-line hint and its count). While one of them is open, the 더보기 tab shows that view's name and count (`취소 21 ⌄`) in the selected style, and the menu marks it. The menu closes on picking an item, a tap outside, scrolling more than 12 px, or Esc.
   - 미등록 = untagged **폐기** lines (저회전 is never 미등록).
   - 취식 = every 취식 line, 폐기 and 저회전 (저회전 lines carry a green `저회전` label).
   - 폐기 = 폐기-tagged lines. 전체 = every 폐기-slip line. 저회전 = every 저회전 line, with a one-line explanation on top and a single button per line: **[취식]** before it is registered, **[취소]** after (same as the 취식 / 폐기 tabs).
