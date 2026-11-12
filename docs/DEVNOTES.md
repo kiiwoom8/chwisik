@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-11 (전체 / 취소 moved into a [더보기] menu at the end of the tab bar)
+Last updated: 2026-11-12 (no off-shift 폐기 warning for today's lines)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -23,7 +23,7 @@ A tracker for CU store **25377**: which expired items (폐기) a worker ate (취
   - 폐기 → records the **first name only** (성휘)
 - **저회전 (저회전상품철수)** lines are imported the same way and shown in their own **저회전** tab. They can be tagged **취식 only**, never 폐기, and they **don't need to be tagged** (they are not counted in 미등록). A 저회전 취식 counts in the worker's 취식 totals like any other 취식.
 - **출근일지**: staff tap **[출근] / [퇴근]** (or enter a shift by hand) and see everyone's shifts day by day.
-- **Off-shift 폐기 warning**: tagging 폐기 on a line whose slip time is outside the worker's recorded shifts (±30 min) asks first. If they confirm, it is saved and marked `근무외`.
+- **Off-shift 폐기 warning**: tagging 폐기 on a **past day's** line whose slip time is outside the worker's recorded shifts (±30 min) asks first. If they confirm, it is saved and marked `근무외`. Today's lines are never warned (today's 출근일지 may not be filled in yet).
 - **BGF cancels**: a negative line cancels an earlier line of the same product; both disappear from the lists and totals and show in the **취소** tab.
 - **Monthly totals** per person in the web app (월별 합계 tab, includes hours) and in the **월별 합계** sheet (a QUERY formula).
 
@@ -301,7 +301,7 @@ Set up 2026-11-08.
 ## Known limits / gotchas
 
 - Names without a password are open: anyone can tag or clock in under them. With a password, only phones that entered it (or the developer password) can.
-- The off-shift warning is advisory: the worker can still save; the row is marked `근무외`.
+- The off-shift warning is advisory: the worker can still save; the row is marked `근무외`. It only runs for lines from before today.
 - A line is tagged as a whole. Quantity 3 cannot yet be split into 1 취식 + 2 폐기.
 - The JSON API is as open as the link: anyone can POST the same public functions. Nothing new is exposed (they were all callable through `google.script.run` already).
 - The public link has no Google login. Anyone with it can tag lines under password-less names or add a name. 등록시각 is the audit trail.

@@ -924,7 +924,8 @@ button.srow { cursor: pointer; }
     if (r[9] && r[9] !== S.me) { snack(shortOf(r[9]) + " 님이 등록한 항목이라 바꿀 수 없어요."); return; }
     var next = r[8] === type ? "" : type;
     if (next === "폐기" && r[13]) { snack(JEO + " 상품은 폐기로 등록할 수 없어요."); return; }
-    if (next === "폐기" && !workedAt(S.me, r[2], GRACE_MIN)) {
+    // 오늘 상품은 근무 시간 경고 없이 바로 폐기 (출근일지가 아직 덜 적혔을 수 있음). 지난 날만 확인.
+    if (next === "폐기" && String(r[2]).slice(0, 10) !== todayStr() && !workedAt(S.me, r[2], GRACE_MIN)) {
       var when = /\d\d:\d\d/.test(String(r[2]).slice(11)) ? dayLabel(r[2]) + " " + String(r[2]).slice(11, 16) : dayLabel(String(r[2]).slice(0, 10));
       var who = workersAt(r[2]);
       confirmBox("근무 시간이 아니에요",

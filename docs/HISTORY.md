@@ -35,6 +35,9 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
 **Tab bar**
 - **전체 and 취소 live under `더보기`** (a menu at the end of the tab bar), not as their own tabs (owner, 2026-11-11: hide them so the bar stays clean).
 
+**폐기 off-shift warning**
+- **No warning for today's lines**; only lines from earlier days are checked against 출근일지 (owner, 2026-11-12). (It used to warn on today's lines too.)
+
 **취소 tab**
 - Unmatched cancel line: `⚠ 앞에 같은 상품 폐기가 없어요` (not `…없어서 무시했어요`).
 
@@ -170,3 +173,5 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
 - **`4bb2d39` — Loading screen on month change: counters too.** The owner: "still same when i change month". Reproduced against the live server in a local preview (October answers in about 4 s): the loader did show and the empty text stayed hidden, but the header still said `0개 · 0원` and every tab counter `0`, which still reads as an empty month. Now those show `–` while `!S.ready`. Also likely: the owner's app was still on the cached older page; the Android app switches to a new page when it comes back from the background or when the sync button (`업데이트 HH:mm ↻`) is tapped.
 - **`9563d09` — 전체 / 취소 behind `더보기`.** The owner: hide 전체 and 취소 (e.g. with `더보기 >`), keep it modern, no disruption. The tab bar now has 7 tabs: 출근 · 미등록 · 취식 · 폐기 · 저회전 · 월별 합계 · **더보기 ⌄**. Tapping 더보기 drops a small right-aligned menu under the bar with **전체** (`이 달 폐기 목록 전부`) and **취소** (`BGF에서 취소된 폐기`), each with its count. Picking one opens that view as before, and the 더보기 tab then shows its name and count (`취소 21`) in the selected style, so it's clear where you are; the chevron flips while the menu is open. Closes on a tap outside, scroll, or Esc. Chose a dropdown over a bottom sheet so it opens right where the thumb is and nothing else on the page moves; 저회전 moved one place left (before 월별 합계). Wider tabs as a side effect (8 → 7 columns).
   - Tested: `node --check` on the page script; local preview at 375 px against the live API (read-only: boot / month / refresh): menu opens under the tab, picking 취소 shows the 취소 list with the tab reading `취소 21`, menu marks 취소 as current, closes on outside tap and Esc. Live: the /exec API served the new page about 2 min after the push. Not checked on a phone or in the Android app.
+- **`(pending)` — No off-shift 폐기 warning for today.** The owner: for 폐기, ignore the off-shift warning for today; past days stay as before. `tap()` now skips the `근무 시간이 아니에요` confirm when the slip's date is today (KST), so today's 폐기 saves straight away with no `근무외` mark. Why: today's 출근일지 may still be incomplete (someone hasn't pressed 출근 yet), so the warning mostly fired by mistake. Past days still ask and mark `근무외`.
+  - Tested: `node --check` on the page script. Not checked on a phone.
