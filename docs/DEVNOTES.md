@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-12 (no off-shift 폐기 warning for today's lines)
+Last updated: 2026-11-13 (month switcher goes back past the first month with data)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -231,6 +231,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 - **Start**: if localStorage `chwisik.cache` holds this month's data (saved on every `take` of the newest month), the page draws it at once, then one `getBoot` call replaces it. So a returning phone sees the list right away even while Apps Script is slow. The Google Fonts stylesheet loads without blocking the first draw (`media=print` swap).
 - **Loading screen**: until this month's data has arrived (`S.ready`, set in `take()`), the page shows `#loading` (spinner + `목록 불러오는 중…` + shimmer placeholder rows) instead of the lists and the empty texts (`아직 기록이 없어요`, `이 달의 폐기 목록이 아직 없어요` …), so a slow first load doesn't look like an empty month. The tab counters and `이번 달 취식 / 폐기` show `–` meanwhile instead of `0`. Switching month resets `S.ready`, so the loader shows again until that month answers. If `getBoot` fails, the loader hides (`S.failed`) and only the `#status` error shows. A cached start (`chwisik.cache`) skips the loader.
 
+- **Month switcher** (‹ 2026년 11월 ›): steps one calendar month at a time, from **12 months before the oldest month with data** (`MONTHS_BACK`) up to the newest (this month). Months with no data open too (empty lists), so old 근무 can be added there with `+ 근무 직접 입력`; in a past month the editor's date starts at that month's 1st, and an empty 출근 tab says `이 달의 근무 기록이 없어요. ‘+ 근무 직접 입력’으로 적을 수 있어요.` (Before 2026-11-13 ‹ stopped at the oldest month with data.) The server never limited how early a hand-entered shift can be; `saveShift` only refuses times more than 1 h ahead.
 - **Pull to refresh**: at the top of the page, drag down and let go (pull past 64 px; the spinner turns green) = tap on the sync label: `refreshLive()` + `load(true)` + `checkAppUpdate(true)` (app only: new page code → reload into it); the spinner stays until the reload answers (at least 0.45 s). Ignored when the page is scrolled down, a bottom sheet is open, or the swipe is sideways or upward. `overscroll-behavior-y: contain` stops the browser's own pull-to-refresh (which would reload the whole page) where the page is the top-level document.
 - **Tabs** (7, one row, fits 360 px): 출근 · 미등록 · 취식 · 폐기 · **저회전** · 월별 합계 · **더보기**. 출근 is first and always opens first. **전체** and **취소** are rarely used, so they sit in a small menu under **더보기** (tap → menu drops down under the tab, right-aligned; each item shows its name, a one-line hint and its count). While one of them is open, the 더보기 tab shows that view's name and count (`취소 21 ⌄`) in the selected style, and the menu marks it. The menu closes on picking an item, a tap outside, scrolling more than 12 px, or Esc.
   - 미등록 = untagged **폐기** lines (저회전 is never 미등록).

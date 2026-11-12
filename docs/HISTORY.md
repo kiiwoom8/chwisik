@@ -38,6 +38,9 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
 **폐기 off-shift warning**
 - **No warning for today's lines**; only lines from earlier days are checked against 출근일지 (owner, 2026-11-12). (It used to warn on today's lines too.)
 
+**Month switcher**
+- **‹ goes back past the first month with data** (12 months before it), so old 근무 can be added in an empty month (owner, 2026-11-13: "allow recording work time earlier than that point"; my reading, the owner said "you determine"). Don't make it stop at the oldest month with data again.
+
 **취소 tab**
 - Unmatched cancel line: `⚠ 앞에 같은 상품 폐기가 없어요` (not `…없어서 무시했어요`).
 
@@ -175,3 +178,8 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
   - Tested: `node --check` on the page script; local preview at 375 px against the live API (read-only: boot / month / refresh): menu opens under the tab, picking 취소 shows the 취소 list with the tab reading `취소 21`, menu marks 취소 as current, closes on outside tap and Esc. Live: the /exec API served the new page about 2 min after the push. Not checked on a phone or in the Android app.
 - **`1efada5` — No off-shift 폐기 warning for today.** The owner: for 폐기, ignore the off-shift warning for today; past days stay as before. `tap()` now skips the `근무 시간이 아니에요` confirm when the slip's date is today (KST), so today's 폐기 saves straight away with no `근무외` mark. Why: today's 출근일지 may still be incomplete (someone hasn't pressed 출근 yet), so the warning mostly fired by mistake. Past days still ask and mark `근무외`.
   - Tested: `node --check` on the page script. Not checked on a phone.
+
+## 2026-11-13
+
+- **Month switcher goes back before 10월.** The owner: "allow recording work time earlier than that point", then "you determine" when asked which limit. Hand entry never had an earliest date (server or date picker); the hard stop was the month switcher, which only moved between months that have data, so ‹ stopped at 2026년 10월 and an earlier month couldn't be opened. Took that reading. Now ‹ › step one calendar month (`addMonths`), from 12 months before the oldest month with data (`MONTHS_BACK`, so back to 2025년 10월 today) to this month; empty months open with empty lists. In a past month `+ 근무 직접 입력` starts on that month's 1st (was today, which saved into this month), and an empty 출근 tab says `이 달의 근무 기록이 없어요. ‘+ 근무 직접 입력’으로 적을 수 있어요.` Saving a shift into a new month already adds it to the month list (unchanged). Not changed: the day list inside a month still starts at its first recorded day (earlier days in the month can still be entered with the date picker). Owner-preferences section updated.
+  - Tested: `node --check` on the page script; node check of `addMonths` (10월 −1 = 9월, 2026-01 −1 = 2025-12, −12 = 2025-10). Not checked: the live page or a phone.

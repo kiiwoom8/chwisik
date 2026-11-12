@@ -1,6 +1,6 @@
 # Code map — 직원 취식 목록
 
-Last updated: 2026-11-09
+Last updated: 2026-11-13
 
 A guide to where things are in the code and how they connect. Functions are listed by name (search for `function <name>`), not by line number, so this file stays right when code moves. Keep it in sync with every change (see `CLAUDE.md`).
 
@@ -117,7 +117,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 ### Functions by area
 
 - Helpers: `$`, `fmt`, `lsGet`/`lsSet`, `mk(tag, cls, text)`, `tok`/`setTok`, `isAuthErr`, `run(fn, …args)` (Promise: `fetch` to `API` = `window.CHWISIK_API` in the app, else `google.script.run`), `errMsg`, `status`, `memberOf`, `shortOf`.
-- Time: `toMin`, `nowMin`, `todayStr`, `curMonth`, `dur`, `dowOf`, `dayLabel`, `dayEl` (red 일 / blue 토), `addDays`, `hm`.
+- Time: `toMin`, `nowMin`, `todayStr`, `curMonth`, `addMonths(m, n)`, `monthRange()` (oldest − `MONTHS_BACK` … newest month the ‹ › switcher reaches), `dur`, `dowOf`, `dayLabel`, `dayEl` (red 일 / blue 토), `addDays`, `hm`.
 - Shifts logic: `span(s, nowM)` (`{a, b, open, live, stale, e}`), `openShift`, `workedAt(member, ts, grace)`, `workersAt(ts)`, `gapsOf(d, nowM)`, `checkDays()`, `overlapsOf(…)`.
 - Name filter: `whoNames()` (per view), `curWho()`, `renderWho()`.
 - Render: `render()` (tabs — every `[data-view]` gets `aria-selected` (tabs) or `aria-checked` (`.mi`), `#moreBtn` selected + relabeled when the view is `all` / `cancel` — counters — 미등록 excludes 저회전, 전체 = 폐기 lines, 저회전 = 저회전 lines — then dispatch), `renderList()` (filters per view, groups by day; 미등록 / 취식 put `totalEl(vis)` in the header's `#pinTot`; `render()` moves `#whoBar` into `#pin` on those tabs and back above `#list` on others), `totalEl(vis)` (금액합계 card: 수량 · 원가 total of the shown lines; on 취식 also per person when 2+ people), `rowEl(r)` (buttons per view; 폐기 button removed for 저회전 rows; 저회전 tab = one button, 취식 → 취소 once registered; disabled for other workers' rows), `renderCancels()`, `renderShifts()` (one row per shift, each day's shifts + carry-overs sorted by start on that day, latest on top: 야간 → 오후 → 오전 → carried-over 야간), `gapEl`, `shiftEl(s, nowM, d)` (one shift's row on day d: `00:00 –` part for a carry-over, `– 24:00` part when the rest has a next-day row; own row = edit button), `renderSum()`, `table(title, heads, rows, foot, note)`. At its end `render()` hides all of them and shows `#loading` while `!S.ready` (`S.failed` after a failed `getBoot` hides the loader too).
@@ -125,7 +125,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 - Shifts UI: `call(fn, args, done)` (adds token), `autoOutShift(member, nowM)` (my unconfirmed `자동 퇴근` in the last 2 h → the card shows 자동 퇴근 + [퇴근]), `clock` (snack from `res.clock`), `openEditor(s, preset)`, `edHint`, `closeEditor`, form submit / delete handlers.
 - Dialogs: `confirmBox`, `closeConfirm`, `openPicker`, `choose`, `openPw`, `closePw`, `savePw`.
 - Data: `take(res, force)` (sets `S.ready`; also `saveCache`), `saveCache(res)` / `loadCache()` (localStorage `chwisik.cache`: newest month's data for an instant start), `load(force)` (poll with version; returns a promise), `refreshLive()` (`refreshNow`), `setOnline`, `renderSync` (picks the text), `setSync(cls, text)` (writes the `#sync` button: text + `.ico` ↻; class `go` spins it).
-- Misc: `snack(text, undo)`, tab click handlers (all `[data-view]`, tabs and menu items), `closeMore()` + 더보기 open / outside-tap / scroll / Esc close, search, `goMonth`, Esc handling, `visibilitychange`.
+- Misc: `snack(text, undo)`, tab click handlers (all `[data-view]`, tabs and menu items), `closeMore()` + 더보기 open / outside-tap / scroll / Esc close, search, `goMonth` (one calendar month, inside `monthRange()`), Esc handling, `visibilitychange`.
 - App update: `checkAppUpdate(now)` (app only: `getPage(CHWISIK_PAGE_HASH)` → localStorage `chwisik.page`; `now` (pull to refresh, sync tap) → `location.reload()` at once unless `S.busy` or a sheet is open; else reload on next `visibilitychange`). The script's first lines clear `chwisik.pageTry` (tells the loader the page started).
 - Pull to refresh: an IIFE after the sync button handler; `touchstart`/`touchmove`/`touchend` on `document`, `.ptr` spinner element; on release past `GO` calls `refreshLive()` + `load(true)`.
 - Sticky bar hide / show: an IIFE right after pull to refresh; `check()` on `scroll` (passive) moves `.top` with `place(px, glide)` (inline `transform`; `shift` = px moved up) after an offset (`.hdr` + `.top` height): follows the scroll both ways; `settle()` after `SETTLE_MS` 120 glides a part-way bar in (last move `UP_TOL` 5 px+ up) or to the nearer end, glide length `GLIDE_MIN`–`GLIDE_MAX` ms by distance; never moved while `#q` has focus or a sheet is open.
