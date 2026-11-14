@@ -462,7 +462,7 @@ button.srow { cursor: pointer; }
     if (S.view !== "shift") S.rows.forEach(function (r) {
       if (!r[8] || !r[9]) return;
       if (S.view === "all" && r[13]) return;
-      if (S.view === "jeo" && (!r[13] || r[8] === "폐기")) return;
+      if (S.view === "jeo") return;   // 저회전 탭은 등록 안 한 줄만
       if (S.view === "eat" && r[8] !== "취식") return;
       if (S.view === "void" && r[8] !== "폐기") return;
       set[r[9]] = 1;
@@ -509,7 +509,7 @@ button.srow { cursor: pointer; }
 
     var cTodo = 0, cEat = 0, cVoid = 0, cAll = 0, cJeo = 0, myEat = { n: 0, w: 0, m: 0 }, myVoid = { n: 0, w: 0 };
     S.rows.forEach(function (r) {
-      if (r[13]) { if (r[8] !== "폐기") cJeo++; } else cAll++;   // 폐기한 저회전은 폐기 탭으로
+      if (r[13]) { if (!r[8]) cJeo++; } else cAll++;   // 등록한 저회전은 취식 / 폐기 탭으로
       if (r[8] === "취식") { cEat++; if (r[9] === S.me) { myEat.n += r[4]; myEat.w += r[6]; myEat.m += r[7]; } }
       else if (r[8] === "폐기") { cVoid++; if (r[9] === S.me) { myVoid.n += r[4]; myVoid.w += r[6]; } }
       else if (!r[13]) cTodo++;   // 저회전은 등록 안 해도 됨
@@ -559,13 +559,13 @@ button.srow { cursor: pointer; }
       if (S.view === "eat" && t !== "취식") return false;
       if (S.view === "void" && t !== "폐기") return false;
       if (S.view === "all" && r[13]) return false;
-      if (S.view === "jeo" && (!r[13] || t === "폐기")) return false;   // 폐기한 저회전은 폐기 탭에서 보임 (취소하면 돌아옴)
+      if (S.view === "jeo" && (!r[13] || t)) return false;   // 등록한 저회전은 취식 / 폐기 탭에서 보임 (취소하면 돌아옴)
       if (q && String(r[3]).toLowerCase().indexOf(q) < 0) return false;
       return true;
     }).sort(function (a, b) { return a[2] < b[2] ? 1 : a[2] > b[2] ? -1 : 0; });
     var list = $("list");
     list.textContent = "";
-    if (S.view === "jeo") list.appendChild(mk("p", "cxnote", "BGF 저회전상품철수 상품이에요. 먹었으면 [취식], 버렸으면 [폐기]를 눌러서 누가 처리했는지 남겨요. 폐기한 건 폐기 탭으로 옮겨지고, 거기서 취소하면 여기로 돌아와요. 안 눌러도 미등록에는 안 들어가요."));
+    if (S.view === "jeo") list.appendChild(mk("p", "cxnote", "BGF 저회전상품철수 상품이에요. 먹었으면 [취식], 버렸으면 [폐기]를 눌러서 누가 처리했는지 남겨요. 누르면 취식 / 폐기 탭으로 옮겨지고, 거기서 취소하면 여기로 돌아와요. 안 눌러도 미등록에는 안 들어가요."));
     if ((S.view === "todo" || S.view === "eat") && vis.length) $("pinTot").appendChild(totalEl(vis));
     var byDay = [], cur = null;
     vis.forEach(function (r) { var d = r[11] || String(r[2]).slice(0, 10); if (!cur || cur.d !== d) { cur = { d: d, rows: [] }; byDay.push(cur); } cur.rows.push(r); });
@@ -583,7 +583,7 @@ button.srow { cursor: pointer; }
       em.hidden = false;
       em.textContent = q ? "‘" + S.q.trim() + "’에 맞는 항목이 없어요."
         : who ? who + " 님 항목이 없어요."
-        : S.view === "jeo" ? (S.rows.some(function (r) { return r[13]; }) ? "남은 저회전 상품이 없어요. 폐기한 건 폐기 탭에 있어요." : "이 달의 저회전 상품이 아직 없어요. 새 전표는 몇 분 안에 자동으로 들어와요.")
+        : S.view === "jeo" ? (S.rows.some(function (r) { return r[13]; }) ? "남은 저회전 상품이 없어요. 등록한 건 취식 / 폐기 탭에 있어요." : "이 달의 저회전 상품이 아직 없어요. 새 전표는 몇 분 안에 자동으로 들어와요.")
         : !S.rows.length ? "이 달의 폐기 목록이 아직 없어요. 오늘 폐기는 몇 분 안에 자동으로 들어와요."
         : S.view === "todo" ? "모두 등록했어요." : S.view === "all" ? "이 달의 폐기 목록이 아직 없어요." : "아직 등록된 항목이 없어요.";
     } else em.hidden = true;
@@ -634,8 +634,8 @@ button.srow { cursor: pointer; }
     // 취식 / 폐기 탭: 다른 쪽 버튼은 왼쪽, 오른쪽은 [취소] (이 탭의 등록을 지움)
     var tabType = S.view === "eat" ? "취식" : S.view === "void" ? "폐기" : "";
     var btns = tabType ? [[tabType === "취식" ? "폐기" : "취식", tabType === "취식" ? "void" : "eat"], [tabType, "undo"]] : [["취식", "eat"], ["폐기", "void"]];
-    // 저회전 탭: 등록 전 [취식] [폐기], 취식하면 [폐기] [취소] (폐기한 줄은 폐기 탭으로 감)
-    if (S.view === "jeo") btns = r[8] === "취식" ? [["폐기", "void"], ["취식", "undo"]] : [["취식", "eat"], ["폐기", "void"]];
+    // 저회전 탭: 등록 안 한 줄만 있음 → [취식] [폐기] (등록하면 그 탭으로 감)
+    if (S.view === "jeo") btns = [["취식", "eat"], ["폐기", "void"]];
     btns.forEach(function (p) {
       var undo = p[1] === "undo";
       var bt = mk("button", "stamp " + (undo ? (p[0] === "취식" ? "eat" : "void") + " undo" : p[1] + (r[8] === p[0] ? " on" : "")), undo ? "취소" : p[0]); bt.type = "button";
@@ -943,7 +943,7 @@ button.srow { cursor: pointer; }
     var prev = { type: r[8], member: r[9], who: r[10], note: r[12] };
     apply(r, next, null, note);
     send(r, next, prev, null, note);
-    var moved = !r[13] ? "" : next === "폐기" ? " · 폐기 탭으로 옮겼어요" : prev.type === "폐기" && !next ? " · 저회전 탭으로 돌아갔어요" : "";
+    var moved = !r[13] ? "" : next ? " · " + next + " 탭으로 옮겼어요" : prev.type ? " · 저회전 탭으로 돌아갔어요" : "";
     snack((next ? next + ": " : "취소: ") + r[3] + moved, function () {
       var cur = { type: r[8], member: r[9], who: r[10], note: r[12] };
       apply(r, prev.type, prev);
