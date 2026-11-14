@@ -195,6 +195,7 @@ tr.meRow td:first-child { color: var(--accent); font-weight: 700; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .card .hint { font-size: 13px; }
 .card .hint.bad { color: var(--void); }
+.card .note { font-size: 12px; color: var(--muted); margin-top: -4px; }
 .offtag { color: var(--void); }
 
 /* 출근일지 */
@@ -296,6 +297,7 @@ button.srow { cursor: pointer; }
       <label class="fld">출근<input type="time" id="sfStart" step="1800" required></label>
       <label class="fld">퇴근<input type="time" id="sfEnd" step="1800"></label>
     </div>
+    <p class="note" id="sfNote">퇴근은 다음 근무자의 출근 시간에 맞춰 적어 주세요. 예: 다음 사람이 14:00 출근이면 퇴근도 14:00.</p>
     <p class="hint" id="sfHint"></p>
     <label class="fld">메모 (선택)<input type="text" id="sfMemo" maxlength="40" placeholder="예: 대타, 늦게 찍음" autocomplete="off"></label>
     <div class="btnrow"><button type="button" class="ghost danger" id="sfDel">삭제</button><span class="sp"></span><button type="button" class="ghost" id="sfCancel">취소</button><button type="submit" class="primary" id="sfSave">저장</button></div>
@@ -991,11 +993,11 @@ button.srow { cursor: pointer; }
     var usual = S.usual[S.me] || S.usual["*"] || null;
     var useUsual = !s && !preset.start && usual;
     $("sfTitle").textContent = s ? "근무 기록 고치기" : "근무 직접 입력";
-    $("sfWho").textContent = m.full + " 님의 기록" + (useUsual ? " · 자주 하던 시간으로 채웠어요" : "");
+    $("sfWho").textContent = m.full + " 님의 기록" + (useUsual ? " · 자주 하던 출근 시간으로 채웠어요" : "");
     $("sfDate").value = s ? s[2] : preset.date || (S.month && S.month < curMonth() ? S.month + "-01" : todayStr());
     $("sfDate").max = todayStr();
     $("sfStart").value = s ? s[4] : preset.start || (usual ? usual[0] : "");
-    $("sfEnd").value = s ? s[5] : preset.end || (usual ? usual[1] : "");
+    $("sfEnd").value = s ? s[5] : preset.end || "";  // 새 기록은 퇴근을 비워 둠 (빈 시간 채움만 끝 시간을 넣음)
     $("sfMemo").value = s ? s[6] : preset.memo || "";
     $("sfDel").hidden = !s;
     $("sfSave").disabled = false;
