@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-15 (no [출근] / [퇴근] buttons: hand entry only, 30-min slots, 자동 퇴근 on a hand-entered 출근)
+Last updated: 2026-11-15 (저회전 폐기 lines move to the 폐기 tab; no [출근] / [퇴근] buttons: hand entry only)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -242,7 +242,7 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 - **Tabs** (7, one row, fits 360 px): 출근 · 미등록 · 취식 · 폐기 · **저회전** · 월별 합계 · **더보기**. 출근 is first and always opens first. **전체** and **취소** are rarely used, so they sit in a small menu under **더보기** (tap → menu drops down under the tab, right-aligned; each item shows its name, a one-line hint and its count). While one of them is open, the 더보기 tab shows that view's name and count (`취소 21 ⌄`) in the selected style, and the menu marks it. The menu closes on picking an item, a tap outside, scrolling more than 12 px, or Esc.
   - 미등록 = untagged **폐기** lines (저회전 is never 미등록).
   - 취식 = every 취식 line, 폐기 and 저회전 (저회전 lines carry a green `저회전` label). 폐기 likewise includes 저회전 폐기 lines.
-  - 폐기 = 폐기-tagged lines. 전체 = every 폐기-slip line. 저회전 = every 저회전 line, with a one-line explanation on top and two buttons per line: **[취식] [폐기]** before it is registered; after, the other type + **[취소]** (same as the 취식 / 폐기 tabs).
+  - 폐기 = 폐기-tagged lines. 전체 = every 폐기-slip line. 저회전 = every 저회전 line **except those registered as 폐기** (they move to the 폐기 tab, with the green `저회전` label; **[취소]** there makes them untagged again, so they come back to 저회전, since the row keeps 전표 `저회전`). One-line explanation on top and two buttons per line: **[취식] [폐기]** before it is registered; after 취식, **[폐기] [취소]**. The tab count and name filter leave the 폐기 ones out too. The snack says `· 폐기 탭으로 옮겼어요` / `· 저회전 탭으로 돌아갔어요`.
   - 취소 = BGF cancel lines (both kinds; 저회전 ones say so).
 - In the 취식 / 폐기 tabs each line's right button is **취소** (removes that tag) and the left one switches to the other type. Lines tagged by another worker have disabled buttons.
 - **금액합계** card on top of the **미등록** and **취식** tabs only: 수량 and 원가 total of the lines shown (follows the name filter and the search). On 취식 it also lists each person's 수량 · 원가 (largest first, all lines look the same) when more than one person is shown. Other tabs have no card. On these two tabs the card and the name filter sit at the bottom of the sticky bar (`#pin`), so they stay on screen while scrolling; on other tabs the name filter is above the list as before.
