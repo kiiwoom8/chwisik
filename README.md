@@ -3,7 +3,7 @@
 Staff meal (취식) and waste (폐기) tracker for CU store 25377.
 
 - 폐기 and 저회전상품철수 slips are pulled from the BGF 점포시스템 into a Google Sheet automatically: every night around 00:01, and during the day every few minutes.
-- Staff open one link on their phone (no Google login), pick their name once, and tap **취식** or **폐기** on each item. 저회전 items have their own tab and can only be 취식 (tagging them is optional).
+- Staff open one link on their phone (no Google login), pick their name once, and tap **취식** or **폐기** on each item. 저회전 items have their own tab and can be 취식 or 폐기 (tagging them is optional).
 - 출근일지: staff clock in/out; the page warns about 폐기 outside one's shift and about hours nobody recorded.
 - Monthly totals per person (items and hours) are shown in the app and in the sheet.
 

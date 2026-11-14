@@ -26,7 +26,7 @@ Goal: staff get an app icon on their phone that opens straight to the list, with
 - **Reminders**: on the morning after import, show staff how many items are still 미등록.
 - ~~출근일지 + off-shift 폐기 warning~~ Done 2026-11-08. Next: owner view to approve or fix shifts, night-hours split, export for payroll.
 - ~~Live import of today's 폐기~~ Done 2026-11-08 (on open + every 10 min). ~~Keep the session cookie between runs~~ Done 2026-11-10 (with every 1 min while open, trigger every 5 min). Next: confirm how BGF answers an expired session; if BGF ever offers push or a cheaper "anything new?" call, use it.
-- ~~저회전상품철수 import + 저회전 tab (취식 only)~~ Done 2026-11-09. Next: confirm on the live site; maybe a 저회전 column in 월별 합계 (how much of 취식 came from 저회전).
+- ~~저회전상품철수 import + 저회전 tab (취식 only)~~ Done 2026-11-09. ~~폐기 on 저회전 too~~ Done 2026-11-15. Next: confirm on the live site; maybe a 저회전 column in 월별 합계 (how much of 취식 came from 저회전).
 - **History filters**: by person, by product, by day.
 
 ## Phase 3 — Engineering

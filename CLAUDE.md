@@ -48,7 +48,7 @@ Start with `docs/DEVNOTES.md`, then `docs/CODEMAP.md` for the code you are about
 
 - UI text is Korean. Write it plainly, the way staff talk.
 - 취식 records the **full name** (김성휘). 폐기 records the **first name only** (성휘).
-- 저회전 lines (폐기목록 column S = `저회전`) can be 취식 only, never 폐기, and don't count as 미등록.
+- 저회전 lines (폐기목록 column S = `저회전`) can be 취식 or 폐기 (폐기 = who handled it), and don't count as 미등록.
 - Code.gs functions without a trailing `_` are public (callable from the /exec link): check the caller in every new one.
 - Never type the BGF password anywhere; BGF's static form scripts (`/websrc/deploy/GJ/*.xfdl.js`) can be read without logging in.
 - Keep the staff page working on a phone at ~360px width, with no login.

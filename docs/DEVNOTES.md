@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-15 (교대 겹침 정리: a later 출근 trims the earlier worker's 퇴근 unless overlapping is the habit there)
+Last updated: 2026-11-15 (저회전 lines can be 폐기 too, so it shows who handled them)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -21,7 +21,7 @@ A tracker for CU store **25377**: which expired items (폐기) a worker ate (취
 - **Staff open the Android app or one link** (no Google login). The app (see *App*) shows the same page without Google's wrapper and banner. They pick their name once (stored on the phone), then tap **[취식]** or **[폐기]** on each line.
   - 취식 → records the **full name** (김성휘)
   - 폐기 → records the **first name only** (성휘)
-- **저회전 (저회전상품철수)** lines are imported the same way and shown in their own **저회전** tab. They can be tagged **취식 only**, never 폐기, and they **don't need to be tagged** (they are not counted in 미등록). A 저회전 취식 counts in the worker's 취식 totals like any other 취식.
+- **저회전 (저회전상품철수)** lines are imported the same way and shown in their own **저회전** tab. They can be tagged **취식 or 폐기** (폐기 added 2026-11-15 so it shows who handled them), and they **don't need to be tagged** (they are not counted in 미등록). A 저회전 취식 / 폐기 counts in the worker's 취식 / 폐기 totals like any other.
 - **출근일지**: staff tap **[출근] / [퇴근]** (or enter a shift by hand) and see everyone's shifts day by day.
 - **Off-shift 폐기 warning**: tagging 폐기 on a **past day's** line whose slip time is outside the worker's recorded shifts (±30 min) asks first. If they confirm, it is saved and marked `근무외`. Today's lines are never warned (today's 출근일지 may not be filled in yet).
 - **BGF cancels**: a negative line cancels an earlier line of the same product; both disappear from the lists and totals and show in the **취소** tab.
@@ -86,7 +86,7 @@ Web app settings (`apps-script/appsscript.json`): **Execute as: Me (owner)**, **
 Columns A–F and L–S are plain text (`@`) so dates and codes are not auto-converted.
 
 Rules:
-- A 저회전 row can only be `취식` or empty. `setTag` refuses `폐기` on it (server), and the page hides the 폐기 button.
+- A 저회전 row takes `취식`, `폐기` or empty, like a 폐기 row (until 2026-11-15 `setTag` refused `폐기` on it).
 - **Canceled lines (BGF 취소)**: a line with a negative 수량 / 단가 / 금액 cancels an earlier line of the same product (same 상품코드, else 품명) **and the same slip kind** (폐기 and 저회전 never cancel each other). `cancelMatch_()` walks the whole sheet in 생성시각 order and uses up the quantity of the newest earlier line(s), untagged lines first; a partial cancel leaves the rest standing (amounts scaled). A negative line with no earlier match is ignored (shown with `⚠ 앞에 같은 상품 폐기가 없어요`). The sheet itself is not changed: `getMonth` leaves canceled lines and all negative lines out of `rows` and lists the negatives in `cancels` (the 취소 tab). The sheet's 월별 합계 QUERY still counts a tagged line that was later canceled.
 
 ### 출근일지 (one row per shift)
@@ -126,7 +126,7 @@ Rules (server-side): from the page a worker can only edit or delete their own ro
 A = full name, B = first name for 폐기 (auto: drops a 1-char surname, or a 2-char one such as 남궁/황보/제갈/선우), C = memo ("웹에서 추가" when a worker added themself), D = 비밀번호(암호): salted SHA-256 hash of the worker's password, or empty = no password. Never the password itself. Clearing D removes the password.
 
 ### 월별 합계
-A QUERY over 폐기목록 grouped by 월, 구분, 직원, 등록이름, with count, quantity, 원가, 매가 totals. Rebuilt by `setup()`. 저회전 취식 rows are counted under 구분 `취식` (untagged 저회전 rows have no 구분, so they are not counted).
+A QUERY over 폐기목록 grouped by 월, 구분, 직원, 등록이름, with count, quantity, 원가, 매가 totals. Rebuilt by `setup()`. 저회전 rows are counted under their 구분 `취식` / `폐기` like other rows (untagged 저회전 rows have no 구분, so they are not counted).
 
 ### 가져오기 기록
 One row per import run: time, date range, slip count, new lines, result. Nightly/manual runs always log; live runs log only when they add lines or when a failure streak starts. The result shows `· 저회전 N장` or `· 저회전 실패: …`. Nightly failures also email the owner.
@@ -211,7 +211,7 @@ The page calls the server with `run(fn, …args)`. On the `/exec` link that is `
 | `getPage(knownHash)` | `{hash, html}` of `Index.html`, or `null` if the app already has that hash (app self-update) |
 | `getInit(me, token)` | members (`{full, short, hasPw}`), months (items + shifts), data version, live-import label, `meOk` (false = this phone must enter the password again) |
 | `getMonth(month, knownVersion)` | rows + cancels + shifts + `usual` for `yyyy-MM`; `null` if `knownVersion` is current (cheap polling) |
-| `setTag(rowHint, key, type, memberFull, month, note, me, token)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` kept only for 폐기. Refuses rows another worker tagged, and 폐기 on 저회전 rows. Returns the fresh month. |
+| `setTag(rowHint, key, type, memberFull, month, note, me, token)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` kept only for 폐기. Refuses rows another worker tagged. Returns the fresh month. |
 | `addMember(full)` | adds to 직원 |
 | `clockIn(memberFull, month, token)` / `clockOut(…)` | start a shift now / close the open one now (times rounded and snapped, see 출근일지). The month object gets `clock`: `{start, closed: [[member, end]], trimmed: [[member, end]]}` for 출근, `{end, kept?, moved?}` for 퇴근, for the snack |
 | `saveShift(key, date, memberFull, start, end, memo, month, token)` | create (`key=''`) or edit own shift; checks format, overlap, future times; may trim another worker's 퇴근 (교대 겹침 정리), listed in `res.trimmed: [[member, end]]` |
@@ -243,14 +243,14 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 - **Pull to refresh**: at the top of the page, drag down and let go (pull past 64 px; the spinner turns green) = tap on the sync label: `refreshLive()` + `load(true)` + `checkAppUpdate(true)` (app only: new page code → reload into it); the spinner stays until the reload answers (at least 0.45 s). Ignored when the page is scrolled down, a bottom sheet is open, or the swipe is sideways or upward. `overscroll-behavior-y: contain` stops the browser's own pull-to-refresh (which would reload the whole page) where the page is the top-level document.
 - **Tabs** (7, one row, fits 360 px): 출근 · 미등록 · 취식 · 폐기 · **저회전** · 월별 합계 · **더보기**. 출근 is first and always opens first. **전체** and **취소** are rarely used, so they sit in a small menu under **더보기** (tap → menu drops down under the tab, right-aligned; each item shows its name, a one-line hint and its count). While one of them is open, the 더보기 tab shows that view's name and count (`취소 21 ⌄`) in the selected style, and the menu marks it. The menu closes on picking an item, a tap outside, scrolling more than 12 px, or Esc.
   - 미등록 = untagged **폐기** lines (저회전 is never 미등록).
-  - 취식 = every 취식 line, 폐기 and 저회전 (저회전 lines carry a green `저회전` label).
-  - 폐기 = 폐기-tagged lines. 전체 = every 폐기-slip line. 저회전 = every 저회전 line, with a one-line explanation on top and a single button per line: **[취식]** before it is registered, **[취소]** after (same as the 취식 / 폐기 tabs).
+  - 취식 = every 취식 line, 폐기 and 저회전 (저회전 lines carry a green `저회전` label). 폐기 likewise includes 저회전 폐기 lines.
+  - 폐기 = 폐기-tagged lines. 전체 = every 폐기-slip line. 저회전 = every 저회전 line, with a one-line explanation on top and two buttons per line: **[취식] [폐기]** before it is registered; after, the other type + **[취소]** (same as the 취식 / 폐기 tabs).
   - 취소 = BGF cancel lines (both kinds; 저회전 ones say so).
-- In the 취식 / 폐기 tabs each line's right button is **취소** (removes that tag) and the left one switches to the other type (hidden for 저회전 lines). Lines tagged by another worker have disabled buttons.
+- In the 취식 / 폐기 tabs each line's right button is **취소** (removes that tag) and the left one switches to the other type. Lines tagged by another worker have disabled buttons.
 - **금액합계** card on top of the **미등록** and **취식** tabs only: 수량 and 원가 total of the lines shown (follows the name filter and the search). On 취식 it also lists each person's 수량 · 원가 (largest first, all lines look the same) when more than one person is shown. Other tabs have no card. On these two tabs the card and the name filter sit at the bottom of the sticky bar (`#pin`), so they stay on screen while scrolling; on other tabs the name filter is above the list as before.
 - **Header.** Two parts: `.hdr` (title + month, 나: 이름 + sync label, 이번 달 취식 / 폐기) scrolls away with the page; `.top` (tab bar, search, `#pin`) sticks to the top. It slides away while scrolling down and glides back on a slight scroll up (like Chrome's toolbar / Material's enter-always app bar): after it sticks it stays for one more bar height of scrolling; past that it moves with the content pixel for pixel (inline `transform`, no transition): up and away while scrolling down, back down while scrolling up. When scrolling stops (120 ms without a scroll event) with the bar part way, it glides the rest: back in if the last move was 5 px or more up, else to the nearer end. The glide takes 220–450 ms depending on the distance left, on a gentle ease-in-out curve (`cubic-bezier(.4, 0, .2, 1)`). Never hidden above that point, while the search box has focus or while a sheet is open; tapping a tab scrolls to the top, so it shows. This keeps the stuck part short at 360 px (취식 with 모두 ≈ 260 px, 미등록 ≈ 170 px, 출근 ≈ 70 px). The safe-area top padding is on `.hdr`, so if the app ever goes edge-to-edge the stuck `.top` would need it too.
 - Name filter (모두 + names that have something in that tab this month) on every tab except 미등록 and 취소. (일) is red and (토) blue in day headings.
-- Header "이번 달 취식 / 폐기" and the 월별 합계 table count 저회전 취식 as 취식; its footer shows only 미등록 **폐기**.
+- Header "이번 달 취식 / 폐기" and the 월별 합계 table count 저회전 취식 / 폐기 as 취식 / 폐기; its footer shows only 미등록 **폐기**.
 - 월별 합계 tab shows every column at once (fits a 360 px phone): **직원별 폐기 / 취식** = 직원 · 폐기 수량 · 폐기 원가 · 취식 수량 · 취식 원가 (취식 on the right; no 매가; the 취식 원가 합계 is red) and **근무 시간** = 직원 · 근무일 · 근무 시간. Names are full names only.
 - Off-shift 폐기 check runs in the page: the line's 생성시각 must fall inside one of the worker's shifts, 30 min grace either side; an open shift counts up to now. Lines with only a date pass if any shift touches that day. Each line shows who was working then (`근무 지은`).
 - **Empty-time warning (출근 tab)**: for each past day of the month, from the first recorded day to yesterday, the page joins everyone's shifts (including overnight ones from the day before) over 00:00–24:00 and lists gaps ≥ 15 min. The store is treated as **open 24 h**. A shift without 퇴근 from a past day counts as unknown. Each gap has **내가 근무했어요**, which opens 근무 직접 입력 prefilled. Hidden while a name filter is on.

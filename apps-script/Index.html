@@ -332,7 +332,7 @@ button.srow { cursor: pointer; }
   var OPEN_MAX_MIN = 16 * 60;  // 퇴근 안 찍은 근무는 16시간까지만 근무 중
   var AUTO_OUT = "자동 퇴근", AUTO_OUT_MIN = 2 * 60;  // 다음 사람 출근으로 자동 퇴근된 뒤 2시간은 [퇴근] 버튼
   var OFFSHIFT = "근무외";
-  var JEO = "저회전";          // 저회전상품철수 줄 (row[13]): 취식만 가능, 등록 안 해도 됨
+  var JEO = "저회전";          // 저회전상품철수 줄 (row[13]): 취식 / 폐기 둘 다 가능, 등록 안 해도 됨
   var GAP_MIN = 15;            // 지난 날 근무 기록 사이 이보다 긴 빈 시간은 경고 (가게는 24시간 기준)
   var DOW = ["일", "월", "화", "수", "목", "금", "토"];
   var K_ME = "chwisik.me", K_TOK = "chwisik.tok";
@@ -566,7 +566,7 @@ button.srow { cursor: pointer; }
     }).sort(function (a, b) { return a[2] < b[2] ? 1 : a[2] > b[2] ? -1 : 0; });
     var list = $("list");
     list.textContent = "";
-    if (S.view === "jeo") list.appendChild(mk("p", "cxnote", "BGF 저회전상품철수 상품이에요. 먹었으면 [취식]을 눌러요. 안 먹은 건 그냥 두면 돼요. 폐기로는 등록할 수 없어요."));
+    if (S.view === "jeo") list.appendChild(mk("p", "cxnote", "BGF 저회전상품철수 상품이에요. 먹었으면 [취식], 버렸으면 [폐기]를 눌러서 누가 처리했는지 남겨요. 안 눌러도 미등록에는 안 들어가요."));
     if ((S.view === "todo" || S.view === "eat") && vis.length) $("pinTot").appendChild(totalEl(vis));
     var byDay = [], cur = null;
     vis.forEach(function (r) { var d = r[11] || String(r[2]).slice(0, 10); if (!cur || cur.d !== d) { cur = { d: d, rows: [] }; byDay.push(cur); } cur.rows.push(r); });
@@ -635,9 +635,9 @@ button.srow { cursor: pointer; }
     // 취식 / 폐기 탭: 다른 쪽 버튼은 왼쪽, 오른쪽은 [취소] (이 탭의 등록을 지움)
     var tabType = S.view === "eat" ? "취식" : S.view === "void" ? "폐기" : "";
     var btns = tabType ? [[tabType === "취식" ? "폐기" : "취식", tabType === "취식" ? "void" : "eat"], [tabType, "undo"]] : [["취식", "eat"], ["폐기", "void"]];
-    if (r[13]) btns = btns.filter(function (p) { return p[0] !== "폐기"; });   // 저회전은 폐기 불가
-    // 저회전 탭: 등록 전 [취식], 등록하면 취식/폐기 탭처럼 [취소]
-    if (S.view === "jeo") btns = [["취식", r[8] === "취식" ? "undo" : "eat"]];
+    // 저회전 탭: 등록 전 [취식] [폐기], 등록하면 취식/폐기 탭처럼 [다른 쪽] [취소]
+    if (S.view === "jeo") btns = r[8] === "취식" ? [["폐기", "void"], ["취식", "undo"]]
+      : r[8] === "폐기" ? [["취식", "eat"], ["폐기", "undo"]] : [["취식", "eat"], ["폐기", "void"]];
     btns.forEach(function (p) {
       var undo = p[1] === "undo";
       var bt = mk("button", "stamp " + (undo ? (p[0] === "취식" ? "eat" : "void") + " undo" : p[1] + (r[8] === p[0] ? " on" : "")), undo ? "취소" : p[0]); bt.type = "button";
@@ -880,7 +880,7 @@ button.srow { cursor: pointer; }
     var eat = table(title + "직원별 폐기 / 취식", ["직원", "폐기 수량", "폐기 원가", "취식 수량", "취식 원가"],
       names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.vn), fmt(o.vw), fmt(o.en), fmt(o.ew)] }; }),
       ["합계", fmt(tot.vn), fmt(tot.vw), fmt(tot.en), fmt(tot.ew)],
-      "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식에는 저회전 취식도 들어가요");
+      "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식·폐기에는 저회전도 들어가요");
     eat.querySelector("tfoot td:nth-child(5)").classList.add("hot");  // 취식 원가 합계는 빨간색으로 강조
     box.appendChild(eat);
 
@@ -931,7 +931,6 @@ button.srow { cursor: pointer; }
     if (!memberOf(S.me)) { openPicker(); return; }
     if (r[9] && r[9] !== S.me) { snack(shortOf(r[9]) + " 님이 등록한 항목이라 바꿀 수 없어요."); return; }
     var next = r[8] === type ? "" : type;
-    if (next === "폐기" && r[13]) { snack(JEO + " 상품은 폐기로 등록할 수 없어요."); return; }
     // 오늘 상품은 근무 시간 경고 없이 바로 폐기 (출근일지가 아직 덜 적혔을 수 있음). 지난 날만 확인.
     if (next === "폐기" && String(r[2]).slice(0, 10) !== todayStr() && !workedAt(S.me, r[2], GRACE_MIN)) {
       var when = /\d\d:\d\d/.test(String(r[2]).slice(11)) ? dayLabel(r[2]) + " " + String(r[2]).slice(11, 16) : dayLabel(String(r[2]).slice(0, 10));

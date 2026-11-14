@@ -7,8 +7,8 @@
  * - 출근일지: [출근] / [퇴근] 한 번 누르거나 직접 입력. 다른 직원 근무 시간도 날짜별로 보임
  *   근무 기록 밖 시간의 폐기를 등록하면 확인을 받고, '확인' 열에 '근무외' 로 남김
  * - 월별 합계: '월별 합계' 시트와 웹앱에서 확인 (웹앱은 근무시간 합계도)
- * - 저회전상품철수 전표도 폐기와 똑같이 가져옴 ('전표' 열 = '저회전'). 취식으로만 등록할 수 있고,
- *   등록 안 해도 됨 (미등록에 안 셈). 폐기로는 등록할 수 없음.
+ * - 저회전상품철수 전표도 폐기와 똑같이 가져옴 ('전표' 열 = '저회전'). 취식이나 폐기로 등록할 수 있고
+ *   (누가 처리했는지 남김), 등록 안 해도 됨 (미등록에 안 셈).
  */
 
 var TZ = 'Asia/Seoul';
@@ -934,7 +934,7 @@ function cancelMatch_(vals, nums) {
 
 /**
  * type: '취식' | '폐기' | '' (clear). memberFull: whose tag to write (전체 이름).
- * A 저회전 row (전표 열 = '저회전') can only be 취식 or cleared.
+ * A 저회전 row (전표 열 = '저회전') takes 취식 or 폐기 like any row (so it shows who handled it).
  * note: '근무외' when the worker confirmed a 폐기 outside their recorded shift (kept only for 폐기).
  * me/token: who is acting. Only your own name is written, and a row someone else tagged can't be
  * changed or cleared from the page (the owner can still fix it in the sheet).
@@ -955,9 +955,6 @@ function setTag(rowHint, key, type, memberFull, month, note, me, token) {
     }
     var curMember = sh.getRange(row, C.MEMBER).getDisplayValue();
     if (curMember && curMember !== actor.full) throw new Error(curMember + ' 님이 등록한 항목이라 바꿀 수 없어요.');
-    if (type === '폐기' && sh.getMaxColumns() >= C.SRC && sh.getRange(row, C.SRC).getDisplayValue() === JEO) {
-      throw new Error(JEO + ' 상품은 폐기로 등록할 수 없어요. 먹었으면 취식으로 등록해 주세요.');
-    }
     var rng = sh.getRange(row, C.TYPE, 1, 4);
     if (type) {
       var who = type === '취식' ? mem.full : mem.short;

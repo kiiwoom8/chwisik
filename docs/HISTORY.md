@@ -36,6 +36,9 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
 **Tab bar**
 - **전체 and 취소 live under `더보기`** (a menu at the end of the tab bar), not as their own tabs (owner, 2026-11-11: hide them so the bar stays clean).
 
+**저회전**
+- **저회전 lines can be 폐기 as well as 취식** (owner, 2026-11-15: "add 폐기 either so we can distinguish who registered them"). It was 취식 only from 2026-11-09. Tagging stays optional (never 미등록).
+
 **폐기 off-shift warning**
 - **No warning for today's lines**; only lines from earlier days are checked against 출근일지 (owner, 2026-11-12). (It used to warn on today's lines too.)
 
@@ -192,3 +195,6 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
   - Live data: the 07:30 weekday handover (전병훈 in at 07:30, 김성휘's night shift to 08:00) overlapped 32/32 times, so it's kept; before this change 김성휘's 08:00 퇴근 press would have snapped to 07:30. All other handovers met, so they trim.
   - Not covered: a past worker who enters a 퇴근 by hand after the next worker's 출근 is kept as typed. Hand entry can now shorten another worker's shift (only with the memo mark showing the original); previously only 자동 퇴근 touched others' rows.
   - Tested: `node --check` on both files; node tests of `planTrim_` (no history, helper inside, started together, overlap habit, meet habit, trimmed rows excluded, overnight) and of `overlapUsual_` / `planClockOut_` on the live 9–11월 shifts. Not checked on a phone.
+- **저회전: 폐기 too.** The owner: for 저회전, add 폐기 as well so it shows who registered (handled) each line. `setTag` no longer refuses 폐기 on a 저회전 row; the page drops the 폐기 filter and the snack guard. The 저회전 tab now has **[취식] [폐기]** per line, and once registered the other type + **[취소]** (same as the 취식 / 폐기 tabs); the explanation line says so. 저회전 폐기 shows in the 폐기 tab (green `저회전` label) and counts in 폐기 totals (header, 월별 합계, sheet QUERY); the 월별 합계 footer note now says 취식·폐기 include 저회전.
+  - Kept: 저회전 still never counts as 미등록 (my reading: the ask was about knowing who handled it, not making it required). The past-day off-shift confirm now applies to 저회전 폐기 too, like any 폐기.
+  - Tested: `node --check` on both files. Not checked on a phone.
