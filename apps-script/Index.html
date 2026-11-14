@@ -999,6 +999,7 @@ button.srow { cursor: pointer; }
       }
       var msg = "출근 " + c.start + " 기록했어요";
       (c.closed || []).forEach(function (x) { msg += " · " + x[0] + " " + x[1] + " 자동 퇴근"; });
+      (c.trimmed || []).forEach(function (x) { msg += " · " + x[0] + " 퇴근 " + x[1] + "로 맞춤"; });
       snack(msg);
     })
       .catch(function () {}).then(function () { btn.disabled = false; });
@@ -1047,9 +1048,11 @@ button.srow { cursor: pointer; }
     if (!d || !a) { snack("날짜와 출근 시간을 적어 주세요."); return; }
     $("sfSave").disabled = true;
     var month = d.slice(0, 7);
-    call("saveShift", [ED ? ED[1] : "", d, S.me, a, b, $("sfMemo").value, S.month], function () {
+    call("saveShift", [ED ? ED[1] : "", d, S.me, a, b, $("sfMemo").value, S.month], function (res) {
       closeEditor();
-      snack(month !== S.month ? month.replace("-", "년 ") + "월 기록으로 저장했어요." : "저장했어요.");
+      var msg = month !== S.month ? month.replace("-", "년 ") + "월 기록으로 저장했어요." : "저장했어요.";
+      ((res && res.trimmed) || []).forEach(function (x) { msg += " · " + x[0] + " 퇴근 " + x[1] + "로 맞춤"; });
+      snack(msg);
       if (S.months.indexOf(month) < 0) { S.months.push(month); S.months.sort().reverse(); render(); }
     }).catch(function () { $("sfSave").disabled = false; });
   });

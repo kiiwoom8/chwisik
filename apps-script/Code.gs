@@ -44,6 +44,10 @@ var HANDOVER_MIN = 30;       // 앞 사람 퇴근 뒤 30분 안에 출근하면 
 var AUTO_OUT_MIN_H = 1;      // 다음 사람 출근 때 1시간 넘게 근무 중인 사람은 자동 퇴근
 var AUTO_OUT_MEMO = '자동 퇴근';   // 메모에 이 표시가 있으면 본인이 아직 퇴근을 안 누른 것
 var AUTO_OUT_CONFIRM_H = 2;  // 자동 퇴근 뒤 이 시간 안에 본인이 [퇴근]을 누를 수 있음
+var TRIM_MEMO = '교대 맞춤';   // 다음 사람 출근이 앞 사람 퇴근보다 일러서 퇴근을 그 출근에 맞춤. 메모: '교대 맞춤 (원래 22:30)'
+var HANDOFF_DAYS = 90;       // 겹침이 보통인지 볼 때 보는 기간
+var HANDOFF_NEAR_MIN = 60;   // 같은 교대로 보는 시간대 (출근 시각 ±60분)
+var HANDOFF_MIN_N = 3;       // 이보다 적게 보이면 판단 없이 퇴근을 맞춤
 
 // 실시간 가져오기
 var LIVE_MIN_GAP_S = 50;     // BGF 에 이보다 자주 접속하지 않음 (페이지는 1분마다 부름)
@@ -1145,12 +1149,85 @@ function planClockIn_(all, member, nowM) {
   return { start: start, closed: closed };
 }
 
+/* ---- 교대 겹침 정리 ----
+ * When a worker's 출근 (button or hand entry) falls inside another worker's recorded shift that
+ * started 1 h+ earlier and ends before the new shift does (a handover, not a helper inside a
+ * longer shift), the earlier worker's 퇴근 moves to that 출근 (memo `교대 맞춤 (원래 HH:mm)`).
+ * Unless overlapping is the store's habit for that handover: over the last 90 days, at the same
+ * time of day (±60 min; all handovers if fewer than 3 there), if handovers that overlapped
+ * outnumber those that met or left a gap, the overlap is kept. Fewer than 3 seen → trim.
+ * Shifts already trimmed or still marked 자동 퇴근 don't count (their end was set for the worker),
+ * so the rule can't feed itself; a trim the worker undoes (edits the 퇴근 back) counts again.
+ * The same check stops a 퇴근 press snapping back to the next worker's 출근, and makes a 자동 퇴근
+ * confirm take the press time, when overlapping is the habit there. */
+function isTrimmed_(s) { return String(s.memo || '').split(' · ').some(function (p) { return p.indexOf(TRIM_MEMO) === 0; }); }
+function dropTrim_(memo) {
+  return String(memo || '').split(' · ').filter(function (p) { return p && p.indexOf(TRIM_MEMO) !== 0; }).join(' · ');
+}
+function todDiff_(x, y) { var d = Math.abs(((x - y) % 1440 + 1440) % 1440); return Math.min(d, 1440 - d); }
+
+/** Handovers in the last HANDOFF_DAYS days: [{ at: B's 출근 (min), over: B came before A left }]. */
+function handoffs_(all, skipKey) {
+  var since = toMin_(Utilities.formatDate(new Date(Date.now() - HANDOFF_DAYS * 24 * 3600 * 1000), TZ, 'yyyy-MM-dd'), '00:00');
+  // 자동으로 맞춘 퇴근(교대 맞춤, 확인 안 된 자동 퇴근)은 실제 습관이 아니니 셈에서 뺌
+  var done = all.filter(function (s) { return s.end && s.key !== skipKey && !isTrimmed_(s) && !isAutoOut_(s) && shiftSpan_(s)[0] >= since - 1440; });
+  var out = [];
+  all.forEach(function (b) {
+    if (b.key === skipKey) return;
+    var bs = shiftSpan_(b), t = bs[0];
+    if (t < since) return;
+    var best = null, bd = 0;
+    done.forEach(function (a) {
+      if (a.member === b.member) return;
+      var as = shiftSpan_(a);
+      if (t - as[0] < AUTO_OUT_MIN_H * 60 || t > as[1] + HANDOVER_MIN) return;  // 같이 시작했거나 교대가 아님
+      if (bs[1] !== null && bs[1] < as[1]) return;                             // 긴 근무 안의 짧은 근무
+      var d = Math.abs(as[1] - t);
+      if (!best || d < bd) { best = as; bd = d; }
+    });
+    if (best) out.push({ at: t, over: t < best[1] });
+  });
+  return out;
+}
+
+/** true when overlapping is the usual way for a handover at t (see above). */
+function overlapUsual_(all, t, skipKey) {
+  var hs = handoffs_(all, skipKey);
+  var near = hs.filter(function (h) { return todDiff_(h.at, t) <= HANDOFF_NEAR_MIN; });
+  if (near.length < HANDOFF_MIN_N) near = hs;
+  if (near.length < HANDOFF_MIN_N) return false;
+  var over = near.filter(function (h) { return h.over; }).length;
+  return over > near.length - over;
+}
+
+/**
+ * Other workers' closed shifts to trim for a new shift [a, b] (b null = open) by `member`:
+ * each returned with .end = a and the memo marked. No writes. [] when overlap is usual.
+ */
+function planTrim_(all, member, a, b, skipKey) {
+  var hit = all.filter(function (s) {
+    if (s.member === member || !s.end || s.key === skipKey) return false;
+    var sp = shiftSpan_(s);
+    return a - sp[0] >= AUTO_OUT_MIN_H * 60 && a < sp[1] && (b === null || b >= sp[1]);
+  });
+  if (!hit.length || overlapUsual_(all, a, skipKey)) return [];
+  return hit.map(function (s) {
+    var was = s.end, m = dropTrim_(s.memo);
+    s.end = minHm_(a);
+    s.memo = (m ? m + ' · ' : '') + TRIM_MEMO + ' (원래 ' + was + ')';
+    return s;
+  });
+}
+
 /** Plan a 퇴근 for `open` at nowM: end in minutes. */
 function planClockOut_(all, member, open, nowM) {
   var a = shiftSpan_(open)[0];
   var end = roundSlot_(nowM, true);
   var s = handoverAt_(all, member, nowM, 0, a);
-  return s !== null ? s : end;
+  if (s === null) return end;
+  // 다음 사람이 먼저 와 있고 그 교대에서 겹치는 게 보통이면 내 퇴근을 그 출근으로 당기지 않음
+  if (s < end && overlapUsual_(all, s, open.key)) return end;
+  return s;
 }
 
 function clockIn(memberFull, month, token) {
@@ -1164,11 +1241,14 @@ function clockIn(memberFull, month, token) {
     var hit = overlapOf_(all, mem.full, p.start, null, '', nowM);
     if (hit) throw new Error('지금 시간이 이미 근무 기록(' + hit.start + '–' + hit.end + ') 안에 있어요.');
     p.closed.forEach(function (s) { writeShift_(sh, s.row, s); });
+    var trimmed = planTrim_(all, mem.full, p.start, null, '');
+    trimmed.forEach(function (s) { writeShift_(sh, s.row, s); });
     writeShift_(sh, sh.getLastRow() + 1, {
       key: 's' + now.getTime().toString(36) + Math.floor(Math.random() * 1296).toString(36),
       date: minDate_(p.start), member: mem.full, start: minHm_(p.start), end: '', memo: ''
     });
-    info = { start: minHm_(p.start), closed: p.closed.map(function (s) { return [s.member, s.end]; }) };
+    info = { start: minHm_(p.start), closed: p.closed.map(function (s) { return [s.member, s.end]; }),
+      trimmed: trimmed.map(function (s) { return [s.member, s.end]; }) };
     bumpVersion_();
   });
   var res = getMonth(month || '', '');
@@ -1193,7 +1273,8 @@ function clockOut(memberFull, month, token) {
       });
       if (!last) throw new Error('지금 출근 중인 기록이 없어요. [직접 입력]으로 적어 주세요.');
       var lb = shiftSpan_(last)[1];
-      var kept = nowM - lb < HANDOVER_MIN;
+      // 그 교대에서 겹치는 게 보통이면 누른 시간으로 (30분 안이어도)
+      var kept = nowM - lb < HANDOVER_MIN && !overlapUsual_(all, lb, last.key);
       if (!kept) last.end = minHm_(roundSlot_(nowM, true));
       last.memo = dropAutoOut_(last.memo);
       writeShift_(sh, last.row, last);
@@ -1230,6 +1311,7 @@ function saveShift(key, date, memberFull, start, end, memo, month, token) {
   var b = end ? shiftSpan_({ date: date, start: start, end: end })[1] : null;
   if (!end && nowM - a >= OPEN_SHIFT_MAX_H * 60) throw new Error('지난 근무는 퇴근 시간도 적어 주세요.');
   if (!end && a > nowM + 5) throw new Error('퇴근을 비워 두려면 출근 시간이 지금보다 앞이어야 해요.');
+  var trimmed = [];
   withLock_(function () {
     var sh = shiftSheet_();
     var all = readShifts_();
@@ -1244,11 +1326,20 @@ function saveShift(key, date, memberFull, start, end, memo, month, token) {
     if (!end && openShiftOf_(all.filter(function (s) { return s.key !== key; }), mem.full, nowM)) {
       throw new Error('이미 출근 중인 기록이 있어요. 퇴근 시간을 적어 주세요.');
     }
+    // 본인이 '교대 맞춤'된 퇴근을 고치면 그 표시는 뺌 (고친 시간이 맞는 시간)
+    if (cur && end !== cur.end) memo = dropTrim_(memo);
     var s = { key: key || 's' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36), date: date, member: mem.full, start: start, end: end, memo: memo };
+    // 출근만 바뀌지 않은 수정(퇴근·메모만)은 다른 사람 기록을 건드리지 않음
+    if (!cur || cur.date !== date || cur.start !== start) {
+      trimmed = planTrim_(all, mem.full, a, b, key);
+      trimmed.forEach(function (t) { writeShift_(sh, t.row, t); });
+    }
     writeShift_(sh, cur ? cur.row : sh.getLastRow() + 1, s);
     bumpVersion_();
   });
-  return getMonth(month || '', '');
+  var res = getMonth(month || '', '');
+  if (res && trimmed.length) res.trimmed = trimmed.map(function (t) { return [t.member, t.end]; });
+  return res;
 }
 
 function deleteShift(key, memberFull, month, token) {
