@@ -202,7 +202,6 @@ tr.meRow td:first-child { color: var(--accent); font-weight: 700; }
 .mystate { font-size: 14px; color: var(--muted); }
 .mystate b { display: block; color: var(--ink); font-size: 17px; }
 .clock { border: 0; border-radius: 12px; height: 52px; font-size: 17px; font-weight: 700; cursor: pointer; background: var(--accent); color: var(--accent-ink); }
-.clock.out { background: var(--ink); color: var(--paper); }
 .working { font-size: 13px; color: var(--muted); }
 .chip { display: inline-block; background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 2px 10px; margin: 4px 4px 0 0; font-weight: 500; }
 .srow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--rule); background: none; text-align: left; font: inherit; color: inherit; }
@@ -294,8 +293,8 @@ button.srow { cursor: pointer; }
     <p id="sfWho"></p>
     <label class="fld">날짜 (출근한 날)<input type="date" id="sfDate" required></label>
     <div class="two">
-      <label class="fld">출근<input type="time" id="sfStart" required></label>
-      <label class="fld">퇴근<input type="time" id="sfEnd"></label>
+      <label class="fld">출근<input type="time" id="sfStart" step="1800" required></label>
+      <label class="fld">퇴근<input type="time" id="sfEnd" step="1800"></label>
     </div>
     <p class="hint" id="sfHint"></p>
     <label class="fld">메모 (선택)<input type="text" id="sfMemo" maxlength="40" placeholder="예: 대타, 늦게 찍음" autocomplete="off"></label>
@@ -330,7 +329,7 @@ button.srow { cursor: pointer; }
   var POLL_MS = 5000, LIVE_MS = 60 * 1000;
   var GRACE_MIN = 30;          // 근무 시작 전/끝난 뒤 이 시간까지는 근무 중으로 봄 (폐기 경고)
   var OPEN_MAX_MIN = 16 * 60;  // 퇴근 안 찍은 근무는 16시간까지만 근무 중
-  var AUTO_OUT = "자동 퇴근", AUTO_OUT_MIN = 2 * 60;  // 다음 사람 출근으로 자동 퇴근된 뒤 2시간은 [퇴근] 버튼
+  var AUTO_OUT = "자동 퇴근", AUTO_OUT_MIN = 2 * 60;  // 다음 사람 출근으로 자동 퇴근된 뒤 2시간은 내 카드에 알려 줌
   var OFFSHIFT = "근무외";
   var JEO = "저회전";          // 저회전상품철수 줄 (row[13]): 취식 / 폐기 둘 다 가능, 등록 안 해도 됨
   var GAP_MIN = 15;            // 지난 날 근무 기록 사이 이보다 긴 빈 시간은 경고 (가게는 24시간 기준)
@@ -694,25 +693,22 @@ button.srow { cursor: pointer; }
       var st = mk("div", "mystate");
       if (auto) {
         st.appendChild(mk("b", "", "자동 퇴근"));
-        st.appendChild(document.createTextNode("다음 사람이 출근해서 " + auto[5] + " 퇴근으로 적었어요. 맞으면 [퇴근]을 눌러 주세요."));
+        st.appendChild(document.createTextNode("다음 사람이 출근해서 " + auto[5] + " 퇴근으로 적었어요. 다르면 아래 내 기록을 눌러 고쳐 주세요."));
       } else if (open) {
         st.appendChild(mk("b", "", "근무 중"));
-        st.appendChild(document.createTextNode(open[4] + " 출근 · " + dur(nowM - span(open, nowM).a) + "째"));
+        st.appendChild(document.createTextNode(open[4] + " 출근 · " + dur(nowM - span(open, nowM).a) + "째 · 끝나면 아래 내 기록을 눌러 퇴근을 적어 주세요."));
       } else {
         st.appendChild(mk("b", "", me.full + " 님"));
-        st.appendChild(document.createTextNode("지금은 근무 중이 아니에요. 출근·퇴근은 30분 단위로 적혀요."));
+        st.appendChild(document.createTextNode("근무는 직접 적어요. 시간은 30분 단위로 적혀요."));
       }
-      var out = !!(open || auto);
-      var bt = mk("button", "clock" + (out ? " out" : ""), out ? "퇴근" : "출근"); bt.type = "button";
-      bt.addEventListener("click", function () { clock(out ? "clockOut" : "clockIn", bt); });
-      card.appendChild(st); card.appendChild(bt);
+      card.appendChild(st);
     } else if (!me) {
       card.appendChild(mk("div", "mystate", "이름을 먼저 골라 주세요."));
     } else {
-      card.appendChild(mk("div", "mystate", S.month.replace("-", "년 ") + "월 근무 기록이에요. 출근/퇴근은 이번 달에서 눌러요."));
+      card.appendChild(mk("div", "mystate", S.month.replace("-", "년 ") + "월 근무 기록이에요."));
     }
-    var add = mk("button", "linkbtn", "+ 근무 직접 입력"); add.type = "button";
-    add.style.justifySelf = "start";
+    // [출근]/[퇴근] 버튼은 없앰 (2026-11-15): 근무는 직접 입력만
+    var add = mk("button", "clock", "+ 근무 직접 입력"); add.type = "button";
     add.addEventListener("click", function () { openEditor(null); });
     card.appendChild(add);
     var working = [];
@@ -772,7 +768,7 @@ button.srow { cursor: pointer; }
     });
     var em = $("emptyMsg");
     em.hidden = !!dates.length;
-    em.textContent = who ? who + " 님의 이 달 근무 기록이 없어요." : S.month < curMonth() ? "이 달의 근무 기록이 없어요. ‘+ 근무 직접 입력’으로 적을 수 있어요." : "이 달의 근무 기록이 아직 없어요. 출근할 때 [출근]을 눌러 주세요.";
+    em.textContent = who ? who + " 님의 이 달 근무 기록이 없어요." : S.month < curMonth() ? "이 달의 근무 기록이 없어요. ‘+ 근무 직접 입력’으로 적을 수 있어요." : "이 달의 근무 기록이 아직 없어요. ‘+ 근무 직접 입력’으로 적어 주세요.";
   }
 
   function gapEl(d, gaps) {
@@ -985,25 +981,6 @@ button.srow { cursor: pointer; }
       S.busy--; setOnline(true); take(res, true); if (done) done(res);
     }, function (e) { S.busy--; if (isAuthErr(e)) openPw("login", S.me); snack(errMsg(e)); throw e; });
   }
-  function clock(fn, btn) {
-    if (!memberOf(S.me)) { openPicker(); return; }
-    btn.disabled = true;
-    call(fn, [S.me, S.month], function (res) {
-      var c = res && res.clock;
-      if (!c) { snack(fn === "clockIn" ? "출근 기록했어요" : "퇴근 기록했어요"); return; }
-      if (fn === "clockOut") {
-        snack(c.kept ? "퇴근 " + c.end + " 그대로 뒀어요 (다음 사람 출근 시간)"
-          : "퇴근 " + c.end + " 기록했어요" + (c.moved ? " (자동 퇴근을 고쳤어요)" : ""));
-        return;
-      }
-      var msg = "출근 " + c.start + " 기록했어요";
-      (c.closed || []).forEach(function (x) { msg += " · " + x[0] + " " + x[1] + " 자동 퇴근"; });
-      (c.trimmed || []).forEach(function (x) { msg += " · " + x[0] + " 퇴근 " + x[1] + "로 맞춤"; });
-      snack(msg);
-    })
-      .catch(function () {}).then(function () { btn.disabled = false; });
-  }
-
   var ED = null;
   /** s = existing shift to edit, or null for a new one. preset = {date, start, end, memo} for a new one. */
   function openEditor(s, preset) {
@@ -1026,16 +1003,26 @@ button.srow { cursor: pointer; }
     $("shiftEd").hidden = false;
     setTimeout(function () { (s ? $("sfEnd") : $("sfStart")).focus(); }, 50);
   }
+  /** "09:13" → "09:00" (30분 단위; up = :15/:45 올림, 퇴근) */
+  function slotHm(t, up) {
+    if (!/^\d\d:\d\d$/.test(t)) return t;
+    var m = +t.slice(0, 2) * 60 + +t.slice(3, 5), r = m % 30;
+    m = r < 15 || (r === 15 && !up) ? m - r : m - r + 30;
+    m %= 1440;
+    return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+  }
   function edHint() {
-    var d = $("sfDate").value, a = $("sfStart").value, b = $("sfEnd").value, h = $("sfHint");
+    var d = $("sfDate").value, a = slotHm($("sfStart").value, false), b = slotHm($("sfEnd").value, true), h = $("sfHint");
     h.className = "hint";
+    var moved = ($("sfStart").value && a !== $("sfStart").value) || ($("sfEnd").value && b !== $("sfEnd").value)
+      ? "30분 단위로 " + a + (b ? " – " + b : "") + "로 적어요 · " : "";
     if (a && b && a === b) { h.textContent = "출근과 퇴근 시간이 같아요."; h.className = "hint bad"; return; }
     if (d && a && b) {
       var m = toMin(d, b) - toMin(d, a); if (m < 0) m += 1440;
-      h.textContent = (b < a ? "다음 날 " + b + " 퇴근 · " : "") + dur(m);
+      h.textContent = moved + (b < a ? "다음 날 " + b + " 퇴근 · " : "") + dur(m);
       return;
     }
-    h.textContent = "아직 근무 중이면 퇴근은 비워 두세요. 퇴근이 출근보다 이르면 다음 날 퇴근으로 기록해요.";
+    h.textContent = moved + "아직 근무 중이면 퇴근은 비워 두세요. 다음 사람이 출근을 적으면 자동 퇴근돼요. 퇴근이 출근보다 이르면 다음 날 퇴근으로 기록해요.";
   }
   ["sfDate", "sfStart", "sfEnd"].forEach(function (id) { $(id).addEventListener("input", edHint); $(id).addEventListener("change", edHint); });
   function closeEditor() { $("shiftEd").hidden = true; ED = null; }
@@ -1051,6 +1038,7 @@ button.srow { cursor: pointer; }
       closeEditor();
       var msg = month !== S.month ? month.replace("-", "년 ") + "월 기록으로 저장했어요." : "저장했어요.";
       ((res && res.trimmed) || []).forEach(function (x) { msg += " · " + x[0] + " 퇴근 " + x[1] + "로 맞춤"; });
+      ((res && res.closed) || []).forEach(function (x) { msg += " · " + x[0] + " " + x[1] + " 자동 퇴근"; });
       snack(msg);
       if (S.months.indexOf(month) < 0) { S.months.push(month); S.months.sort().reverse(); render(); }
     }).catch(function () { $("sfSave").disabled = false; });

@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-15 (저회전 lines can be 폐기 too, so it shows who handled them)
+Last updated: 2026-11-15 (no [출근] / [퇴근] buttons: hand entry only, 30-min slots, 자동 퇴근 on a hand-entered 출근)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -22,7 +22,7 @@ A tracker for CU store **25377**: which expired items (폐기) a worker ate (취
   - 취식 → records the **full name** (김성휘)
   - 폐기 → records the **first name only** (성휘)
 - **저회전 (저회전상품철수)** lines are imported the same way and shown in their own **저회전** tab. They can be tagged **취식 or 폐기** (폐기 added 2026-11-15 so it shows who handled them), and they **don't need to be tagged** (they are not counted in 미등록). A 저회전 취식 / 폐기 counts in the worker's 취식 / 폐기 totals like any other.
-- **출근일지**: staff tap **[출근] / [퇴근]** (or enter a shift by hand) and see everyone's shifts day by day.
+- **출근일지**: staff enter their shifts by hand (`+ 근무 직접 입력`, 30-min slots; no [출근] / [퇴근] buttons) and see everyone's shifts day by day.
 - **Off-shift 폐기 warning**: tagging 폐기 on a **past day's** line whose slip time is outside the worker's recorded shifts (±30 min) asks first. If they confirm, it is saved and marked `근무외`. Today's lines are never warned (today's 출근일지 may not be filled in yet).
 - **BGF cancels**: a negative line cancels an earlier line of the same product; both disappear from the lists and totals and show in the **취소** tab.
 - **Monthly totals** per person in the web app (월별 합계 tab, includes hours) and in the **월별 합계** sheet (a QUERY formula).
@@ -107,19 +107,18 @@ Created on the first 출근 / save if missing (or by `setup()`).
 
 Rules (server-side): from the page a worker can only edit or delete their own rows (the system itself may change another's 퇴근: 자동 퇴근, 교대 맞춤); one worker's shifts may not overlap; an open shift counts as "근무 중" for 16 h at most (after that the page shows "퇴근 기록 없음" until someone fixes it); no future times (+60 min slack). The owner can edit the sheet directly.
 
-**[출근] / [퇴근] button times** (`clockIn` / `clockOut`; hand entry via `saveShift` is kept as typed). The store counts work in 30-min slots, so:
-- **Rounding:** the press is rounded to the nearest :00 / :30 (`SLOT_MIN` 30). A press at exactly :15 / :45 goes the worker's way: 출근 down, 퇴근 up. 09:13 출근 → 09:00; 09:18 → 09:30; 22:07 퇴근 → 22:00; 22:16 → 22:30. A rounded-up 출근 can be up to 14 min ahead of now, so an open shift counts as 근무 중 from 15 min before its start (server `isLive_`, page `span`).
-- **Handover snap:** if another worker's 퇴근 lies between 30 min before and 15 min after the 출근 press (`HANDOVER_MIN`), the 출근 takes that exact time (09:18 출근 after a 09:00 퇴근 → 09:00), so the two shifts meet with no gap and no overlap. Same for 퇴근: another worker's 출근 (later than my own 출근) in that window → my 퇴근 = their 출근.
-- **자동 퇴근:** pressing 출근 while another worker is still 근무 중 (forgot 퇴근) closes that worker's shift at the same (rounded) time and adds `자동 퇴근` to its memo, but only if that leaves them at least 1 h (`AUTO_OUT_MIN_H`; someone who started within the hour is taken to be working alongside). Stale open shifts (16 h+) are left alone.
-- **Confirming it:** for 2 h after (`AUTO_OUT_CONFIRM_H`) that worker's page shows **자동 퇴근** with a [퇴근] button. Pressing it within 30 min of the 자동 퇴근 time keeps the time (the store doesn't count the extra 1–29 min); later than that, the 퇴근 moves to the press, rounded (they stayed on). Either way the `자동 퇴근` mark leaves the memo, so a memo still showing it means the worker never confirmed.
-- A 퇴근 that would round onto the 출근 time (pressed within ~15 min of 출근) is refused: delete the record instead.
+**Times are entered by hand only** (`saveShift`). The [출근] / [퇴근] buttons (`clockIn` / `clockOut`) were removed on 2026-11-15 (owner: "we don't [count] minutes as 근무시간 … we'll only use manual recording"). Worker's own row = a button that opens the editor; a 근무 중 row is closed by opening it and filling in 퇴근.
+- **30-min slots:** the store counts work in 30-min slots (`SLOT_MIN` 30), so `saveShift` rounds both times to the nearest :00 / :30. Exactly :15 / :45 goes the worker's way: 출근 down, 퇴근 up (09:13 출근 → 09:00; 09:18 → 09:30; 22:07 퇴근 → 22:00; 22:16 → 22:30; 23:50 출근 → next day 00:00). The time inputs have `step="1800"`, and the editor's hint says `30분 단위로 HH:mm – HH:mm로 적어요` when the typed time will move. Times that round onto each other (09:05 – 09:10) are refused. A 근무 중 row (퇴근 empty) may start up to 15 min after now (a rounded-up 출근), so an open shift counts as 근무 중 from 15 min before its start (server `isLive_`, page `span`).
+- **자동 퇴근** (`planAutoOut_`): saving a 근무 중 row (퇴근 empty; new, or its 날짜/출근 moved) while another worker is still 근무 중 (forgot 퇴근) closes that worker's shift and adds `자동 퇴근` to its memo, but only if their shift started 1 h+ before the new 출근 (`AUTO_OUT_MIN_H`; someone who started within the hour, or after, is taken to be working alongside). Closed at the new 출근, or, where overlapping is the habit at that handover (`overlapUsual_`, below), at that worker's usual 퇴근 (`usualShifts_`, same 출근) when it is up to 2 h later: 전병훈 07:30 on a weekday → 김성휘 08:00. Stale open shifts (16 h+) are left alone. The snack says `· 이름 HH:mm 자동 퇴근`.
+- **Catch-up** (`autoOutAll_`, run by every `refreshNow`: page open, pull, each minute while the page is open, the 5-min trigger): any 근무 중 shift that a later 근무 중 shift of another worker should have closed is closed the same way. Covers rows entered before this rule (the 2026-11-15 case: 전병훈 08:00 entered by hand, 김성휘 still open from 11/14 22:00) and a race between two phones.
+- **Confirming it:** for 2 h the worker's card says **자동 퇴근** (`다음 사람이 출근해서 HH:mm 퇴근으로 적었어요. 다르면 아래 내 기록을 눌러 고쳐 주세요.`). Saving their own row in the editor (any change, or none) drops the `자동 퇴근` mark, so a memo still showing it means the worker never checked it.
 
-**교대 겹침 정리** (`planTrim_`, both `clockIn` and `saveShift`; `saveShift` only when it's a new row or its 날짜/출근 changed):
+**교대 겹침 정리** (`planTrim_`, in `saveShift` when it's a new row or its 날짜/출근 changed):
 - When a worker's 출근 falls inside another worker's **recorded** (closed) shift, that shift's 퇴근 moves to the new 출근, and its memo gets `교대 맞춤 (원래 HH:mm)` (`TRIM_MEMO`), so the earlier worker sees what happened and the original time. The snack says `· 이름 퇴근 HH:mm로 맞춤`.
 - Only for a handover: the earlier shift started 1 h+ before (`AUTO_OUT_MIN_H`; less = working alongside), and the new shift ends at or after it (or is open). A short shift inside a longer one (a helper 12:00–14:00 inside 09:00–18:00) leaves it alone.
 - **Unless overlapping is the habit** (`overlapUsual_`): look at the last 90 days of handovers (`handoffs_`: for each shift, the other worker's shift whose 퇴근 is nearest its 출근, started 1 h+ before it, ending ≤ 30 min before it or later, not a shift inside a longer one), at the same time of day (출근 ±60 min; all handovers if fewer than 3 there). If those that overlapped outnumber those that met or left a gap, the overlap is kept. Fewer than 3 seen, or a tie → trim (the owner's rule).
 - History leaves out shifts whose 퇴근 the system set (`교대 맞춤`, or still `자동 퇴근`), so the rule can't feed itself. If the earlier worker edits their 퇴근, the `교대 맞춤` mark leaves the memo and the shift counts again.
-- The same habit check applies to the older snaps: a 퇴근 press doesn't snap back to a next worker's 출근 that came before it, and a `자동 퇴근` confirm takes the press time even within 30 min.
+- The same habit check picks the 자동 퇴근 time (above).
 - Live data on 2026-11-15: the 07:30 weekday handover (전병훈 07:30 while 김성휘's night shift runs to 08:00) overlapped 32 of 32 times → kept; every other handover (12:30, 13:00, 22:00, …) met → trimmed.
 
 ### 직원
@@ -153,7 +152,7 @@ One row per import run: time, date range, slip count, new lines, result. Nightly
 ## Passwords (optional, per name)
 
 - A worker can make, change or remove a password from the page (나: … **비밀번호**). 4–30 characters. No password is fine; the name then works for anyone.
-- Choosing a name that has a password (🔒) asks for it once per phone. The server returns a token (HMAC of name + hash with `TOKEN_KEY`), kept in localStorage (`chwisik.tok`). Every write sends it: `setTag`, `clockIn`/`clockOut`, `saveShift`, `deleteShift`, `setPassword`. Changing the password changes the token, so other phones must enter the new one.
+- Choosing a name that has a password (🔒) asks for it once per phone. The server returns a token (HMAC of name + hash with `TOKEN_KEY`), kept in localStorage (`chwisik.tok`). Every write sends it: `setTag`, `saveShift`, `deleteShift`, `setPassword`. Changing the password changes the token, so other phones must enter the new one.
 - 5 wrong tries for a name → that name is locked for 10 min (CacheService).
 - **Developer bypass**: menu **개발자 비밀번호 설정** stores `DEV_PW_HASH`. Typing that password in any name's password box unlocks that name. Menu **직원 비밀번호 지우기** removes one worker's password.
 
@@ -213,7 +212,6 @@ The page calls the server with `run(fn, …args)`. On the `/exec` link that is `
 | `getMonth(month, knownVersion)` | rows + cancels + shifts + `usual` for `yyyy-MM`; `null` if `knownVersion` is current (cheap polling) |
 | `setTag(rowHint, key, type, memberFull, month, note, me, token)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` kept only for 폐기. Refuses rows another worker tagged. Returns the fresh month. |
 | `addMember(full)` | adds to 직원 |
-| `clockIn(memberFull, month, token)` / `clockOut(…)` | start a shift now / close the open one now (times rounded and snapped, see 출근일지). The month object gets `clock`: `{start, closed: [[member, end]], trimmed: [[member, end]]}` for 출근, `{end, kept?, moved?}` for 퇴근, for the snack |
 | `saveShift(key, date, memberFull, start, end, memo, month, token)` | create (`key=''`) or edit own shift; checks format, overlap, future times; may trim another worker's 퇴근 (교대 겹침 정리), listed in `res.trimmed: [[member, end]]` |
 | `deleteShift(key, memberFull, month, token)` | delete own shift |
 | `login(full, pw)` | returns `{token}`; accepts the developer password too |

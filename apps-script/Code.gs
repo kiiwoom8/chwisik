@@ -39,11 +39,10 @@ var SC = { KEY: 1, DATE: 2, MEMBER: 3, START: 4, END: 5, HOURS: 6, MEMO: 7, AT: 
 var SNCOL = 9;
 var SHIFT_HEADERS = ['키', '날짜', '직원', '출근', '퇴근', '근무시간', '메모', '등록시각', '월'];
 var OPEN_SHIFT_MAX_H = 16;   // 퇴근을 안 찍은 근무는 이 시간까지만 '근무 중'으로 봄
-var SLOT_MIN = 30;           // 출근/퇴근 버튼 시간은 가까운 30분으로 맞춤 (가게는 30분 단위로 셈)
-var HANDOVER_MIN = 30;       // 앞 사람 퇴근 뒤 30분 안에 출근하면 그 퇴근 시간으로 (교대, 빈 시간 없음)
+var SLOT_MIN = 30;           // 근무 시간은 가까운 30분으로 맞춤 (가게는 30분 단위로 셈)
+var HANDOVER_MIN = 30;       // 앞 사람 퇴근 뒤 30분 안에 출근하면 교대로 봄 (겹침 습관 셈)
 var AUTO_OUT_MIN_H = 1;      // 다음 사람 출근 때 1시간 넘게 근무 중인 사람은 자동 퇴근
-var AUTO_OUT_MEMO = '자동 퇴근';   // 메모에 이 표시가 있으면 본인이 아직 퇴근을 안 누른 것
-var AUTO_OUT_CONFIRM_H = 2;  // 자동 퇴근 뒤 이 시간 안에 본인이 [퇴근]을 누를 수 있음
+var AUTO_OUT_MEMO = '자동 퇴근';   // 메모에 이 표시가 있으면 본인이 아직 퇴근을 확인 안 한 것
 var TRIM_MEMO = '교대 맞춤';   // 다음 사람 출근이 앞 사람 퇴근보다 일러서 퇴근을 그 출근에 맞춤. 메모: '교대 맞춤 (원래 22:30)'
 var HANDOFF_DAYS = 90;       // 겹침이 보통인지 볼 때 보는 기간
 var HANDOFF_NEAR_MIN = 60;   // 같은 교대로 보는 시간대 (출근 시각 ±60분)
@@ -295,6 +294,7 @@ function refreshNow() {
     p.setProperty('OCT_APPLY_TRY', String(Date.now()));
     try { octApplyAll_(); } catch (e) { logImport_('2026-10 (10월 취식·근무 넣기)', '', '', '실패: ' + String(e && e.message || e).slice(0, 200)); }
   }
+  try { autoOutAll_(); } catch (e) {}
   if (props.LIVE_OFF === '1') return liveInfo_(props, 0);
   // LIVE_TRIGGER holds the trigger's minutes, so changing LIVE_TRIGGER_MIN reinstalls it
   if (props.LIVE_TRIGGER !== String(LIVE_TRIGGER_MIN)) { try { installLiveTrigger_(); } catch (e) {} }
@@ -678,7 +678,7 @@ function doGet() {
 function apiFns_() {
   return {
     getBoot: getBoot, getInit: getInit, getMonth: getMonth, setTag: setTag, addMember: addMember,
-    clockIn: clockIn, clockOut: clockOut, saveShift: saveShift, deleteShift: deleteShift,
+    saveShift: saveShift, deleteShift: deleteShift,
     login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage
   };
 }
@@ -1065,38 +1065,20 @@ function openShiftOf_(all, member, nowM) {
   return best;
 }
 
-/* ---- 출근/퇴근 버튼 시간 맞추기 (30분 단위 + 교대) ----
- * The store counts work in 30-min slots, so a button press is rounded to the nearest slot
- * (:15 / :45 → 출근 down, 퇴근 up: ties go the worker's way).
- * Handover: if another worker's 퇴근 (or 출근) is close to the press — from 15 min after it to
- * 30 min before it — the press takes that exact time, so the two shifts meet with no gap and no
- * overlap (09:18 출근 after a 09:00 퇴근 → 09:00).
- * When someone presses 출근 while another worker is still 근무 중 (forgot 퇴근), that worker is
- * closed at the same time (memo `자동 퇴근`), if that leaves them at least 1 h. If they press
- * 퇴근 (page shows it for 2 h) within 30 min of it, the time stays; later than that, it moves to
- * their press (they stayed). Either way the memo mark goes away. */
+/* ---- 근무 시간 (30분 단위, 직접 입력만) ----
+ * The store counts work in 30-min slots, so hand-entered times are rounded to the nearest slot
+ * (:15 / :45 → 출근 down, 퇴근 up: ties go the worker's way). There are no [출근] / [퇴근]
+ * buttons any more (owner, 2026-11-15): every shift is entered by hand.
+ * 자동 퇴근: when someone enters a 출근 that is still running (퇴근 empty) while another worker is
+ * still 근무 중 (forgot their 퇴근), that worker is closed (memo `자동 퇴근`) if that leaves them
+ * at least 1 h. Closed at the new 출근, or — where overlapping is the habit at that handover — at
+ * their usual 퇴근 when it comes up to 2 h later. Saving their own row drops the mark. */
 function roundSlot_(m, tieUp) {
   var r = ((m % SLOT_MIN) + SLOT_MIN) % SLOT_MIN, h = SLOT_MIN / 2;
   return r < h || (r === h && !tieUp) ? m - r : m - r + SLOT_MIN;
 }
 function minDate_(m) { return Utilities.formatDate(new Date(m * 60000), 'UTC', 'yyyy-MM-dd'); }
 function minHm_(m) { return Utilities.formatDate(new Date(m * 60000), 'UTC', 'HH:mm'); }
-
-/**
- * The other worker's 퇴근 (which = 1) or 출근 (which = 0) nearest to t, among times in
- * [t - HANDOVER_MIN, t + SLOT_MIN / 2]; null if none. `after` = only times later than this.
- */
-function handoverAt_(all, member, t, which, after) {
-  var best = null;
-  all.forEach(function (s) {
-    if (s.member === member) return;
-    var x = shiftSpan_(s)[which];
-    if (x === null || x <= after) return;
-    if (x < t - HANDOVER_MIN || x > t + SLOT_MIN / 2) return;
-    if (best === null || Math.abs(x - t) < Math.abs(best - t)) best = x;
-  });
-  return best;
-}
 
 function isAutoOut_(s) { return String(s.memo || '').split(' · ').indexOf(AUTO_OUT_MEMO) >= 0; }
 function dropAutoOut_(memo) {
@@ -1127,23 +1109,58 @@ function writeShift_(sh, row, s) {
 }
 
 /**
- * Plan a 출근 at nowM (no writes): { start (minutes), closed: [shift with .end set] }.
- * Pure apart from reading `all`, so it can be tested on its own.
+ * Other workers' open (근무 중) shifts to close for a new open shift by `member` starting at a
+ * (minutes): each returned with .end set and the memo marked `자동 퇴근`. No writes.
  */
-function planClockIn_(all, member, nowM) {
-  var start = roundSlot_(nowM, false), closed = [];
+function planAutoOut_(all, member, a, nowM, skipKey) {
+  var usual = null, closed = [];
   all.forEach(function (s) {
-    if (s.member === member || !isLive_(s, nowM)) return;
-    if (start - shiftSpan_(s)[0] < AUTO_OUT_MIN_H * 60) return; // 막 출근한 사람: 같이 일하는 중
-    s.end = minHm_(start);
+    if (s.member === member || s.key === skipKey || !isLive_(s, nowM)) return;
+    var st = shiftSpan_(s)[0];
+    if (a - st < AUTO_OUT_MIN_H * 60) return; // 막 출근했거나 내 출근보다 늦게 온 사람: 같이 일하는 중
+    var end = a;
+    if (overlapUsual_(all, a, skipKey)) {
+      // 이 교대에서 겹치는 게 보통이면 그 사람이 늘 하던 퇴근으로 (2시간 안일 때)
+      usual = usual || usualShifts_(all);
+      var u = usual[s.member];
+      if (u && u[0] === s.start) {
+        var ue = toMin_(s.date, u[1]); if (ue <= st) ue += 1440;
+        if (ue > a && ue - a <= 120) end = ue;
+      }
+    }
+    s.end = minHm_(end);
     s.memo = (dropAutoOut_(s.memo) ? dropAutoOut_(s.memo) + ' · ' : '') + AUTO_OUT_MEMO;
     closed.push(s);
   });
-  if (!closed.length) {
-    var e = handoverAt_(all, member, nowM, 1, -Infinity);
-    if (e !== null) start = e;
-  }
-  return { start: start, closed: closed };
+  return closed;
+}
+
+/**
+ * Catch-up 자동 퇴근 (refreshNow: page open, pull, every minute while open, and the 5-min
+ * trigger): any 근무 중 shift that a later 근무 중 shift of another worker (1 h+ after it) should
+ * have closed, e.g. one entered before this rule or saved while the other row was being edited.
+ */
+function autoOutAll_() {
+  var all = readShifts_(), nowM = nowMin_();
+  var open = all.filter(function (s) { return isLive_(s, nowM); })
+    .sort(function (x, y) { return shiftSpan_(y)[0] - shiftSpan_(x)[0]; });
+  var todo = [];
+  open.forEach(function (b) {
+    if (b.end) return; // 이미 이번에 닫힘
+    todo = todo.concat(planAutoOut_(all, b.member, shiftSpan_(b)[0], nowM, b.key));
+  });
+  if (!todo.length) return 0;
+  withLock_(function () {
+    var sh = shiftSheet_(), now = readShifts_();
+    todo.forEach(function (t) {
+      // 그 사이에 바뀐 줄은 건드리지 않음
+      var cur = null; now.forEach(function (s) { if (s.key === t.key) cur = s; });
+      if (!cur || cur.row !== t.row || cur.end) return;
+      writeShift_(sh, t.row, t);
+    });
+    bumpVersion_();
+  });
+  return todo.length;
 }
 
 /* ---- 교대 겹침 정리 ----
@@ -1155,8 +1172,7 @@ function planClockIn_(all, member, nowM) {
  * outnumber those that met or left a gap, the overlap is kept. Fewer than 3 seen → trim.
  * Shifts already trimmed or still marked 자동 퇴근 don't count (their end was set for the worker),
  * so the rule can't feed itself; a trim the worker undoes (edits the 퇴근 back) counts again.
- * The same check stops a 퇴근 press snapping back to the next worker's 출근, and makes a 자동 퇴근
- * confirm take the press time, when overlapping is the habit there. */
+ * The same check makes 자동 퇴근 use the earlier worker's usual 퇴근 where overlapping is the habit. */
 function isTrimmed_(s) { return String(s.memo || '').split(' · ').some(function (p) { return p.indexOf(TRIM_MEMO) === 0; }); }
 function dropTrim_(memo) {
   return String(memo || '').split(' · ').filter(function (p) { return p && p.indexOf(TRIM_MEMO) !== 0; }).join(' · ');
@@ -1216,83 +1232,6 @@ function planTrim_(all, member, a, b, skipKey) {
   });
 }
 
-/** Plan a 퇴근 for `open` at nowM: end in minutes. */
-function planClockOut_(all, member, open, nowM) {
-  var a = shiftSpan_(open)[0];
-  var end = roundSlot_(nowM, true);
-  var s = handoverAt_(all, member, nowM, 0, a);
-  if (s === null) return end;
-  // 다음 사람이 먼저 와 있고 그 교대에서 겹치는 게 보통이면 내 퇴근을 그 출근으로 당기지 않음
-  if (s < end && overlapUsual_(all, s, open.key)) return end;
-  return s;
-}
-
-function clockIn(memberFull, month, token) {
-  var mem = authMember_(memberFull, token), info = null;
-  withLock_(function () {
-    var sh = shiftSheet_();
-    var all = readShifts_(), nowM = nowMin_(), now = new Date();
-    var open = openShiftOf_(all, mem.full, nowM);
-    if (open) throw new Error('이미 ' + open.start + '에 출근했어요. 끝났으면 [퇴근]을 눌러 주세요.');
-    var p = planClockIn_(all, mem.full, nowM);
-    var hit = overlapOf_(all, mem.full, p.start, null, '', nowM);
-    if (hit) throw new Error('지금 시간이 이미 근무 기록(' + hit.start + '–' + hit.end + ') 안에 있어요.');
-    p.closed.forEach(function (s) { writeShift_(sh, s.row, s); });
-    var trimmed = planTrim_(all, mem.full, p.start, null, '');
-    trimmed.forEach(function (s) { writeShift_(sh, s.row, s); });
-    writeShift_(sh, sh.getLastRow() + 1, {
-      key: 's' + now.getTime().toString(36) + Math.floor(Math.random() * 1296).toString(36),
-      date: minDate_(p.start), member: mem.full, start: minHm_(p.start), end: '', memo: ''
-    });
-    info = { start: minHm_(p.start), closed: p.closed.map(function (s) { return [s.member, s.end]; }),
-      trimmed: trimmed.map(function (s) { return [s.member, s.end]; }) };
-    bumpVersion_();
-  });
-  var res = getMonth(month || '', '');
-  if (res) res.clock = info;
-  return res;
-}
-
-function clockOut(memberFull, month, token) {
-  var mem = authMember_(memberFull, token), info = null;
-  withLock_(function () {
-    var sh = shiftSheet_();
-    var all = readShifts_(), nowM = nowMin_();
-    var open = openShiftOf_(all, mem.full, nowM);
-    if (!open) {
-      // 다음 사람이 출근하면서 자동 퇴근된 근무: 30분 안에 누르면 그 시간 그대로, 넘으면 지금 시간으로.
-      var last = null;
-      all.forEach(function (s) {
-        if (s.member !== mem.full || !s.end || !isAutoOut_(s)) return;
-        var b = shiftSpan_(s)[1];
-        if (b > nowM + SLOT_MIN / 2 || nowM - b > AUTO_OUT_CONFIRM_H * 60 + 15) return;
-        if (!last || b > shiftSpan_(last)[1]) last = s;
-      });
-      if (!last) throw new Error('지금 출근 중인 기록이 없어요. [직접 입력]으로 적어 주세요.');
-      var lb = shiftSpan_(last)[1];
-      // 그 교대에서 겹치는 게 보통이면 누른 시간으로 (30분 안이어도)
-      var kept = nowM - lb < HANDOVER_MIN && !overlapUsual_(all, lb, last.key);
-      if (!kept) last.end = minHm_(roundSlot_(nowM, true));
-      last.memo = dropAutoOut_(last.memo);
-      writeShift_(sh, last.row, last);
-      info = kept ? { end: last.end, kept: true } : { end: last.end, moved: true };
-      bumpVersion_();
-      return;
-    }
-    var end = planClockOut_(all, mem.full, open, nowM);
-    if (end <= shiftSpan_(open)[0]) {
-      throw new Error(open.start + ' 출근과 퇴근이 같은 시간이 돼요. 잘못 눌렀으면 근무 기록을 눌러 지워 주세요.');
-    }
-    open.end = minHm_(end);
-    writeShift_(sh, open.row, open);
-    info = { end: open.end };
-    bumpVersion_();
-  });
-  var res = getMonth(month || '', '');
-  if (res) res.clock = info;
-  return res;
-}
-
 /** key '' = new. end '' = still working. */
 function saveShift(key, date, memberFull, start, end, memo, month, token) {
   var mem = authMember_(memberFull, token);
@@ -1301,14 +1240,17 @@ function saveShift(key, date, memberFull, start, end, memo, month, token) {
   if (!/^\d{4}-\d\d-\d\d$/.test(date)) throw new Error('날짜를 골라 주세요.');
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(start)) throw new Error('출근 시간을 적어 주세요.');
   if (end && !/^([01]\d|2[0-3]):[0-5]\d$/.test(end)) throw new Error('퇴근 시간이 이상해요.');
-  if (end && end === start) throw new Error('출근과 퇴근 시간이 같아요.');
+  // 30분 단위로 맞춤 (가게는 1–29분을 세지 않음). 출근은 :15 → 내림, 퇴근은 :45 → 올림.
+  var a = roundSlot_(toMin_(date, start), false);
+  date = minDate_(a); start = minHm_(a);
+  if (end) end = minHm_(roundSlot_(toMin_(date, end), true));
+  if (end && end === start) throw new Error('출근과 퇴근 시간이 같아요. (30분 단위로 맞추면 같은 시간이에요)');
   var nowM = nowMin_();
-  var a = toMin_(date, start);
   if (a > nowM + 60) throw new Error('아직 오지 않은 시간은 적을 수 없어요.');
   var b = end ? shiftSpan_({ date: date, start: start, end: end })[1] : null;
   if (!end && nowM - a >= OPEN_SHIFT_MAX_H * 60) throw new Error('지난 근무는 퇴근 시간도 적어 주세요.');
-  if (!end && a > nowM + 5) throw new Error('퇴근을 비워 두려면 출근 시간이 지금보다 앞이어야 해요.');
-  var trimmed = [];
+  if (!end && a > nowM + SLOT_MIN / 2) throw new Error('퇴근을 비워 두려면 출근 시간이 지금보다 앞이어야 해요.');
+  var trimmed = [], closed = [];
   withLock_(function () {
     var sh = shiftSheet_();
     var all = readShifts_();
@@ -1325,17 +1267,25 @@ function saveShift(key, date, memberFull, start, end, memo, month, token) {
     }
     // 본인이 '교대 맞춤'된 퇴근을 고치면 그 표시는 뺌 (고친 시간이 맞는 시간)
     if (cur && end !== cur.end) memo = dropTrim_(memo);
+    // 본인이 자기 기록을 저장했으면 자동 퇴근을 확인한 것
+    if (cur) memo = dropAutoOut_(memo);
     var s = { key: key || 's' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36), date: date, member: mem.full, start: start, end: end, memo: memo };
     // 출근만 바뀌지 않은 수정(퇴근·메모만)은 다른 사람 기록을 건드리지 않음
     if (!cur || cur.date !== date || cur.start !== start) {
       trimmed = planTrim_(all, mem.full, a, b, key);
       trimmed.forEach(function (t) { writeShift_(sh, t.row, t); });
+      // 지금 근무 중으로 적으면, 퇴근을 안 적고 간 앞 사람은 자동 퇴근
+      if (!end) {
+        closed = planAutoOut_(all, mem.full, a, nowM, key);
+        closed.forEach(function (t) { writeShift_(sh, t.row, t); });
+      }
     }
     writeShift_(sh, cur ? cur.row : sh.getLastRow() + 1, s);
     bumpVersion_();
   });
   var res = getMonth(month || '', '');
   if (res && trimmed.length) res.trimmed = trimmed.map(function (t) { return [t.member, t.end]; });
+  if (res && closed.length) res.closed = closed.map(function (t) { return [t.member, t.end]; });
   return res;
 }
 
