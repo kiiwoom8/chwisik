@@ -400,7 +400,9 @@ button.srow { cursor: pointer; }
     if (s[5]) { b = toMin(s[2], s[5]); if (b < a) b += 1440; }
     var open = b === null;
     var live = open && a <= nowM + 15 && nowM - a < OPEN_MAX_MIN; // 출근이 30분 단위로 올림돼 조금 뒤일 수 있음
-    return { a: a, b: b, open: open, live: live, stale: open && !live && a < nowM, e: open ? Math.max(a, Math.min(nowM, a + OPEN_MAX_MIN)) : b };
+    // on: 지금 근무 시간 안 (퇴근을 미리 적어 둔 근무도: 13:00 – 22:00이면 그 사이엔 근무 중)
+    var on = open ? live : a <= nowM + 15 && nowM < b;
+    return { a: a, b: b, open: open, live: live, on: on, stale: open && !live && a < nowM, e: open ? Math.max(a, Math.min(nowM, a + OPEN_MAX_MIN)) : b };
   }
   /** member's shift closed by the next worker's 출근 that they haven't confirmed yet (last 2 h) */
   function autoOutShift(member, nowM) {
@@ -413,9 +415,10 @@ button.srow { cursor: pointer; }
     });
     return best;
   }
+  /** member's shift going on now: open (퇴근 not yet written) or between its 출근 and written 퇴근 */
   function openShift(member, nowM) {
     var best = null;
-    S.shifts.forEach(function (s) { if (s[3] === member && span(s, nowM).live && (!best || toMin(s[2], s[4]) > toMin(best[2], best[4]))) best = s; });
+    S.shifts.forEach(function (s) { if (s[3] === member && span(s, nowM).on && (!best || toMin(s[2], s[4]) > toMin(best[2], best[4]))) best = s; });
     return best;
   }
   /** Was `member` working at the item's time? ts = 'yyyy-MM-dd HH:mm:ss' or just 'yyyy-MM-dd'. */
@@ -517,7 +520,7 @@ button.srow { cursor: pointer; }
       else if (!r[13]) cTodo++;   // 저회전은 등록 안 해도 됨
     });
     var nowM = nowMin(), working = {};
-    S.shifts.forEach(function (s) { if (span(s, nowM).live) working[s[3]] = 1; });
+    S.shifts.forEach(function (s) { if (span(s, nowM).on) working[s[3]] = 1; });
     var nWork = Object.keys(working).length;
     $("c-todo").textContent = fmt(cTodo); $("c-eat").textContent = fmt(cEat); $("c-void").textContent = fmt(cVoid); $("c-all").textContent = fmt(cAll); $("c-jeo").textContent = fmt(cJeo);
     $("c-cancel").textContent = fmt(S.cancels.length);
@@ -697,7 +700,8 @@ button.srow { cursor: pointer; }
         st.appendChild(document.createTextNode("다음 사람이 출근해서 " + auto[5] + " 퇴근으로 적었어요. 다르면 아래 내 기록을 눌러 고쳐 주세요."));
       } else if (open) {
         st.appendChild(mk("b", "", "근무 중"));
-        st.appendChild(document.createTextNode(open[4] + " 출근 · " + dur(nowM - span(open, nowM).a) + "째 · 끝나면 아래 내 기록을 눌러 퇴근을 적어 주세요."));
+        st.appendChild(document.createTextNode(open[4] + " 출근 · " + dur(nowM - span(open, nowM).a) + "째 · "
+          + (open[5] ? open[5] + " 퇴근으로 적혀 있어요. 다르면 아래 내 기록을 눌러 고쳐 주세요." : "끝나면 아래 내 기록을 눌러 퇴근을 적어 주세요.")));
       } else {
         st.appendChild(mk("b", "", me.full + " 님"));
         st.appendChild(document.createTextNode("근무는 직접 적어요. 시간은 30분 단위로 적혀요."));
@@ -713,7 +717,7 @@ button.srow { cursor: pointer; }
     add.addEventListener("click", function () { openEditor(null); });
     card.appendChild(add);
     var working = [];
-    S.shifts.forEach(function (s) { if (span(s, nowM).live && working.indexOf(s[3]) < 0) working.push(s[3]); });
+    S.shifts.forEach(function (s) { if (span(s, nowM).on && working.indexOf(s[3]) < 0) working.push(s[3]); });
     if (S.month === curMonth()) {
       var w = mk("div", "working", working.length ? "지금 근무 중 " : "지금 근무 중인 사람이 없어요.");
       working.forEach(function (n) { w.appendChild(mk("span", "chip", n)); });
