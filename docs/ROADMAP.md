@@ -35,7 +35,7 @@ Goal: staff get an app icon on their phone that opens straight to the list, with
 - ~~clasp + GitHub Actions auto-deploy~~ Done 2026-11-08 (see DEVNOTES → Auto-deploy).
 - Alert if the deploy secret stops working (a failed Actions run already emails the repo owner by default).
 - **Storage**: Sheets is fine up to tens of thousands of rows. If it gets slow, move items to Firestore or Supabase and keep the sheet as a monthly export.
-- ~~**Multi-store**: store code and `SS_*` variables in config, so other stores can use the same app.~~ Done 2026-11-16 (`STORES`, CU 울산두왕점 added; see DEVNOTES → Stores). Next: confirm the 두왕점 BGF login on the live site (owner enters the password in the menu).
+- ~~**Multi-store**: store code and `SS_*` variables in config, so other stores can use the same app.~~ Done 2026-11-16 (`STORES`, CU 울산두왕점 added; see DEVNOTES → Stores). 두왕점 BGF login confirmed live the same day.
 - **GS25 울산신정중앙점** (owner, 2026-11-16: "its 전산 is different … prepare it for the future dev (for now, not yet)"). Prepared: the store is in `STORES` with `on: false`, the chain in `CHAINS.GS25`, and everything but the import is chain-neutral. Left: capture the GS25 전산 login and 폐기 calls with the owner, write the adapter, turn it on. Steps: DEVNOTES → Stores → *Another chain (GS25)*.
 - **Owner view across stores**: one screen with every store's 미등록 count and who is working now.
 - ~~Run server code without Apps Script~~ Done 2026-11-16 (`tests/`). Next: run `node tests/server.test.js` in the deploy workflow before `clasp push`.

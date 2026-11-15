@@ -266,7 +266,7 @@ Two code systems — don't mix them up:
 
 How the 저회전 search works (`fetchAll_` → `fetchSlips_`): search with the S312 code if found (else `''` = 전체), then **keep only slips with `CHIT_ID = 24`**, so even a wrong or missing code can't pull in other slip types. A 저회전 failure is caught and reported (`jeoErr`); the 폐기 import still goes through.
 
-> **Not confirmed on the live site yet (2026-11-16): the 두왕점 login.** It was built from BGF's scripts and run against a fake BGF (`tests/`); no agent may type the BGF password. The owner's menu step (BGF 점포시스템 비밀번호 입력 · CU 울산두왕점) is the first real login: its alert says whether it worked. If the slip calls then fail, 가져오기 기록 shows `[두왕점] … 실패: …`, and Script Property `BGF_SS_31949` shows which values the login answer gave.
+> **Confirmed on the live site 2026-11-16 06:10: the 두왕점 login** (SS_* from its own login answer). The owner entered the password in the menu (`로그인 확인 완료 (울산두왕점)`); the live import then brought in 38 폐기 lines for 11/15–11/16 into `두왕점 폐기목록`, and both stores show `업데이트 06:10`. If a later slip call fails, 가져오기 기록 shows `[두왕점] … 실패: …`, and Script Property `BGF_SS_31949` shows which values the login answer gave.
 
 > The 저회전 path was built from the site's scripts without a logged-in test (Claude may not type the BGF password). After the first deploy check 가져오기 기록 for `저회전 N장` or `저회전 실패: …`, and the `JEO_DIV` Script Property.
 
