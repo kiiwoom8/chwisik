@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-15 (a shift with its 퇴근 written ahead counts as 근무 중 on the page until that 퇴근; 자동 퇴근 also when the new 출근 is entered with its 퇴근; 근무 직접 입력: 퇴근 starts blank + note to match the next worker's 출근; registered 저회전 lines move to the 취식 / 폐기 tab; no [출근] / [퇴근] buttons: hand entry only)
+Last updated: 2026-11-16 (stores: CU 울산두왕점 added as a separate store, GS25 울산신정중앙점 prepared but off; store switcher in the page; 근무 시간 summed per person across stores; faster start: month answers kept in the cache, loading screen shaped like the open tab, progress bar, retry; `tests/` runs the server code in Node)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -14,7 +14,9 @@ Read this first if you are a person or an AI agent about to change the code. Rel
 
 ## What it does
 
-A tracker for CU store **25377**: which expired items (폐기) a worker ate (취식) and which they threw away (폐기), plus a shift log (출근일지).
+A tracker for convenience stores of one owner: which expired items (폐기) a worker ate (취식) and which they threw away (폐기), plus a shift log (출근일지). Stores today: **CU 울산둘리점** (25377, the first one) and **CU 울산두왕점** (31949, added 2026-11-16); **GS25 울산신정중앙점** is defined but off (see *Stores*). Each store has its own lists, staff and shift log; one page and one app serve them all (the worker picks the store once).
+
+Everything below that says "the sheet" or a Script Property means **the current store's** (see *Stores* for the names).
 
 - **Every night around 00:01 (Asia/Seoul)** a time trigger logs in to the BGF 점포시스템, downloads the **폐기** and **저회전상품철수** slips for **yesterday and the day before**, and appends new lines to the **폐기목록** sheet. The day before is re-read so late slips are not missed. Lines already in the sheet are skipped (by key).
 - **During the day (실시간 가져오기)** today's and yesterday's new slips are pulled when a worker opens the link, every 1 min while the page is open, and every 5 min by a trigger even if nobody has it open. BGF is hit at most once per 50 s overall, and the BGF login is kept between runs (re-login only when needed). See *Live import*.
@@ -41,7 +43,8 @@ Everything runs on Google's servers. The owner's computer can be off.
 | GitHub repo | source of truth; push to `main` deploys (see *Auto-deploy*) |
 | Google account | noerror96@gmail.com (the script runs as this account) |
 | Trigger `nightly` | time-driven, daily, `atHour(0).nearMinute(1)`, Asia/Seoul. Google fires it within about ±15 min. |
-| Trigger `liveTick` | every 5 min (`LIVE_TRIGGER_MIN`). Installs itself when the page calls `refreshNow` and Script Property `LIVE_TRIGGER` isn't the current minutes (so changing `LIVE_TRIGGER_MIN` reinstalls it). |
+| Trigger `liveTick` | every 5 min (`LIVE_TRIGGER_MIN`). Each run reads **one** store (the one read longest ago), so with 2 stores each is read every 10 min while nobody has its page open. Installs itself when the page calls `refreshNow` and Script Property `LIVE_TRIGGER` isn't the current minutes (so changing `LIVE_TRIGGER_MIN` reinstalls it). |
+| Link that opens a store | the staff link + `?store=<id>`, e.g. `…/exec?store=31949` for 두왕점. It only picks the store on a phone that has none yet; after that the phone's own choice wins. |
 
 Web app settings (`apps-script/appsscript.json`): **Execute as: Me (owner)**, **Who has access: Anyone, even anonymous** (`ANYONE_ANONYMOUS`). Changing access locks staff out.
 
@@ -58,9 +61,66 @@ Web app settings (`apps-script/appsscript.json`): **Execute as: Me (owner)**, **
 | `app/` | Android app (Capacitor 7 shell) and installable page: `www/index.html` loader, `manifest.webmanifest`, `sw.js`, icons; `build.mjs` copies `Index.html` to `www/page.html`; `android-res/` icons + splash; `make-icons.py` makes the icons from `icon-source.png` |
 | `.github/workflows/android.yml` | Builds the APK on push to `app/**` and publishes release `android-latest` |
 | `.githooks/post-commit`, `scripts/setup-hooks.sh` | Auto-push `main` after every commit |
+| `tests/` | `mock.js` + `server.test.js`: run `Code.gs` in Node against a mock of the Apps Script services (`node tests/server.test.js`); `page-stub.py`: a copy of the page with a fake server, to look at in a browser |
 | `docs/` | These docs |
 
+## Stores (multi-store)
+
+Added 2026-11-16. The list is `STORES` at the top of `Code.gs`; the import code per chain is `CHAINS`.
+
+| Store | id | chain | on | Notes |
+|---|---|---|---|---|
+| CU 울산둘리점 | `25377` | CU | yes | `legacy: true`: the store from before stores existed. Its sheets, Script Properties and localStorage keys have **no store part** in their names. Its BGF `SS_*` values are written in `STORES`. |
+| CU 울산두왕점 | `31949` | CU | yes | BGF id 31949. Its `SS_*` values come from its own login answer. Needs its BGF password entered once in the menu. |
+| GS25 울산신정중앙점 | `gs-sinjeong` | GS25 | **no** | Prepared only: hidden everywhere until `on: true`. |
+
+**How a request gets its store.** One execution = one store, held in `CUR_` and read with `store_()`.
+- The page sends its store with every call: on the `/exec` link through `google.script.run.api(store, fn, args)`, in the app through `{"fn", "args", "store"}` in the POST body. `api()` / `doPost` call `useStore_(id)` first. No store (a page from before 2026-11-16, e.g. an app that hasn't updated itself yet) = the first store.
+- Triggers and the menu loop over stores with `inStore_(st, fn)`.
+- An unknown id, or a store with `on: false`, is refused (`없는 점포예요…`).
+
+**What is per store** (everything a worker sees):
+
+| Thing | First store (legacy) | Any other store |
+|---|---|---|
+| Sheets | `폐기목록`, `직원`, `출근일지`, `월별 합계` | `<short> 폐기목록` … e.g. `두왕점 폐기목록` (`sheetName_`). Made by themselves on the store's first request (`storeSheets_`), then marked with Script Property `SHEETS_<id>`. A sheet deleted by hand is made again (empty). |
+| Script Properties | `VER`, `LIVE_AT`, `BGF_PW`, … | the same key + `_<id>`: `VER_31949`, `BGF_PW_31949` (`pget_` / `pset_` / `pdel_`) |
+| CacheService keys | — | key + `\|<id>` (`ck_`): kept BGF login, `live_running`, password tries |
+| Page localStorage | `chwisik.me`, `chwisik.tok`, `chwisik.cache` | `chwisik.me.<id>`, `chwisik.tok.<id>`, `chwisik.cache.<id>` |
+
+**Shared by all stores:** the spreadsheet file, `가져오기 기록` (lines of other stores start with `[두왕점]`), `PW_SALT` / `TOKEN_KEY` / `DEV_PW_HASH`, `LIVE_OFF`, `LIVE_TRIGGER`, `JEO_DIV` (a BGF-wide code), the triggers, the page and the app.
+
+**One thing crosses stores: 근무 시간.** The same person (same **full name**) can work in 2 or 3 stores, so the 월별 합계 tab's 근무 시간 table adds up every store's shifts per person (owner, 2026-11-16). `getMonth` therefore carries the other stores' shifts of that month (`others`), and a store's data version includes the other stores' shift versions (`SVER`), so a shift saved in 두왕 reaches an open 둘리 page. 취식 / 폐기 totals stay per store.
+
+**Page.** The title is the store name; with 2+ stores it is a button that opens `점포 바꾸기`. A phone that never chose (and has no name remembered from before stores) is asked `어느 점포인가요?` once. Switching keeps a separate name / password token / cached list per store; the name used in the store you came from is taken over when that name is on the new store's 직원 list (a name with a password asks for it).
+
+### Adding a CU store
+
+1. Add a line to `STORES` (`id` = BGF 점포코드, `short` = the sheet prefix, `chain: 'CU'`, `userNo` = BGF id, `on: true`). No `ss` needed.
+2. Push. Its sheets appear on the first request (or run `setup()` in the editor).
+3. Spreadsheet → reload → menu **취식 관리 → BGF 점포시스템 비밀번호 입력 · <store>** (the menu has one such item per store; a 4th store needs one more `menuSetPasswordN` function). It test-logs in and shows the store name BGF answered.
+4. From then on the store is in the nightly and live imports. Past days: menu **기간 지정해서 가져오기** (asks which store).
+
+Until step 3 the page shows `전산 연결 전` and an empty list; 출근일지 works right away.
+
+### Another chain (GS25) — what is prepared, what is left
+
+GS25's 전산 is a different system (not BGF, not Nexacro SSV as far as we know), so nothing of `bgfLogin_` / `fetchSlips_` can be reused. What is ready:
+- **The store is already in `STORES`** (`gs-sinjeong`, `on: false`) and the chain in `CHAINS.GS25` (`system`, `pwKey: 'GS_PW'`, `jeo: false`, no import functions yet).
+- **Everything outside the import is chain-neutral**: sheets, 직원, passwords, tagging, 출근일지, 근무 시간 across stores, the page. With `on: true` and no adapter the store already works for 출근일지 (the page shows `전산 연결 전`, hides the 저회전 tab, and no import runs).
+- **The adapter contract** (comment above `CHAINS`): `live(from, to, known)`, `range(from, to)`, `check()`; both imports return `{ chits, jeoChits, fetched, items, jeoErr, session }` with items `{ key, date, time, name, code, cat, qty, wprice, wamt, mprice, mamt, chit, src }`. `appendItems_`, the dedupe by key, the cancel pairing and the page need nothing else.
+- The menu already offers a password item for any store whose chain has `check`.
+
+Left to do when the owner starts it:
+1. Get from the owner: the GS25 점포 전산 address, the store id, and which screen lists 폐기 (and whether GS25 has anything like 저회전상품철수).
+2. Capture the login and the 폐기 list / detail calls in the browser (the same way BGF was done: hook `XMLHttpRequest.prototype.send` / `fetch` before pressing 로그인; the owner types the password, never an agent). Note: captcha, OTP, password encryption, session cookies.
+3. Write `gsLogin_`, `gsFetch_` → items in the shape above. Decide the key (must be unique and stable per line; e.g. 전표번호-순번) and how GS25 marks a canceled line (the cancel pairing expects a negative 수량 line of the same 상품코드).
+4. Fill `CHAINS.GS25.live / range / check`, set the store `on: true`, add a `tests/server.test.js` case with a fake GS25 answer.
+5. If GS25 has no 원가 per line, decide with the owner what the page's 원가 columns show for that store.
+
 ## Sheets
+
+One set per store. The names below are the first store's; another store's start with its short name (`두왕점 폐기목록`, `두왕점 직원`, …). `가져오기 기록` is the only shared one.
 
 ### 폐기목록 (one row per slip line; 폐기 and 저회전 both live here)
 
@@ -134,18 +194,23 @@ One row per import run: time, date range, slip count, new lines, result. Nightly
 
 ## Script Properties (Apps Script → Project settings)
 
+Keys marked ● are **per store**: the first store uses the key as written, any other store the key + `_<id>` (`BGF_PW_31949`). The others are shared. The server reads all properties once per execution (`snap_()`), and writes go through `pset_` / `gset_`.
+
 | Key | Set by | Meaning |
 |---|---|---|
-| `BGF_PW` | menu BGF 비밀번호 입력 | BGF store password (only place it exists) |
-| `VER` | every write/import (`bumpVersion_`) | data version; the page polls `getMonth` with it |
-| `LIVE_AT` | live import | start of the last live attempt (throttle) |
-| `LIVE_OK_AT`, `LIVE_MS`, `LIVE_ERR` | live import | last success time, its duration, last error ('' = ok) |
+| ● `BGF_PW` | menu BGF 점포시스템 비밀번호 입력 · <store> | BGF store password (only place it exists). A store without it is not imported. |
+| ● `BGF_SS` | `bgfSsFromLogin_` (not the first store) | JSON of the store's `SS_*` variables, taken from its last login answer |
+| ● `SHEETS` | `storeSheets_` (not the first store) | `1` = the store's sheets were made. Delete it (or run `setup()`) to have them checked again. |
+| ● `VER` | every write/import (`bumpVersion_`), hand edits (`onEdit`) | data version; the page polls `getMonth` with it, and the month cache is keyed by it |
+| ● `SVER` | shift writes (`bumpVersion_(true)`), hand edits of 출근일지 | version of the store's 출근일지; part of the **other** stores' version (근무 시간 crosses stores) |
+| ● `LIVE_AT` | live import | start of the last live attempt (throttle) |
+| ● `LIVE_OK_AT`, `LIVE_MS`, `LIVE_ERR` | live import | last success time, its duration, last error ('' = ok) |
 | `LIVE_OFF` | menu 실시간 끄기 | `1` = live import off |
 | `LIVE_TRIGGER` | `installLiveTrigger_` | minutes of the live trigger that exists (`5`); any other value → `refreshNow` reinstalls it. (Was `1` for the old 10-min trigger.) |
 | `JEO_DIV` | `jeoDiv_` | cached 전표구분 search code for 저회전상품철수 (from common code S312). Delete it to look it up again. |
-| `JEO_ERR` | live import | last 저회전 error ('' = ok); only the first failure of a streak is logged |
-| `JEO_BACKFILL` | `jeoBackfill_` | `1` = 저회전 for all past dates in the sheet was imported once. Delete it (or use the menu item) to run it again. |
-| `JEO_BACKFILL_TRY` | `jeoBackfill_` | time of the last backfill try; a failed try waits 1 h before the next automatic one |
+| ● `JEO_ERR` | live import | last 저회전 error ('' = ok); only the first failure of a streak is logged |
+| `JEO_BACKFILL` (first store only) | `jeoBackfill_` | `1` = 저회전 for all past dates in the sheet was imported once. Delete it (or use the menu item) to run it again. |
+| `JEO_BACKFILL_TRY` (first store only) | `jeoBackfill_` | time of the last backfill try; a failed try waits 1 h before the next automatic one |
 | `OCT_IMPORT`, `OCT_IMPORT_TRY` | `octImport_` | `1` = October 2026 (폐기 + 저회전) was imported once; time of the last try (a failed try waits 1 h). |
 | `OCT_APPLY`, `OCT_APPLY2`, `OCT_APPLY_TRY` | `octApply_`, `octApply2_` (Oct2026.gs) | `1` = October 취식 tags and shifts were written once / the untouched lines were written as 이국환's 취식 once; time of the last try (a failed try waits 10 min). |
 | `PW_SALT`, `TOKEN_KEY` | first use | password hashing salt / token HMAC key. Deleting `TOKEN_KEY` logs every phone out; deleting `PW_SALT` invalidates every stored password |
@@ -160,14 +225,14 @@ One row per import run: time, date range, slip count, new lines, result. Nightly
 
 ## Spreadsheet menu: 취식 관리
 
-- **BGF 비밀번호 입력**: stores `BGF_PW` and test-logs in.
-- **오늘 폐기·저회전 지금 가져오기**: one live import now (ignores the 2-min limit), shows the time it took.
-- **어제 폐기·저회전 지금 가져오기**: runs `nightly()` now.
-- **기간 지정해서 가져오기**: e.g. `20261101-20261108` (both kinds; safe to repeat).
-- **저회전 지난 날짜 모두 가져오기**: re-runs the 저회전 backfill now: from the earliest 일자 in 폐기목록 to today (safe to repeat).
+- **BGF 점포시스템 비밀번호 입력 · <store>** (one item per store with an import adapter): stores that store's password and test-logs in; the alert shows the store name BGF answered. Handlers: `menuSetPassword`, `menuSetPassword2`, `menuSetPassword3` (by position in `STORES`).
+- **오늘 폐기·저회전 지금 가져오기**: one live import now for every store that has a password (ignores the 50 s limit), shows each store's result.
+- **어제 폐기·저회전 지금 가져오기**: runs `nightly()` now (every store).
+- **기간 지정해서 가져오기**: asks which store (a number; empty = all), then the range, e.g. `20261101-20261108` (both kinds; safe to repeat).
+- **저회전 지난 날짜 모두 가져오기 (둘리점)**: first store only (a one-time catch-up from before 저회전 import existed): from the earliest 일자 in 폐기목록 to today (safe to repeat).
 - **매일 자동 가져오기 켜기**: recreates the nightly trigger.
-- **실시간 가져오기 켜기 / 끄기**: the 10-min trigger and the on-open refresh. 끄기 sets `LIVE_OFF=1`; the nightly import keeps running.
-- **개발자 비밀번호 설정**, **직원 비밀번호 지우기**: see *Passwords*.
+- **실시간 가져오기 켜기 / 끄기**: the 5-min trigger and the on-open refresh, for all stores. 끄기 sets `LIVE_OFF=1`; the nightly import keeps running.
+- **개발자 비밀번호 설정** (all stores), **직원 비밀번호 지우기** (asks which store): see *Passwords*.
 
 ## BGF 점포시스템 protocol (reverse-engineered 2026-11-08, extended 2026-11-09)
 
@@ -181,7 +246,12 @@ SSV format:
 - a request may have variables only and no dataset (`ssvVarsOnly_`)
 - responses carry `ErrorCode:string=0` (anything else is an error; `ErrorMsg` explains)
 
-Variables sent with every call: `GV_USERFLAG=HOME`, the `SS_*` store variables (constants `SS_VARS` in `Code.gs`), `GV_MENU_ID`, `GV_CHANNELTYPE=HOME`. The session is a cookie, kept in a small cookie jar (`Session_`).
+Variables sent with every call: `GV_USERFLAG=HOME`, the `SS_*` store variables (`ssVars_(store)`), `GV_MENU_ID`, `GV_CHANNELTYPE=HOME`. The session is a cookie, kept in a small cookie jar (`Session_`, one per store).
+
+**The `SS_*` store variables** (read from BGF's own script, 2026-11-16: `websrc/deploy/nexacro17lib/component/extPrototype.js`, `_gfn_loginCallback`): after login the site sets, for each of `STORE_CD, PRE_STORE_CD, STORE_NM, SLC_CD, LOC_CD, ADM_SECT_CD, STORE_OWNER_NM, STORE_POS_QTY, STORE_IP, SV_EMP_NO, SSTORE_ID, RCV_ID, FC_CD, USER_GRP_ID, USER_NO, SGGD_CD, LOGIN_USER_NO`, `SS_<name>` = column `<name>` of row 0 of the login answer's `GDS_JUMPO` (`STORE_NM` and `STORE_OWNER_NM` base64-encoded), and sends them with every call both as cookies and as leading variables of the SSV body. On a fresh browser the login itself is sent without them. So:
+- the first store keeps the values captured from the browser in 2026-11 (`STORES[0].ss`), unchanged;
+- any other CU store logs in with only `SS_STORE_CD`, `SS_USER_GRP_ID`, `SS_USER_NO`, `SS_LOGIN_USER_NO`, then `bgfSsFromLogin_` fills the rest from `GDS_JUMPO` the same way and keeps them in `BGF_SS_<id>`. `strStoreCd` of the slip calls is the store's `SS_STORE_CD`.
+- An account with several stores gets one active store per login; BGF's own store switch is a re-login as the other 점포코드 (`MULTI_YN=Y`). Not used here: each store logs in with its own id and password.
 
 | Step | Service | Request → response |
 |---|---|---|
@@ -196,6 +266,8 @@ Two code systems — don't mix them up:
 
 How the 저회전 search works (`fetchAll_` → `fetchSlips_`): search with the S312 code if found (else `''` = 전체), then **keep only slips with `CHIT_ID = 24`**, so even a wrong or missing code can't pull in other slip types. A 저회전 failure is caught and reported (`jeoErr`); the 폐기 import still goes through.
 
+> **Not confirmed on the live site yet (2026-11-16): the 두왕점 login.** It was built from BGF's scripts and run against a fake BGF (`tests/`); no agent may type the BGF password. The owner's menu step (BGF 점포시스템 비밀번호 입력 · CU 울산두왕점) is the first real login: its alert says whether it worked. If the slip calls then fail, 가져오기 기록 shows `[두왕점] … 실패: …`, and Script Property `BGF_SS_31949` shows which values the login answer gave.
+
 > The 저회전 path was built from the site's scripts without a logged-in test (Claude may not type the BGF password). After the first deploy check 가져오기 기록 for `저회전 N장` or `저회전 실패: …`, and the `JEO_DIV` Script Property.
 
 Verified (폐기): 11/1–11/8 import = 103 slips / 225 lines, identical to the site's own totals.
@@ -204,14 +276,17 @@ If BGF changes its login (captcha, OTP, password encryption), the nightly import
 
 ## Web app API (google.script.run and JSON)
 
-The page calls the server with `run(fn, …args)`. On the `/exec` link that is `google.script.run`. In the app (`window.CHWISIK_API` set by the loader) it is `fetch(POST /exec)` with a `text/plain` body `{"fn": name, "args": [...]}` (text/plain avoids a CORS preflight; Apps Script answers through a redirect to `script.googleusercontent.com`, which allows any origin). `doPost` answers `{"ok": true, "r": result}` or `{"ok": false, "err": message}` and only runs the names in `apiFns_()`, all of which are already public through `google.script.run`.
+The page calls the server with `run(fn, …args)`, always for its store. On the `/exec` link that is `google.script.run.api(store, fn, args)`. In the app (`window.CHWISIK_API` set by the loader) it is `fetch(POST /exec)` with a `text/plain` body `{"fn": name, "args": [...], "store": id}` (text/plain avoids a CORS preflight; Apps Script answers through a redirect to `script.googleusercontent.com`, which allows any origin). `doPost` answers `{"ok": true, "r": result}` or `{"ok": false, "err": message}`. Both entries only run the names in `apiFns_()`, all of which are also public on their own (a page from before stores existed calls them directly and gets the first store).
+
+`run()` drops an answer that arrives after the phone switched to another store (its promise never settles), so nothing from the old store can land in the new one.
 
 | Function | Purpose |
 |---|---|
 | `getBoot(me, token)` | `{init: getInit(…), month: getMonth(newest month, '')}`: the page's first call (one round trip instead of two) |
 | `getPage(knownHash)` | `{hash, html}` of `Index.html`, or `null` if the app already has that hash (app self-update) |
-| `getInit(me, token)` | members (`{full, short, hasPw}`), months (items + shifts), data version, live-import label, `meOk` (false = this phone must enter the password again) |
-| `getMonth(month, knownVersion)` | rows + cancels + shifts + `usual` for `yyyy-MM`; `null` if `knownVersion` is current (cheap polling) |
+| `api(store, fn, args)` | the `/exec` page's entry: sets the store, runs one of the functions below |
+| `getInit(me, token)` | members (`{full, short, hasPw}`), months (items + shifts), data version, live-import info (`{label, off, error, added, wait}`; `wait` = `'pw'` no 전산 password yet, `'adapter'` no import for this chain, else `''`), `meOk` (false = this phone must enter the password again), `store` (id), `stores` (`[{id, name, short, chain, jeo}]`, the stores that are on) |
+| `getMonth(month, knownVersion, fresh)` | rows + cancels + shifts + `usual` + `others` for `yyyy-MM`, with `store` and `version`; `null` if `knownVersion` is current (cheap polling). Kept in the cache per (store, month, version); `fresh = true` (pull to refresh, sync button) reads the sheets anyway. |
 | `setTag(rowHint, key, type, memberFull, month, note, me, token)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` kept only for 폐기. Refuses rows another worker tagged. Returns the fresh month. |
 | `addMember(full)` | adds to 직원 |
 | `saveShift(key, date, memberFull, start, end, memo, month, token)` | create (`key=''`) or edit own shift; checks format, overlap, future times; may trim another worker's 퇴근 (교대 겹침 정리), listed in `res.trimmed: [[member, end]]` |
@@ -225,6 +300,12 @@ Shapes sent to the page:
 - Cancel: `[time, name, qty, wamt, date, [[origTime, qty, type, memberFull], …], src]` (empty list = no earlier line, ignored).
 - Shift: `[sheetRow, key, date, memberFull, start, end, memo]`. A month's shifts also include the last day of the month before (overnight shifts).
 - `usual` = `{fullName: [출근, 퇴근], '*': [...]}`: the most frequent closed shift pair per worker over the last 90 days (ties → most recent).
+- `others` = `[{id, short, shifts: [[date, memberFull, start, end], …]}]`: the month's shifts of every other store, for the 근무 시간 table.
+
+**Month cache (2026-11-16).** `getMonth` keeps its answer in CacheService (`mo|store|month|version`, cut into 30,000-character pieces, 1 h), so only the first caller after a change reads the sheets; every other phone's poll and every page start gets the kept answer. `getInitData_` keeps the list of months the same way (`mons|store|version`). What keeps it right:
+- every write flushes the sheet **before** the new version is set (`bumpVersion_` calls `SpreadsheetApp.flush()`), so nobody can read old data under the new version;
+- a hand edit in the spreadsheet moves the version through the simple trigger `onEdit` (edits of 폐기목록 / 직원 / 출근일지 of any store);
+- a change that moves nothing (a row deleted by hand, a script run in the editor) shows after a pull to refresh (`fresh`), or within the hour.
 
 Auth failures throw a message containing `[비밀번호]`; the page then opens the password box.
 
@@ -232,12 +313,21 @@ Auth failures throw a message containing `[비밀번호]`; the page then opens t
 
 `setTag` writes only the acting worker's own name and refuses to change or clear a row another worker tagged (the page greys those buttons out). Wrong tags are fixed by the owner in the sheet (clear columns M–P of that row).
 
-The page polls `getMonth` every 5 s while visible; `VER` changes on every write or import, so unchanged polls return `null`.
+The page polls `getMonth` every 5 s while visible; the version changes on every write or import (and with another store's shift), so unchanged polls return `null` without opening the spreadsheet.
 
 ## Page behavior (Index.html)
 
-- **Start**: if localStorage `chwisik.cache` holds this month's data (saved on every `take` of the newest month), the page draws it at once, then one `getBoot` call replaces it. So a returning phone sees the list right away even while Apps Script is slow. The Google Fonts stylesheet loads without blocking the first draw (`media=print` swap).
-- **Loading screen**: until this month's data has arrived (`S.ready`, set in `take()`), the page shows `#loading` (spinner + `목록 불러오는 중…` + shimmer placeholder rows) instead of the lists and the empty texts (`아직 기록이 없어요`, `이 달의 폐기 목록이 아직 없어요` …), so a slow first load doesn't look like an empty month. The tab counters and `이번 달 취식 / 폐기` show `–` meanwhile instead of `0`. Switching month resets `S.ready`, so the loader shows again until that month answers. If `getBoot` fails, the loader hides (`S.failed`) and only the `#status` error shows. A cached start (`chwisik.cache`) skips the loader.
+- **Start**: if localStorage `chwisik.cache` (per store) holds this month's data (saved on every `take` of the newest month), the page draws it at once, then one `getBoot` call replaces it. The BGF check (`refreshNow`) starts at the same moment as `getBoot`, not after it. The Google Fonts stylesheet loads without blocking the first draw (`media=print` swap).
+- **Loading screen** (redone 2026-11-16): while a month's data is on its way (`!S.ready`) the page shows
+  - a thin **progress bar** at the very top (`#pbar`; `pend(±1)`): on during `getBoot`, a month or store change, and a manual refresh, also while kept data is already on screen;
+  - a **skeleton shaped like the open tab** (`skeleton()`): 출근 = my card + shift rows, 월별 합계 = table rows, the lists = lines with two buttons; with a shimmer;
+  - a line under the tabs: `불러오는 중…`, after 5 s `조금 느리네요. 계속 불러오고 있어요…`, after 14 s `연결이 느려요. 조금만 더 기다려 주세요…`;
+  - the tab counters and `이번 달 취식 / 폐기` show `–` instead of `0`.
+  When the data comes, the lists rise in softly (`.arrive`, 0.24 s; off with reduced motion).
+- **If the start fails**: with nothing on screen, a card `목록을 불러오지 못했어요` + the reason + **[다시 시도]** (`#fail`); the page also tries again by itself (after 3 s, 6 s, 12 s … at most 30 s apart) and when the phone comes back online. With kept data on screen it stays up and the sync label says `연결 끊김 · 다시 시도 중`.
+- **Months seen stay in memory** (`MONTHS`, this session, this store): going back to a month draws it at once and only asks whether it changed. A month not seen yet shows the loading screen.
+- **Store** (see *Stores*): the title is the store name; tapping it (2+ stores) opens `점포 바꾸기`. A store whose 전산 isn't linked yet shows `전산 연결 전` in the sync label and `이 점포는 아직 전산과 연결되지 않았어요…` in the empty lists. A store whose chain has no 저회전 slips has no 저회전 tab (the tab bar's columns follow the tabs shown).
+- **Small touches**: buttons press in slightly, a tag gives a short vibration where the phone allows it.
 
 - **Month switcher** (‹ 2026년 11월 ›): steps one calendar month at a time, from **12 months before the oldest month with data** (`MONTHS_BACK`) up to the newest (this month). Months with no data open too (empty lists), so old 근무 can be added there with `+ 근무 직접 입력`; in a past month the editor's date starts at that month's 1st, and an empty 출근 tab says `이 달의 근무 기록이 없어요. ‘+ 근무 직접 입력’으로 적을 수 있어요.` (Before 2026-11-13 ‹ stopped at the oldest month with data.) The server never limited how early a hand-entered shift can be; `saveShift` only refuses times more than 1 h ahead.
 - **Pull to refresh**: at the top of the page, drag down and let go (pull past 64 px; the spinner turns green) = tap on the sync label: `refreshLive()` + `load(true)` + `checkAppUpdate(true)` (app only: new page code → reload into it); the spinner stays until the reload answers (at least 0.45 s). Ignored when the page is scrolled down, a bottom sheet is open, or the swipe is sideways or upward. `overscroll-behavior-y: contain` stops the browser's own pull-to-refresh (which would reload the whole page) where the page is the top-level document.
@@ -251,7 +341,8 @@ The page polls `getMonth` every 5 s while visible; `VER` changes on every write 
 - **Header.** Two parts: `.hdr` (title + month, 나: 이름 + sync label, 이번 달 취식 / 폐기) scrolls away with the page; `.top` (tab bar, search, `#pin`) sticks to the top. It slides away while scrolling down and glides back on a slight scroll up (like Chrome's toolbar / Material's enter-always app bar): after it sticks it stays for one more bar height of scrolling; past that it moves with the content pixel for pixel (inline `transform`, no transition): up and away while scrolling down, back down while scrolling up. When scrolling stops (120 ms without a scroll event) with the bar part way, it glides the rest: back in if the last move was 5 px or more up, else to the nearer end. The glide takes 220–450 ms depending on the distance left, on a gentle ease-in-out curve (`cubic-bezier(.4, 0, .2, 1)`). Never hidden above that point, while the search box has focus or while a sheet is open; tapping a tab scrolls to the top, so it shows. This keeps the stuck part short at 360 px (취식 with 모두 ≈ 260 px, 미등록 ≈ 170 px, 출근 ≈ 70 px). The safe-area top padding is on `.hdr`, so if the app ever goes edge-to-edge the stuck `.top` would need it too.
 - Name filter (모두 + names that have something in that tab this month) on every tab except 미등록 and 취소. (일) is red and (토) blue in day headings.
 - Header "이번 달 취식 / 폐기" and the 월별 합계 table count 저회전 취식 / 폐기 as 취식 / 폐기; its footer shows only 미등록 **폐기**.
-- 월별 합계 tab shows every column at once (fits a 360 px phone): **직원별 폐기 / 취식** = 직원 · 폐기 수량 · 폐기 원가 · 취식 수량 · 취식 원가 (취식 on the right; no 매가; the 취식 원가 합계 is red) and **근무 시간** = 직원 · 근무일 · 근무 시간. Names are full names only.
+- 월별 합계 tab shows every column at once (fits a 360 px phone): **직원별 폐기 / 취식** = 직원 · 폐기 수량 · 폐기 원가 · 취식 수량 · 취식 원가 (취식 on the right; no 매가; the 취식 원가 합계 is red; this store only) and **근무 시간** = 직원 · 근무일 · 근무 시간. Names are full names only.
+  - **근무 시간 is summed per person over all stores** (owner, 2026-11-16: the same person can work in 2 or 3 stores). Same full name = same person. The table lists everyone who worked in any store that month; 근무일 counts a day once even if worked in two stores; a person with hours outside this store has a small line under the name (`둘리점 10시간 · 두왕점 6시간`). When other stores add hours the title says `(모든 점포)` and the note `여러 점포에서 일한 시간을 사람별로 합쳤어요`. Shifts without 퇴근 are left out in every store (counted in the note).
 - Off-shift 폐기 check runs in the page: the line's 생성시각 must fall inside one of the worker's shifts, 30 min grace either side; an open shift counts up to now. Lines with only a date pass if any shift touches that day. Each line shows who was working then (`근무 지은`).
 - **Empty-time warning (출근 tab)**: for each past day of the month, from the first recorded day to yesterday, the page joins everyone's shifts (including overnight ones from the day before) over 00:00–24:00 and lists gaps ≥ 15 min. The store is treated as **open 24 h**. A shift without 퇴근 from a past day counts as unknown. Each gap has **내가 근무했어요**, which opens 근무 직접 입력 prefilled. Hidden while a name filter is on.
 - 출근 timeline bars: overlap with 2 people = yellow, 3+ = red, with "겹침 N분". **One row per shift** (not merged per person). Overnight shifts also show on the next day as their own row `00:00 – 퇴근` (`전날 N`, sub line `전날 HH:mm 출근`); on the start day such a shift shows only its part, `22:30 – 24:00 · 당일 N`, when the next day's row is shown (next day in this month and not in the future), else `22:30 – 08:00 (+1)`. A shift still running past midnight shows `22:30 – 24:00` (done) on its start day and `00:00 – · 근무 중 · 전날 N` (time since 00:00) on today's row. Rows in a day are sorted by start, latest on top, a carried-over shift counting as 00:00; from the bottom: 야간 (carry-over) → 오전 → 오후 → 야간 (tonight). Ties: later end on top. Your own rows are a button that opens the editor.
@@ -271,9 +362,10 @@ Why: the `/exec` link is slow to open (Google's wrapper page, two iframes, then 
 
 ## Live import (오늘 폐기·저회전)
 
-- `refreshNow()` (page, every 1 min while visible) and `liveTick()` (5-min trigger) go through the same gate: `LIVE_AT` must be ≥ `LIVE_MIN_GAP_S` = 50 s old, and a 90 s cache flag stops two runs at once. So BGF is read **at most once per 50 s**, and only while someone has the page open; otherwise once per 5 min. A new BGF slip shows on the page within about 1 min while it is open (plus the 5 s data poll on other phones).
-- **Kept login** (`liveFetch_`): the BGF cookie jar is kept in CacheService (`bgf_session`) and reused for up to `BGF_SESSION_MIN` = 60 min after its login, so most runs skip the login (fewer BGF logins than the old 2-min pace). A kept session is only trusted when it answers cleanly: if it throws, returns no slips at all for yesterday..today, or the 저회전 list fails, the run logs in fresh and reads again, so an expired session can't hide slips. Not confirmed yet how BGF answers an expired session (the fallback covers both an error and an empty answer). Delete the cache by waiting 60 min, or change `BGF_SESSION_MIN` to 0 to log in every run.
-- **Past days**: the live import only reads yesterday..today, so on its own it would never fill 저회전 for days before 저회전 import existed (2026-11-09: only 11/8 came in). After a successful live run, `jeoBackfill_` imports 저회전 once for the whole range from the earliest 일자 in 폐기목록 to today, reusing the same login, then sets `JEO_BACKFILL=1`. The log row says `(저회전 지난 날짜)`. Any new slip kind added later needs the same kind of backfill.
+- **Per store.** `refreshNow()` (page, every 1 min while visible, for the page's store) and `liveTick()` (5-min trigger) go through the same gate (`liveGate_`): the store's `LIVE_AT` must be ≥ `LIVE_MIN_GAP_S` = 50 s old, and a 90 s cache flag stops two runs at once. So each store's BGF account is read **at most once per 50 s**, and only while someone has that store's page open. The trigger reads **one store per run**, the one read longest ago: every 5 min with one store, every 10 min each with two. That keeps the trigger's daily runtime where it was (see Load). A store without a 전산 password is skipped. Each run also does the 자동 퇴근 catch-up for every store. A new BGF slip shows on the page within about 1 min while it is open (plus the 5 s data poll on other phones).
+- **Kept login** (`liveFetch_`): the BGF cookie jar is kept in CacheService (`bgf_session|<id>`, one per store) and reused for up to `BGF_SESSION_MIN` = 60 min after its login, so most runs skip the login (fewer BGF logins than the old 2-min pace). A kept session is only trusted when it answers cleanly: if it throws, returns no slips at all for yesterday..today, or the 저회전 list fails, the run logs in fresh and reads again, so an expired session can't hide slips. Not confirmed yet how BGF answers an expired session (the fallback covers both an error and an empty answer). Delete the cache by waiting 60 min, or change `BGF_SESSION_MIN` to 0 to log in every run.
+- **A new store starts from yesterday.** Nothing older is imported by itself (it would arrive as a pile of 미등록); the owner brings past days in with the menu's 기간 지정해서 가져오기.
+- **Past days (first store)**: the live import only reads yesterday..today, so on its own it would never fill 저회전 for days before 저회전 import existed (2026-11-09: only 11/8 came in). After a successful live run, `jeoBackfill_` imports 저회전 once for the whole range from the earliest 일자 in 폐기목록 to today, reusing the same login, then sets `JEO_BACKFILL=1`. The log row says `(저회전 지난 날짜)`. Any new slip kind added later needs the same kind of backfill.
 - One run = login (unless kept) + 폐기 list + 저회전 list (+ the S312 lookup once, until `JEO_DIV` is cached) + detail calls **only for slips not fully in the sheet** (`knownChits_()` counts lines per 전표번호 and compares with `ITEM_CNT`). The nightly import re-reads every slip as a safety net.
 - `LIVE_OK_AT` = start of the last successful run → the page header shows "업데이트 21:31 ↻" (another day: "업데이트 11/8 21:31 ↻"). The whole label is one round button (text + ↻ icon); tapping it = pull to refresh; the icon spins during `정보 가져오는 중…`, is green when connected and red when not. `LIVE_ERR` holds the last error; only the first failure of a streak goes to 가져오기 기록, and live failures don't email (the nightly one does).
 - Load: 288 trigger runs/day × 2–8 s ≈ 10–40 min of the 90 min/day trigger quota (page calls don't count against it). With the page open all day: ≤ 1,700 runs × ~3–5 fetches ≈ 5–8k UrlFetch/day, under the 20k limit. (Measured 2026-11-10: a live run ≈ 6–8 s with login, a gated no-op call ≈ 2 s.) Don't make the trigger every 1 min: 1,440 runs would pass the 90 min quota.
@@ -294,12 +386,15 @@ Set up 2026-11-08.
 
 1. Syntax: `cp apps-script/Code.gs /tmp/code.js && node --check /tmp/code.js`, and the same for the `<script>` block of `Index.html` (CI does both).
 2. Page layout without Apps Script: copy `Index.html` to a scratch folder, add `<meta name="viewport" content="width=device-width, initial-scale=1">` (Apps Script adds it in `doGet`), and put a stub before the main script that defines `window.google.script.run` with `withSuccessHandler` / `withFailureHandler` and fake `getInit` / `getMonth` / `refreshNow` / `setTag` results (row shape above). Serve it with `python -m http.server` and check at 360 px.
-3. Server code can't run locally (SpreadsheetApp, UrlFetchApp). After the push, watch the Actions run, then the 가져오기 기록 sheet and the page.
-4. JSON API after a deploy: `curl -sL -H 'Content-Type: text/plain' -d '{"fn":"getInit","args":["",""]}' <exec URL>` must print `{"ok":true,…}`.
+   Ready-made: `python tests/page-stub.py apps-script/Index.html <dir>/index.html` writes such a copy (two stores of made-up data; `?delay=`, `?fail=`, `?store=`, `?gs=1`, see the file's top).
+3. Server code: `node tests/server.test.js` runs `Code.gs` against a mock of SpreadsheetApp / PropertiesService / CacheService / UrlFetchApp (a fake BGF) and checks the store plumbing, the caches, imports and passwords. It can't prove what the real BGF or the real Apps Script quotas do: after the push, watch the Actions run, then the 가져오기 기록 sheet and the page.
+4. JSON API after a deploy: `curl -sL -H 'Content-Type: text/plain' -d '{"fn":"getInit","args":["",""],"store":"31949"}' <exec URL>` must print `{"ok":true,…}` (leave `store` out for the first store).
 
 ## Operations
 
-- **Password changed at BGF** → menu 취식 관리 → BGF 비밀번호 입력.
+- **Password changed at BGF** → menu 취식 관리 → BGF 점포시스템 비밀번호 입력 · that store.
+- **New store's lists stay empty (`전산 연결 전`)** → its BGF password was never entered: same menu item.
+- **A worker works in two stores** → they add the same full name in each store (이름 바꾸기 → 추가); 근무 시간 is then one total. A different spelling = a different person.
 - **Missed days** → 기간 지정해서 가져오기 (safe to repeat; dedupes by key).
 - **저회전 not coming in** → check 가져오기 기록 for `저회전 실패: …`; delete Script Property `JEO_DIV` to redo the S312 lookup; check that `CHIT_ID` is still `24` on the site.
 - **저회전 missing for older days** → menu 저회전 지난 날짜 모두 가져오기 (or 기간 지정해서 가져오기 for a specific range).
@@ -319,7 +414,10 @@ Set up 2026-11-08.
 - The page runs two iframes deep inside Google's `/exec` page, whose own background is white and can't be styled (`addMetaTag` takes only a few names; no `theme-color`). Keep the viewport meta without `viewport-fit=cover`: with it, phones draw the page under the bottom system bar, outside our frame, and Google's white shows there as a strip. `env(safe-area-inset-*)` in the CSS is harmless (0 inside the frame).
 - In Claude's Chrome tab group, the web app's inner frame sometimes stayed blank (extension-side issue). Normal Chrome tabs and phones work.
 - The BGF site page can freeze Chrome's screenshot tool (CDP timeout); use `javascript_tool` to read it instead.
-- Apps Script quotas (consumer account): UrlFetch 20k/day, total trigger runtime 90 min/day. This project uses a small fraction.
+- Apps Script quotas (consumer account): UrlFetch 20k/day, total trigger runtime 90 min/day. This project uses a small fraction. More stores don't add trigger runtime (one store per tick), but each open page adds its own store's reads.
+- CacheService values are 100 KB at most; a month's answer is cut into pieces (`bigPut_`). If a piece is evicted the answer is simply read from the sheets again.
+- Inside a lock don't call `storeSheets_` / `inStore_` for a store whose sheets might be missing: it takes the script lock itself and its release would end yours. (Requests make the sheets before any lock: `useStore_`.)
+- The page must never `location.reload()` on the `/exec` link (Google's frame comes back blank). Switching store is done in place (`setStore`).
 
 ## History
 

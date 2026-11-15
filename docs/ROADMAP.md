@@ -28,11 +28,15 @@ Goal: staff get an app icon on their phone that opens straight to the list, with
 - ~~Live import of today's 폐기~~ Done 2026-11-08 (on open + every 10 min). ~~Keep the session cookie between runs~~ Done 2026-11-10 (with every 1 min while open, trigger every 5 min). Next: confirm how BGF answers an expired session; if BGF ever offers push or a cheaper "anything new?" call, use it.
 - ~~저회전상품철수 import + 저회전 tab (취식 only)~~ Done 2026-11-09. ~~폐기 on 저회전 too~~ Done 2026-11-15. Next: confirm on the live site; maybe a 저회전 column in 월별 합계 (how much of 취식 came from 저회전).
 - **History filters**: by person, by product, by day.
+- ~~Faster start, a proper loading screen~~ Done 2026-11-16 (month answers kept in the cache, tab-shaped skeleton, progress bar, retry). Next, if it still feels slow: keep the previous month on the phone too; a nicer first screen in the app loader (`app/www/index.html`, needs a new APK).
 
 ## Phase 3 — Engineering
 
 - ~~clasp + GitHub Actions auto-deploy~~ Done 2026-11-08 (see DEVNOTES → Auto-deploy).
 - Alert if the deploy secret stops working (a failed Actions run already emails the repo owner by default).
 - **Storage**: Sheets is fine up to tens of thousands of rows. If it gets slow, move items to Firestore or Supabase and keep the sheet as a monthly export.
-- **Multi-store**: store code and `SS_*` variables in config, so other stores can use the same app.
+- ~~**Multi-store**: store code and `SS_*` variables in config, so other stores can use the same app.~~ Done 2026-11-16 (`STORES`, CU 울산두왕점 added; see DEVNOTES → Stores). Next: confirm the 두왕점 BGF login on the live site (owner enters the password in the menu).
+- **GS25 울산신정중앙점** (owner, 2026-11-16: "its 전산 is different … prepare it for the future dev (for now, not yet)"). Prepared: the store is in `STORES` with `on: false`, the chain in `CHAINS.GS25`, and everything but the import is chain-neutral. Left: capture the GS25 전산 login and 폐기 calls with the owner, write the adapter, turn it on. Steps: DEVNOTES → Stores → *Another chain (GS25)*.
+- **Owner view across stores**: one screen with every store's 미등록 count and who is working now.
+- ~~Run server code without Apps Script~~ Done 2026-11-16 (`tests/`). Next: run `node tests/server.test.js` in the deploy workflow before `clasp push`.
 - **Health check**: if the nightly import fails 2 nights in a row, send a stronger alert (KakaoTalk / SMS).

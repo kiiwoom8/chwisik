@@ -36,9 +36,10 @@ The live copy runs in Google Apps Script, bound to the spreadsheet **직원 취�
 
 Start with `docs/DEVNOTES.md`, then `docs/CODEMAP.md` for the code you are about to touch.
 
-- `apps-script/Code.gs`: server. BGF login + nightly and live import (폐기 and 저회전상품철수), 출근일지, passwords, sheet setup, web app API.
+- `apps-script/Code.gs`: server. The stores (`STORES`, `CHAINS`), BGF login + nightly and live import (폐기 and 저회전상품철수), 출근일지, passwords, sheet setup, web app API.
 - `apps-script/Index.html`: the staff page (one-tap 취식 / 폐기, 저회전, 취소, 출근일지, monthly totals). The same file runs inside the Android app (it fetches it from the server), so keep it working in both modes: calls only through `run()`, new server functions listed in `apiFns_()`.
 - `app/`: Android app shell (Capacitor) + installable page. `.github/workflows/android.yml` builds the APK on push to `app/**`. The signing key is never committed.
+- `tests/`: `node tests/server.test.js` runs the server code against a mock of Apps Script (no Google, no BGF); `page-stub.py` makes a browser copy of the page with a fake server.
 - `docs/DEVNOTES.md`: what it does, live resources, sheets and columns, Script Properties, BGF protocol, API shapes, page behavior, operations, gotchas.
 - `docs/CODEMAP.md`: function-by-function map of both files, data flows, recipes for common changes.
 - `docs/HISTORY.md`: every change with commit id and reason.
@@ -49,7 +50,8 @@ Start with `docs/DEVNOTES.md`, then `docs/CODEMAP.md` for the code you are about
 - UI text is Korean. Write it plainly, the way staff talk.
 - 취식 records the **full name** (김성휘). 폐기 records the **first name only** (성휘).
 - 저회전 lines (폐기목록 column S = `저회전`) can be 취식 or 폐기 (폐기 = who handled it), and don't count as 미등록.
-- Code.gs functions without a trailing `_` are public (callable from the /exec link): check the caller in every new one.
+- **Stores.** There are several stores (`STORES` in Code.gs; DEVNOTES → Stores). Server code always works for `store_()`: get sheets with `sheet_(SH_…)`, Script Properties with `pget_` / `pset_` (per store) or `gget_` / `gset_` (shared), cache keys with `ck_()`. Never write a sheet name, store code or property key directly. Page code keeps per-store things under `K(name)`. 근무 시간 is summed per person across stores; everything else is per store.
+- Code.gs functions without a trailing `_` are public (callable from the /exec link): check the caller in every new one, and list the ones the page uses in `apiFns_()`.
 - Never type the BGF password anywhere; BGF's static form scripts (`/websrc/deploy/GJ/*.xfdl.js`) can be read without logging in.
 - Keep the staff page working on a phone at ~360px width, with no login.
-- Check JS syntax before pushing: `node --check` on Code.gs (copied to a `.js` file) and on the `<script>` block of Index.html.
+- Check JS syntax before pushing: `node --check` on Code.gs (copied to a `.js` file) and on the `<script>` block of Index.html. Run `node tests/server.test.js` after any Code.gs change.

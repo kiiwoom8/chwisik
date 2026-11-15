@@ -50,9 +50,20 @@ button, input, select { font: inherit; color: inherit; }
 /* transform is set by the script ("sticky bar"): follows the scroll both ways, glides to an end when scrolling stops */
 .top { position: sticky; top: 0; z-index: 5; background: var(--sheet); border-bottom: 1px solid var(--rule); will-change: transform; }
 .top .wrap { padding-block: 10px; display: grid; gap: 10px; }
-.titlebar { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
-h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
-.month { display: inline-flex; align-items: center; gap: 2px; }
+.titlebar { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; }
+h1 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.01em; flex: 1 1 auto; min-width: 0; }
+/* the title is the store: a button that opens the store list (plain text when there is only one store) */
+.storebtn { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; min-height: 32px; border: 0; background: none; padding: 0; margin: 0; font: inherit; letter-spacing: inherit; color: inherit; cursor: pointer; text-align: left; border-radius: 8px; }
+.storebtn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.storebtn .chev { flex: none; color: var(--muted); }
+.storebtn:disabled { cursor: default; color: inherit; }
+.storebtn:disabled .chev { display: none; }
+.stores { display: grid; gap: 8px; }
+.stores button { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--rule); background: var(--paper); border-radius: 12px; padding: 14px; min-height: 56px; cursor: pointer; text-align: left; font-size: 16px; font-weight: 500; }
+.stores button small { flex: none; color: var(--muted); font-size: 12.5px; font-weight: 400; }
+.stores button.cur { border-color: var(--accent); background: var(--accent-soft); }
+.stores button.cur small { color: var(--accent); font-weight: 500; }
+.month { display: inline-flex; align-items: center; gap: 2px; flex: none; }
 .month button { border: 1px solid var(--rule); background: var(--sheet); border-radius: 8px; width: 34px; height: 32px; cursor: pointer; }
 .month button:disabled { opacity: .35; cursor: default; }
 .month span { min-width: 6.2em; text-align: center; font-weight: 500; }
@@ -69,7 +80,7 @@ h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .mine div { background: var(--band); border-radius: var(--r); padding: 8px 10px; font-size: 12.5px; color: var(--muted); }
 .mine b { display: block; color: var(--ink); font-size: 16px; font-weight: 500; }
 .mine .eat b { color: var(--eat); }
-.tabs { display: grid; grid-template-columns: repeat(7, 1fr); background: var(--band); border-radius: var(--r); padding: 3px; gap: 3px; }
+.tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); background: var(--band); border-radius: var(--r); padding: 3px; gap: 3px; }
 .tab { border: 0; background: transparent; padding: 7px 1px; white-space: nowrap; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); line-height: 1.2; }
 .tab .num { display: block; font-size: 11.5px; }
 .tab[aria-selected="true"] { background: var(--sheet); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
@@ -119,6 +130,8 @@ main .wrap { padding-block: 8px calc(110px + env(safe-area-inset-bottom, 0px)); 
 .stamp.void.on { background: var(--void); color: #fff; border-color: var(--void); }
 .stamp.undo { color: var(--muted); }
 .stamp:disabled { opacity: .5; }
+.stamp, .tab, .wchip, .primary, .ghost, .clock { transition: transform .08s ease, background-color .12s ease; }
+.stamp:active:not(:disabled), .primary:active:not(:disabled), .ghost:active:not(:disabled), .clock:active:not(:disabled) { transform: scale(.96); }
 .neg { color: var(--void); }
 .row.t-cancel .tagline { color: var(--muted); font-weight: 400; }
 .row.t-cancel .tagline.orphan { color: var(--void); font-weight: 500; }
@@ -131,23 +144,43 @@ main .wrap { padding-block: 8px calc(110px + env(safe-area-inset-bottom, 0px)); 
 .tot .ppl { display: grid; gap: 2px; border-top: 1px dashed var(--rule); padding-top: 6px; margin-top: 2px; }
 .jeotag { color: var(--accent); font-weight: 500; }
 .empty { text-align: center; color: var(--muted); padding: 40px 12px; }
-/* 처음 불러오는 동안: 빈 목록 문구 대신 뼈대 화면 */
-.loading { margin-top: 14px; display: grid; gap: 8px; }
-.loading .lt { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 13px; padding: 4px 0 6px; }
+/* 불러오는 동안: 맨 위 진행 막대 + 지금 탭 모양의 뼈대 화면 (빈 목록 문구 대신) */
+.pbar { position: fixed; left: 0; right: 0; top: env(safe-area-inset-top, 0px); height: 3px; z-index: 50; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity .3s ease; }
+.pbar.on { opacity: 1; }
+.pbar i { position: absolute; top: 0; bottom: 0; left: 0; width: 38%; background: var(--accent); border-radius: 0 3px 3px 0; transform: translateX(-100%); }
+.pbar.on i { animation: pbarrun 1.15s cubic-bezier(.4, 0, .2, 1) infinite; }
+@keyframes pbarrun { to { transform: translateX(265%); } }
+.loading { margin-top: 12px; display: grid; gap: 8px; }
+.loading .lt { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 13px; padding: 2px 0 4px; min-height: 24px; }
 .loading .lt i { width: 14px; height: 14px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; animation: ptrspin .8s linear infinite; }
 .sk { position: relative; overflow: hidden; background: var(--sheet); border-radius: var(--r); padding: 12px; display: flex; align-items: center; gap: 12px; }
-.sk.h { background: none; padding: 2px 2px 0; }
+.sk.h { background: none; padding: 8px 2px 0; justify-content: space-between; }
+.sk.c { display: grid; gap: 12px; padding: 14px; }
 .sk .b { flex: 1; display: grid; gap: 7px; }
-.sk .l, .sk .s { background: var(--band); border-radius: 6px; height: 11px; }
+.sk .l, .sk .s, .sk .t, .sk .bt { background: var(--band); border-radius: 6px; height: 11px; }
 .sk .l.w2 { width: 45%; }
+.sk .l.w3 { width: 30%; height: 15px; }
 .sk .s { flex: none; width: 52px; height: 36px; border-radius: 9px; }
+.sk .t { flex: none; width: 92px; }
+.sk .bt { height: 52px; border-radius: 12px; }
 .sk.h .l { width: 90px; height: 12px; }
+.sk.h .t { width: 44px; }
 .sk::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%);
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--sheet) 55%, transparent), transparent);
   animation: skshine 1.3s ease-in-out infinite; }
+.sk:nth-child(2n)::after { animation-delay: .12s; }
+.sk:nth-child(3n)::after { animation-delay: .24s; }
 .sk.h::after { display: none; }
 @keyframes skshine { to { transform: translateX(100%); } }
-@media (prefers-reduced-motion: reduce) { .sk::after { animation: none; display: none; } .loading .lt i { animation-duration: 2s; } }
+/* 못 불러왔을 때: 안내 + [다시 시도] */
+.failbox { margin-top: 28px; padding: 22px 16px; border-radius: var(--r); background: var(--sheet); display: grid; gap: 8px; justify-items: center; text-align: center; }
+.failbox b { font-size: 16px; }
+.failbox p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.failbox .primary { margin-top: 6px; min-width: 132px; min-height: 44px; }
+/* 데이터가 처음 그려질 때 살짝 떠오름 */
+.arrive { animation: arrive .24s ease-out; }
+@keyframes arrive { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .sk::after { animation: none; display: none; } .loading .lt i { animation-duration: 2s; } .arrive { animation: none; } .pbar.on i { animation-duration: 2.4s; } .stamp, .tab, .wchip, .primary, .ghost, .clock { transition: none; } }
 
 .sum { margin-top: 14px; display: grid; gap: 14px; }
 .sum h2 { font-size: 15px; margin: 0; }
@@ -160,11 +193,14 @@ thead th { color: var(--muted); font-weight: 500; font-size: 12px; }
 tfoot td { font-weight: 700; border-bottom: 0; }
 tfoot td.hot { color: var(--void); }
 tr.meRow td:first-child { color: var(--accent); font-weight: 700; }
+/* 근무 시간: 여러 점포에서 일한 사람은 이름 아래에 점포별 시간 */
+td .bystore { display: block; white-space: normal; font-size: 11.5px; font-weight: 400; color: var(--muted); line-height: 1.35; }
 
 .sheet { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
 .sheet .card { background: var(--sheet); width: min(560px, 100%); border-radius: 16px 16px 0 0; padding: 18px max(16px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 12px; max-height: 85vh; overflow-y: auto; }
 #confirm { z-index: 35; }
 #pwSheet { z-index: 33; }
+#storeSheet { z-index: 34; }
 .sun { color: var(--sun); }
 .sat { color: var(--sat); }
 .whobar { display: flex; gap: 6px; overflow-x: auto; padding: 12px 0 2px; scrollbar-width: none; }
@@ -231,9 +267,10 @@ button.srow { cursor: pointer; }
 </style>
 </head>
 <body>
+<div class="pbar" id="pbar" aria-hidden="true"><i></i></div>
 <header class="hdr"><div class="wrap">
   <div class="titlebar">
-    <h1>직원 취식 목록</h1>
+    <h1><button type="button" class="storebtn" id="storeBtn" disabled aria-haspopup="dialog"><span id="storeName">직원 취식 목록</span><i class="chev" aria-hidden="true"></i></button></h1>
     <div class="month"><button type="button" id="mPrev" aria-label="이전 달">‹</button><span class="num" id="mLabel">–</span><button type="button" id="mNext" aria-label="다음 달">›</button></div>
   </div>
   <div class="me"><span>나:</span><b id="meName">–</b><button class="linkbtn" id="meChange" type="button">이름 바꾸기</button><button class="linkbtn" id="mePw" type="button" hidden>비밀번호</button><button type="button" class="sync" id="sync" title="눌러서 새로고침">불러오는 중<span class="ico">↻</span></button></div>
@@ -270,15 +307,24 @@ button.srow { cursor: pointer; }
   <div id="shifts" hidden></div>
   <div class="sum" id="sum" hidden></div>
   <div class="empty" id="emptyMsg" hidden></div>
-  <div class="loading" id="loading" aria-busy="true" aria-live="polite">
-    <div class="lt"><i></i>목록 불러오는 중…</div>
-    <div class="sk h"><div class="l"></div></div>
-    <div class="sk"><div class="b"><div class="l"></div><div class="l w2"></div></div><div class="s"></div><div class="s"></div></div>
-    <div class="sk"><div class="b"><div class="l"></div><div class="l w2"></div></div><div class="s"></div><div class="s"></div></div>
-    <div class="sk"><div class="b"><div class="l"></div><div class="l w2"></div></div><div class="s"></div><div class="s"></div></div>
-    <div class="sk"><div class="b"><div class="l"></div><div class="l w2"></div></div><div class="s"></div><div class="s"></div></div>
+  <div class="loading" id="loading" aria-busy="true">
+    <div class="lt" aria-live="polite"><i></i><span id="loadText">불러오는 중…</span></div>
+    <div id="loadSk" class="loading" style="margin-top:0" aria-hidden="true"></div>
+  </div>
+  <div class="failbox" id="fail" hidden role="alert">
+    <b>목록을 불러오지 못했어요</b>
+    <p id="failText">인터넷 연결을 확인해 주세요.</p>
+    <button type="button" class="primary" id="failRetry">다시 시도</button>
   </div>
 </div></main>
+
+<div class="sheet" id="storeSheet" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="stTitle">
+    <h2 id="stTitle">어느 점포인가요?</h2>
+    <p id="stText">일하는 점포를 골라 주세요. 이 폰에 기억돼요.</p>
+    <div class="stores" id="storeList"></div>
+  </div>
+</div>
 
 <div class="sheet" id="confirm" hidden>
   <div class="card" role="alertdialog" aria-modal="true" aria-labelledby="cfTitle" aria-describedby="cfText">
@@ -336,17 +382,31 @@ button.srow { cursor: pointer; }
   var JEO = "저회전";          // 저회전상품철수 줄 (row[13]): 취식 / 폐기 둘 다 가능, 등록 안 해도 됨
   var GAP_MIN = 15;            // 지난 날 근무 기록 사이 이보다 긴 빈 시간은 경고 (가게는 24시간 기준)
   var DOW = ["일", "월", "화", "수", "목", "금", "토"];
-  var K_ME = "chwisik.me", K_TOK = "chwisik.tok";
-  var S = { months: [], month: "", version: "", rows: [], cancels: [], shifts: [], usual: {}, members: [], me: "", view: "shift", who: "", q: "", busy: 0, live: null, refreshing: false, online: true, ready: false, failed: false };
+  /* 점포: the phone remembers one store (chwisik.store). Each store has its own name / token / cache keys:
+     "chwisik.me.<id>"; the first store (LEGACY_STORE) keeps the old keys without a store part ("chwisik.me"),
+     so phones from before stores existed carry on as that store. "" = no store chosen on this phone yet. */
+  var LEGACY_STORE = "25377", K_STORE = "chwisik.store", K_STORES = "chwisik.stores";
+  var S = { store: "", stores: [], months: [], month: "", version: "", rows: [], cancels: [], shifts: [], others: [], usual: {}, members: [], me: "", view: "shift", who: "", q: "", busy: 0, live: null, refreshing: false, online: true, ready: false, failed: false, pend: 0 };
   var $ = function (id) { return document.getElementById(id); };
   var fmt = function (n) { return Math.round(Number(n || 0)).toLocaleString("ko-KR"); };  // whole numbers only (원가 has no decimals)
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function mk(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-  S.me = lsGet(K_ME) || "";
-  var TOK = (function () { try { return JSON.parse(lsGet(K_TOK) || "{}") || {}; } catch (e) { return {}; } })();
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  S.store = lsGet(K_STORE) || "";
+  try { S.stores = JSON.parse(lsGet(K_STORES) || "[]") || []; } catch (e) { S.stores = []; }
+  function sid() { return S.store || LEGACY_STORE; }
+  function K(k) { return "chwisik." + k + (sid() === LEGACY_STORE ? "" : "." + sid()); }
+  function curStore() { for (var i = 0; i < S.stores.length; i++) if (S.stores[i].id === sid()) return S.stores[i]; return null; }
+  var TOK = {};
+  /** The name and tokens this phone remembers for the current store. */
+  function loadIdentity() {
+    S.me = lsGet(K("me")) || "";
+    try { TOK = JSON.parse(lsGet(K("tok")) || "{}") || {}; } catch (e) { TOK = {}; }
+  }
+  loadIdentity();
   function tok(name) { return TOK[name || S.me] || ""; }
-  function setTok(name, t) { if (t) TOK[name] = t; else delete TOK[name]; lsSet(K_TOK, JSON.stringify(TOK)); }
+  function setTok(name, t) { if (t) TOK[name] = t; else delete TOK[name]; lsSet(K("tok"), JSON.stringify(TOK)); }
   function isAuthErr(e) { return String((e && e.message) || "").indexOf("[비밀번호]") >= 0; }
 
   /* App mode (app/ loader sets window.CHWISIK_API = the /exec URL): JSON over fetch, no Google page.
@@ -354,15 +414,20 @@ button.srow { cursor: pointer; }
   var API = window.CHWISIK_API || "";
   try { localStorage.removeItem("chwisik.pageTry"); } catch (e) {}  // tells the app loader this page started fine
   function run(fn) {
-    var args = Array.prototype.slice.call(arguments, 1);
-    if (API) return fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn: fn, args: args }) })
+    var args = Array.prototype.slice.call(arguments, 1), st = sid(), p;
+    if (API) p = fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn: fn, args: args, store: st }) })
       .then(function (r) { if (!r.ok) throw new Error("서버 응답 " + r.status); return r.json(); })
       .then(function (j) { if (!j || !j.ok) throw new Error((j && j.err) || "서버 오류"); return j.r; });
+    else p = new Promise(function (resolve, reject) {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(st, fn, args);
+    });
+    // An answer for a store this phone has left since is dropped (its promise never settles; setStore() resets the counters).
     return new Promise(function (resolve, reject) {
-      var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
-      r[fn].apply(r, args);
+      p.then(function (r) { if (st === sid()) resolve(r); }, function (e) { if (st === sid()) reject(e); });
     });
   }
+  /** Top progress bar: on while something the user is waiting for is on its way (start, month / store change, refresh). */
+  function pend(d) { S.pend = Math.max(0, S.pend + d); $("pbar").classList.toggle("on", S.pend > 0); }
   function errMsg(e, dflt) { return String((e && e.message) || dflt || "연결을 확인해 주세요").replace(/^(Error|Exception):\s*/, "").replace("[비밀번호] ", ""); }
   function status(msg) { var el = $("status"); el.hidden = !msg; el.textContent = msg || ""; }
   function memberOf(full) { for (var i = 0; i < S.members.length; i++) if (S.members[i].full === full) return S.members[i]; return null; }
@@ -489,17 +554,26 @@ button.srow { cursor: pointer; }
     });
   }
 
+  var WA = {};   // workersAt answers of this render (many lines share one slip time); cleared in render()
   function workersAt(ts) {
+    var k = String(ts);
+    if (WA[k]) return WA[k];
     var seen = {};
-    return S.shifts.filter(function (s) {
+    return (WA[k] = S.shifts.filter(function (s) {
       if (seen[s[3]] || !workedAt(s[3], ts, 0)) return false;
       return (seen[s[3]] = true);
-    }).map(function (s) { return shortOf(s[3]); });
+    }).map(function (s) { return shortOf(s[3]); }));
   }
 
   /* ---------- render ---------- */
   /* row: [sheetRow, key, time, name, qty, wprice, wamt, mamt, type, memberFull, who, date, note, src]  src: "" = 폐기, "저회전" */
   function render() {
+    WA = {};
+    var cs = curStore(), hasJeo = !cs || cs.jeo !== false;   // 저회전 전표가 없는 전산(GS25 등)은 저회전 탭을 숨김
+    if (!hasJeo && S.view === "jeo") S.view = "shift";
+    document.querySelector('.tab[data-view="jeo"]').hidden = !hasJeo;
+    $("storeName").textContent = cs ? cs.name : "직원 취식 목록";
+    $("storeBtn").disabled = S.stores.length < 2;
     var tabs = document.querySelectorAll("[data-view]");
     for (var i = 0; i < tabs.length; i++) tabs[i].setAttribute(tabs[i].className === "mi" ? "aria-checked" : "aria-selected", tabs[i].getAttribute("data-view") === S.view ? "true" : "false");
     var inMore = S.view === "all" || S.view === "cancel";
@@ -548,12 +622,43 @@ button.srow { cursor: pointer; }
     // 이 달 데이터가 아직 안 왔으면 '기록이 없어요' 대신 불러오는 화면 (실패하면 위 안내 문구만)
     var wait = !S.ready;
     $("loading").hidden = !wait || S.failed;
+    $("fail").hidden = !(wait && S.failed);
+    if (wait && !S.failed) skeleton();
     if (wait) {
       ["c-todo", "c-eat", "c-void", "c-all", "c-jeo", "c-cancel"].forEach(function (id) { $(id).textContent = "–"; });
       if (inMore) $("c-more").textContent = "–";
       $("myEat").textContent = "– 개 · – 원"; $("myVoid").textContent = "– 개 · – 원";
       $("list").hidden = true; $("shifts").hidden = true; $("sum").hidden = true; $("emptyMsg").hidden = true; $("pin").hidden = true; }
   }
+
+  /** Placeholder rows shaped like the open tab (출근: my card + shift rows, 월별: tables, else: lines with two buttons). */
+  var skView = "";
+  function skeleton() {
+    var box = $("loadSk"), kind = S.view === "shift" ? "shift" : S.view === "sum" ? "sum" : "list";
+    if (skView === kind && box.firstChild) return;
+    skView = kind; box.textContent = "";
+    function el(cls, kids) { var e = mk("div", cls); (kids || []).forEach(function (k) { e.appendChild(k); }); return e; }
+    function lines() { return el("b", [el("l"), el("l w2")]); }
+    function head() { return el("sk h", [el("l"), el("t")]); }
+    if (kind === "shift") {
+      box.appendChild(el("sk c", [el("b", [el("l w3"), el("l")]), el("bt")]));
+      box.appendChild(head());
+      for (var i = 0; i < 3; i++) box.appendChild(el("sk", [lines(), el("t")]));
+    } else if (kind === "sum") {
+      for (var j = 0; j < 2; j++) { box.appendChild(head()); for (var k = 0; k < 3; k++) box.appendChild(el("sk", [el("b", [el("l")]), el("t")])); }
+    } else {
+      box.appendChild(head());
+      for (var n = 0; n < 5; n++) box.appendChild(el("sk", [lines(), el("s"), el("s")]));
+    }
+  }
+  /* The loading line says more when the server takes long (Apps Script can need a few seconds to wake up). */
+  var waitFrom = 0;
+  setInterval(function () {
+    if (S.ready || S.failed) { if (waitFrom) $("loadText").textContent = "불러오는 중…"; waitFrom = 0; return; }
+    if (!waitFrom) waitFrom = Date.now();
+    var sec = (Date.now() - waitFrom) / 1000;
+    $("loadText").textContent = sec < 5 ? "불러오는 중…" : sec < 14 ? "조금 느리네요. 계속 불러오고 있어요…" : "연결이 느려요. 조금만 더 기다려 주세요…";
+  }, 1000);
 
   function renderList() {
     var q = S.q.trim().toLowerCase(), who = curWho();
@@ -589,7 +694,7 @@ button.srow { cursor: pointer; }
       em.textContent = q ? "‘" + S.q.trim() + "’에 맞는 항목이 없어요."
         : who ? who + " 님 항목이 없어요."
         : S.view === "jeo" ? (S.rows.some(function (r) { return r[13]; }) ? "남은 저회전 상품이 없어요. 등록한 건 취식 / 폐기 탭에 있어요." : "이 달의 저회전 상품이 아직 없어요. 새 전표는 몇 분 안에 자동으로 들어와요.")
-        : !S.rows.length ? "이 달의 폐기 목록이 아직 없어요. 오늘 폐기는 몇 분 안에 자동으로 들어와요."
+        : !S.rows.length ? (S.live && S.live.wait ? "이 점포는 아직 전산과 연결되지 않았어요. 연결되면 폐기 목록이 자동으로 들어와요." : "이 달의 폐기 목록이 아직 없어요. 오늘 폐기는 몇 분 안에 자동으로 들어와요.")
         : S.view === "todo" ? "모두 등록했어요." : S.view === "all" ? "이 달의 폐기 목록이 아직 없어요." : "아직 등록된 항목이 없어요.";
     } else em.hidden = true;
   }
@@ -885,21 +990,44 @@ button.srow { cursor: pointer; }
     eat.querySelector("tfoot td:nth-child(5)").classList.add("hot");  // 취식 원가 합계는 빨간색으로 강조
     box.appendChild(eat);
 
-    var nowM = nowMin(), hb = {}, totM = 0, openN = 0;
+    // 근무 시간: 같은 사람(같은 전체 이름)이 여러 점포에서 일할 수 있어서, 모든 점포의 시간을 사람별로 합침
+    var nowM = nowMin(), hb = {}, totM = 0, openN = 0, cs = curStore(), here = cs ? cs.short : "", stOrder = [here], away = false;
+    function addHours(name, date, mins, st) {
+      var o = hb[name] = hb[name] || { days: {}, m: 0, by: {} };
+      o.days[date] = 1; o.m += mins; o.by[st] = (o.by[st] || 0) + mins; totM += mins;
+    }
     S.shifts.forEach(function (s) {
       if (s[2].slice(0, 7) !== S.month || (who && s[3] !== who)) return;
       var sp = span(s, nowM);
       if (sp.open) { openN++; return; }
-      var o = hb[s[3]] = hb[s[3]] || { days: {}, m: 0 };
-      o.days[s[2]] = 1; o.m += sp.b - sp.a; totM += sp.b - sp.a;
+      addHours(s[3], s[2], sp.b - sp.a, here);
+    });
+    (S.others || []).forEach(function (o) {
+      stOrder.push(o.short);
+      (o.shifts || []).forEach(function (x) {   // [date, memberFull, start, end]
+        if (who && x[1] !== who) return;
+        if (!x[3]) { openN++; return; }
+        var a = toMin(x[0], x[2]), b = toMin(x[0], x[3]);
+        if (b < a) b += 1440;
+        addHours(x[1], x[0], b - a, o.short); away = true;
+      });
     });
     var hn = Object.keys(hb).sort(function (a, b) { return hb[b].m - hb[a].m; });
     var allDays = {};
     hn.forEach(function (k) { Object.keys(hb[k].days).forEach(function (d) { allDays[d] = 1; }); });
-    box.appendChild(table(title + "근무 시간", ["직원", "근무일", "근무 시간"],
-      hn.map(function (k) { return { me: k === S.me, cells: [k, Object.keys(hb[k].days).length + "일", dur(hb[k].m)] }; }),
+    function nameCell(k) {
+      var by = hb[k].by, parts = stOrder.filter(function (st) { return by[st]; });
+      if (parts.length < 2 && (!parts.length || parts[0] === here)) return k;   // 이 점포에서만 일한 사람은 이름만
+      var f = document.createDocumentFragment();
+      f.appendChild(document.createTextNode(k));
+      f.appendChild(mk("span", "bystore", parts.map(function (st) { return st + " " + dur(by[st]); }).join(" · ")));
+      return f;
+    }
+    box.appendChild(table(title + "근무 시간" + (away ? " (모든 점포)" : ""), ["직원", "근무일", "근무 시간"],
+      hn.map(function (k) { return { me: k === S.me, cells: [nameCell(k), Object.keys(hb[k].days).length + "일", dur(hb[k].m)] }; }),
       ["합계", Object.keys(allDays).length + "일", dur(totM)],
-      openN ? "퇴근을 안 찍은 기록 " + openN + "건은 빠져 있어요. 퇴근을 찍거나 고치면 합산돼요." : "출근일지 기준 (퇴근까지 찍은 기록만)"));
+      (openN ? "퇴근을 안 찍은 기록 " + openN + "건은 빠져 있어요. 퇴근을 찍거나 고치면 합산돼요." : "출근일지 기준 (퇴근까지 찍은 기록만)")
+        + (away ? " · 여러 점포에서 일한 시간을 사람별로 합쳤어요" : "")));
   }
 
   function table(title, heads, rows, foot, note) {
@@ -913,7 +1041,7 @@ button.srow { cursor: pointer; }
     var tb = mk("tbody");
     rows.forEach(function (r) {
       var tr = mk("tr", r.me ? "meRow" : "");
-      r.cells.forEach(function (v, i) { tr.appendChild(mk("td", i ? "num" : "", v)); });
+      r.cells.forEach(function (v, i) { var td = mk("td", i ? "num" : "", v && v.nodeType ? null : v); if (v && v.nodeType) td.appendChild(v); tr.appendChild(td); });
       tb.appendChild(tr);
     });
     if (!rows.length) { var tr0 = mk("tr"), td0 = mk("td", "", "아직 기록이 없어요."); td0.colSpan = heads.length; td0.style.textAlign = "center"; tr0.appendChild(td0); tb.appendChild(tr0); }
@@ -946,6 +1074,7 @@ button.srow { cursor: pointer; }
     doTag(r, next, "");
   }
   function doTag(r, next, note) {
+    try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) {}
     var prev = { type: r[8], member: r[9], who: r[10], note: r[12] };
     apply(r, next, null, note);
     send(r, next, prev, null, note);
@@ -1070,36 +1199,47 @@ button.srow { cursor: pointer; }
   $("confirm").addEventListener("click", function (e) { if (e.target === this) closeConfirm(); });
 
   /* ---------- data ---------- */
+  var MONTHS = {};   // months seen in this session (this store): going back to one draws at once, then checks its version
   function take(res, force) {
-    if (!res || res.month !== S.month) return;
+    if (!res || res.month !== S.month || (res.store && res.store !== sid())) return;
     if (!force && S.busy) return;
+    var first = !S.ready;
     S.ready = true; S.failed = false;
-    S.version = res.version; S.rows = res.rows; S.cancels = res.cancels || []; S.shifts = res.shifts || []; S.usual = res.usual || {}; if (res.members) S.members = res.members;
+    S.version = res.version; S.rows = res.rows; S.cancels = res.cancels || []; S.shifts = res.shifts || []; S.others = res.others || []; S.usual = res.usual || {}; if (res.members) S.members = res.members;
+    MONTHS[res.month] = res;
     render();
+    if (first) arrive();
     saveCache(res);
   }
-  /* Last data seen, so the next start draws at once and fixes itself when the server answers. */
-  var K_CACHE = "chwisik.cache";
+  /** The lists rise in softly the first time their data is drawn (after the loading screen). */
+  function arrive() {
+    var m = document.querySelector("main .wrap");
+    m.classList.remove("arrive"); void m.offsetWidth; m.classList.add("arrive");
+  }
+  /* Last data seen (per store), so the next start draws at once and fixes itself when the server answers. */
   function saveCache(res) {
     if (res.month !== S.months[0]) return;
-    lsSet(K_CACHE, JSON.stringify({ months: S.months, live: S.live, month: res }));
+    lsSet(K("cache"), JSON.stringify({ months: S.months, live: S.live, month: res }));
   }
   function loadCache() {
     try {
-      var c = JSON.parse(lsGet(K_CACHE) || "null");
+      var c = JSON.parse(lsGet(K("cache")) || "null");
       if (!c || !c.month || !c.months || c.months[0] !== c.month.month || c.month.month !== curMonth()) return false;
       S.months = c.months; S.month = c.month.month; S.live = c.live; S.members = c.month.members || [];
       take(c.month, true);
       return true;
     } catch (e) { return false; }
   }
-  function load(force) {
-    if (S.busy) return Promise.resolve();
-    var month = S.month;
-    return run("getMonth", month, force ? "" : S.version).then(function (res) {
+  /** force: ask for the data even if the version is the same. fresh: also skip the server's kept answer (manual refresh). */
+  function load(force, fresh) {
+    if (S.busy || !S.month) return Promise.resolve();
+    var month = S.month, bar = force;
+    if (bar) pend(1);
+    return run("getMonth", month, force ? "" : S.version, !!fresh).then(function (res) {
+      if (bar) pend(-1);
       setOnline(true);
       if (res && S.busy === 0 && month === S.month) take(res);
-    }, function () { setOnline(false); });
+    }, function () { if (bar) pend(-1); setOnline(false); });
   }
   /** Ask the server to pull today's 폐기 from BGF (it throttles to once per 50 s for everyone). */
   function refreshLive() {
@@ -1115,7 +1255,8 @@ button.srow { cursor: pointer; }
     if (!S.online) { setSync("bad", "연결 끊김 · 다시 시도 중"); return; }
     var l = S.live;
     setSync(S.refreshing ? "ok go" : "ok", S.refreshing ? "정보 가져오는 중…"
-      : l && l.label ? "업데이트 " + l.label + (l.error ? " · BGF 접속 안 됨" : "")
+      : l && l.wait ? "전산 연결 전"
+      : l && l.label ? "업데이트 " + l.label + (l.error ? " · 전산 접속 안 됨" : "")
       : "실시간");
   }
   /** Sync button: label text + ↻ icon right after it (spins while refreshing). */
@@ -1126,8 +1267,51 @@ button.srow { cursor: pointer; }
   }
 
   /* ---------- name picker ---------- */
-  function choose(full) { S.me = full; lsSet(K_ME, S.me); $("picker").hidden = true; S.who = ""; render(); }
+  function choose(full) { S.me = full; lsSet(K("me"), S.me); $("picker").hidden = true; S.who = ""; render(); }
+
+  /* ---------- 점포 고르기 ---------- */
+  var carryMe = "";   // the name used in the store we came from: offered in the next store if it is on its list too
+  /** must = true: first time on this phone (no way to close it without choosing). */
+  function openStores(must) {
+    var box = $("storeList"); box.textContent = "";
+    $("stTitle").textContent = must ? "어느 점포인가요?" : "점포 바꾸기";
+    $("stText").textContent = must ? "일하는 점포를 골라 주세요. 이 폰에 기억돼요." : "다른 점포의 목록과 출근일지를 볼 수 있어요. 이름은 점포마다 따로 기억돼요.";
+    S.stores.forEach(function (st) {
+      var cur = !must && st.id === sid();
+      var b = mk("button", cur ? "cur" : ""); b.type = "button";
+      b.appendChild(mk("span", "", st.name));
+      if (cur) b.appendChild(mk("small", "", "지금 보는 점포"));
+      b.addEventListener("click", function () { $("storeSheet").hidden = true; setStore(st.id); });
+      box.appendChild(b);
+    });
+    $("storeSheet").setAttribute("data-must", must ? "1" : "");
+    $("storeSheet").hidden = false;
+  }
+  function closeStores() { if (!$("storeSheet").getAttribute("data-must")) $("storeSheet").hidden = true; }
+  $("storeBtn").addEventListener("click", function () { if (S.stores.length > 1) openStores(false); });
+  $("storeSheet").addEventListener("click", function (e) { if (e.target === this) closeStores(); });
+  /** Switch this phone to another store: its own name / tokens / cache, then a fresh start from the server. */
+  function setStore(id) {
+    var same = id === sid(), had = !!lsGet(K_STORE);
+    lsSet(K_STORE, id);
+    if (same) { S.store = id; if (!had) afterBoot(null); return; }
+    carryMe = S.me;
+    S.store = id;
+    loadIdentity();
+    S.busy = 0; S.refreshing = false; pend(-S.pend);
+    S.months = []; S.month = ""; S.version = ""; S.rows = []; S.cancels = []; S.shifts = []; S.others = []; S.usual = {}; S.members = [];
+    S.live = null; S.who = ""; S.q = ""; $("q").value = ""; S.ready = false; S.failed = false; S.online = true; MONTHS = {};
+    ["picker", "pwSheet", "shiftEd", "confirm"].forEach(function (x) { $(x).hidden = true; });
+    $("snack").hidden = true;
+    status("");
+    if (!loadCache()) render();
+    window.scrollTo(0, 0);
+    boot();
+    refreshLive();
+  }
+
   function openPicker() {
+    $("addBtn").disabled = false;
     var box = $("names"); box.textContent = "";
     S.members.forEach(function (m) {
       var b = mk("button", m.full === S.me ? "cur" : "", m.full + (m.hasPw ? " 🔒" : "")); b.type = "button";
@@ -1234,11 +1418,14 @@ button.srow { cursor: pointer; }
     // 달력 순서로 한 달씩 (기록 없는 달도 열어서 근무를 직접 적을 수 있게)
     var m = addMonths(S.month, -delta), mr = monthRange();
     if (m < mr[0] || m > mr[1]) return;
-    S.month = m; S.rows = []; S.cancels = []; S.shifts = []; S.version = ""; S.ready = false; render(); load(true);
+    S.month = m;
+    // 이번에 이미 본 달은 바로 그리고, 그 사이 바뀐 게 있는지만 물어봄
+    if (MONTHS[m]) { take(MONTHS[m], true); window.scrollTo(0, 0); load(false); return; }
+    S.rows = []; S.cancels = []; S.shifts = []; S.others = []; S.version = ""; S.ready = false; render(); load(true);
   }
   $("mPrev").addEventListener("click", function () { goMonth(1); });
   $("mNext").addEventListener("click", function () { goMonth(-1); });
-  $("sync").addEventListener("click", function () { refreshLive(); load(true); checkAppUpdate(true); });
+  $("sync").addEventListener("click", function () { refreshLive(); load(true, true); checkAppUpdate(true); });
 
   /* ---------- pull to refresh ----------
      At the top of the page, drag down and let go: same as tapping the sync button (BGF check + reload).
@@ -1289,9 +1476,10 @@ button.srow { cursor: pointer; }
       var t0 = Date.now();
       refreshLive();
       checkAppUpdate(true);  // 새 화면 코드가 있으면 바로 다시 불러옴 (앱을 껐다 켤 필요 없음)
-      load(true).then(null, function () {}).then(function () {
-        setTimeout(function () { busy = false; hide(); }, Math.max(0, 450 - (Date.now() - t0)));
-      });
+      var over = false;
+      function done() { if (over) return; over = true; setTimeout(function () { busy = false; hide(); }, Math.max(0, 450 - (Date.now() - t0))); }
+      load(true, true).then(done, done);
+      setTimeout(done, 12000);   // never leave the spinner up (an answer for a store we left never comes)
     }
     document.addEventListener("touchend", end);
     document.addEventListener("touchcancel", function () { pull = 0; end(); });
@@ -1337,6 +1525,7 @@ button.srow { cursor: pointer; }
     if (e.key !== "Escape") return;
     if (!$("moreMenu").hidden) { closeMore(); $("moreBtn").focus(); }
     else if (!$("confirm").hidden) closeConfirm();
+    else if (!$("storeSheet").hidden) closeStores();
     else if (!$("pwSheet").hidden) closePw();
     else if (!$("shiftEd").hidden) closeEditor();
     else if (!$("picker").hidden && memberOf(S.me)) $("picker").hidden = true;
@@ -1360,26 +1549,98 @@ button.srow { cursor: pointer; }
   }
   document.addEventListener("visibilitychange", function () { if (pageReady && !document.hidden && !S.busy) location.reload(); });
 
-  /* ---------- boot ---------- */
-  if (!loadCache()) render();
-  run("getBoot", S.me, tok()).then(function (boot) {
-    var init = boot.init;
-    S.members = init.members; S.months = init.months; S.month = init.months[0]; S.live = init.live;
-    S.version = "";
-    if (boot.month) take(boot.month, true);
-    if (!S.ready) { S.ready = true; render(); }
-    if (!memberOf(S.me)) openPicker();
-    else if (init.meOk === false) { setTok(S.me, ""); openPw("login", S.me); }
-    refreshLive();
-    checkAppUpdate();
-    setInterval(function () { if (!document.hidden) load(false); }, POLL_MS);
-    setInterval(function () { if (!document.hidden) refreshLive(); }, LIVE_MS);
-    setInterval(function () { if (!document.hidden && !S.busy && S.view === "shift") render(); }, 60000);
-  }, function (e) {
-    S.failed = true; render();
-    setOnline(false); setSync("bad", "연결 실패");
-    status("목록을 불러오지 못했어요. 잠시 뒤 새로고침해 주세요. (" + errMsg(e, "") + ")");
+  /* ---------- boot ----------
+     boot() = one getBoot for the current store (init + newest month). It runs at page start, after a store
+     change and on [다시 시도]; a failed one tries again by itself (3 s, 6 s, 12 s … up to 30 s apart).
+     The BGF check (refreshLive) starts at the same time, not after it. */
+  var started = false, bootTimer = 0, bootTries = 0, bootSeq = 0;
+  function boot() {
+    clearTimeout(bootTimer);
+    var seq = ++bootSeq;   // a newer boot() (retry tapped twice) makes this one's answer void
+    S.failed = false;
+    if (!S.ready) render();
+    pend(1);
+    run("getBoot", S.me, tok()).then(function (res) {
+      pend(-1);
+      if (seq !== bootSeq) return;
+      bootTries = 0;
+      var init = res.init;
+      if (init.stores && init.stores.length) { S.stores = init.stores; lsSet(K_STORES, JSON.stringify(init.stores)); }
+      S.members = init.members; S.months = init.months; S.month = init.months[0]; S.live = init.live;
+      S.version = "";
+      setOnline(true); status("");
+      if (res.month) take(res.month, true);
+      if (!S.ready) { S.ready = true; render(); arrive(); }
+      afterBoot(init);
+      if (started) return;
+      started = true;
+      checkAppUpdate();
+      setInterval(function () { if (!document.hidden && S.month) load(false); }, POLL_MS);
+      setInterval(function () { if (!document.hidden) refreshLive(); }, LIVE_MS);
+      setInterval(function () { if (!document.hidden && !S.busy && S.view === "shift") render(); }, 60000);
+    }, function (e) {
+      pend(-1);
+      if (seq !== bootSeq) return;
+      // a store this phone remembers but the server no longer has: back to the first store
+      if (sid() !== LEGACY_STORE && /없는 점포/.test(errMsg(e, ""))) { lsDel(K_STORE); S.store = ""; loadIdentity(); boot(); return; }
+      bootTries++;
+      setOnline(false);
+      if (!S.ready) {   // nothing on screen yet: say so, with a button (kept data stays up with "연결 끊김")
+        S.failed = true;
+        $("failText").textContent = (navigator.onLine === false ? "인터넷이 끊겨 있어요. 연결되면 다시 불러올게요." : "서버가 응답하지 않아요. 잠시 뒤 자동으로 다시 불러와요.") + (errMsg(e, "") ? " (" + errMsg(e, "") + ")" : "");
+        render();
+        setSync("bad", "연결 실패");
+      }
+      bootTimer = setTimeout(boot, Math.min(30000, 3000 * Math.pow(2, bootTries - 1)));
+    });
+  }
+  /** After the server answered: store first (a new phone with 2+ stores), then the name, then its password. */
+  function afterBoot(init) {
+    if (!lsGet(K_STORE)) {
+      // 점포가 하나뿐이거나, 점포가 생기기 전부터 쓰던 폰(이름이 기억돼 있음)은 묻지 않고 지금 점포로
+      if (S.stores.length < 2 || lsGet("chwisik.me")) lsSet(K_STORE, sid());
+      else { openStores(true); return; }
+    }
+    S.store = lsGet(K_STORE) || S.store;
+    if (!memberOf(S.me)) {
+      var c = memberOf(carryMe); carryMe = "";
+      if (c && c.hasPw && !tok(c.full)) openPw("login", c.full);
+      else if (c) { choose(c.full); snack(c.full + " 님으로 볼게요."); }
+      else openPicker();
+    }
+    else if (init && init.meOk === false) { setTok(S.me, ""); openPw("login", S.me); }
+  }
+  $("failRetry").addEventListener("click", function () { bootTries = 0; boot(); });
+  window.addEventListener("online", function () {
+    if (!S.ready || !S.month) { bootTries = 0; boot(); }
+    else { load(false); refreshLive(); }
   });
+
+  if (!loadCache()) render();
+  /* A link can name the store for a phone that has none yet: …/exec?store=31949 (first open only; after that the
+     phone's own choice wins). The /exec page sits in Google's frame, so the address is asked through google.script.url. */
+  (function (go) {
+    var done = false;
+    function start(id) {
+      if (done) return; done = true;
+      id = String(id || "");
+      if (id && !lsGet(K_STORE) && /^[\w-]{1,24}$/.test(id)) {
+        lsSet(K_STORE, id); S.store = id; loadIdentity();
+        S.ready = false; S.rows = []; S.cancels = []; S.shifts = []; S.months = []; S.month = "";
+        if (!loadCache()) render();
+      }
+      go();
+    }
+    if (lsGet(K_STORE)) { start(""); return; }
+    try {
+      if (!API && window.google && google.script && google.script.url && google.script.url.getLocation) {
+        google.script.url.getLocation(function (loc) { start(loc && loc.parameter && loc.parameter.store); });
+        setTimeout(function () { start(""); }, 400);
+        return;
+      }
+      start(new URLSearchParams(location.search).get("store"));
+    } catch (e) { start(""); }
+  })(function () { boot(); refreshLive(); });
 })();
 </script>
 </body>
