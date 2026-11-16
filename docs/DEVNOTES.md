@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-16 (stores: CU 울산두왕점 added as a separate store, GS25 울산신정중앙점 prepared but off; store switcher in the page; 근무 시간 summed per person across stores; faster start: month answers kept in the cache, loading screen shaped like the open tab, progress bar, retry; `tests/` runs the server code in Node)
+Last updated: 2026-11-17 (page never wider than the screen with big phone text / screen zoom: grid columns `minmax(0, 1fr)`, `overflow-x: clip`)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -327,6 +327,7 @@ The page polls `getMonth` every 5 s while visible; the version changes on every 
 - **If the start fails**: with nothing on screen, a card `목록을 불러오지 못했어요` + the reason + **[다시 시도]** (`#fail`); the page also tries again by itself (after 3 s, 6 s, 12 s … at most 30 s apart) and when the phone comes back online. With kept data on screen it stays up and the sync label says `연결 끊김 · 다시 시도 중`.
 - **Months seen stay in memory** (`MONTHS`, this session, this store): going back to a month draws it at once and only asks whether it changed. A month not seen yet shows the loading screen.
 - **Store** (see *Stores*): the title is the store name; tapping it (2+ stores) opens `점포 바꾸기`. A store whose 전산 isn't linked yet shows `전산 연결 전` in the sync label and `이 점포는 아직 전산과 연결되지 않았어요…` in the empty lists. A store whose chain has no 저회전 slips has no 저회전 tab (the tab bar's columns follow the tabs shown).
+- **Never wider than the screen** (2026-11-17): phones with big text or screen zoom (a Galaxy Z Flip 4 in the app) used to scroll sideways. Grid columns are `minmax(0, 1fr)` (a plain `1fr` or the default column can't shrink below its content), and `html, body { overflow-x: clip }` (clip, not hidden, so the sticky bar still works). To check: in the page stub at 360 px, run in the console a loop that sets every element's inline `font-size` to 1.3–1.6 × its computed size, then compare `document.documentElement.scrollWidth` with `innerWidth` and look for elements whose right edge is past the screen.
 - **Small touches**: buttons press in slightly, a tag gives a short vibration where the phone allows it.
 
 - **Month switcher** (‹ 2026년 11월 ›): steps one calendar month at a time, from **12 months before the oldest month with data** (`MONTHS_BACK`) up to the newest (this month). Months with no data open too (empty lists), so old 근무 can be added there with `+ 근무 직접 입력`; in a past month the editor's date starts at that month's 1st, and an empty 출근 tab says `이 달의 근무 기록이 없어요. ‘+ 근무 직접 입력’으로 적을 수 있어요.` (Before 2026-11-13 ‹ stopped at the oldest month with data.) The server never limited how early a hand-entered shift can be; `saveShift` only refuses times more than 1 h ahead.
