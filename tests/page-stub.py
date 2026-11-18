@@ -6,7 +6,7 @@
 It puts a fake google.script.run (api(store, fn, args)) with two stores of made-up data in front of the page script.
 Address options: ?delay=ms (server answer time, to see the loading screen), ?fail=N (the first N getBoot calls fail),
 ?store=31949 (a link that names the store), ?gs=1 (adds a third store without 저회전 and without 전산),
-?closed=1 (adds last month as a closed month: 월별 합계 shows its 월별 마감 numbers).
+?closed=1 (adds last month as a closed month: 월별 합계 shows its 월별 마감 numbers), ?savefail=1 (saveShift / deleteShift refuse).
 The page keeps its data in localStorage: run localStorage.clear() in the console to start as a new phone.
 """
 import io, sys, re
@@ -51,7 +51,17 @@ stub = r'''
     refreshNow: function (st) { return { label: st === "25377" ? "21:32" : "", off: false, error: false, added: 0, wait: st === "25377" ? "" : "pw" }; },
     setTag: function (st, hint, key, type, member, m) { var o = DB[st]; o.rows.forEach(function (r) { if (r[1] === key) { r[8] = type; r[9] = type ? member : ""; r[10] = type ? member : ""; } }); o.ver++; return month(st, m); },
     addMember: function (st, full) { DB[st].members.push({ full: full, short: full.slice(1), hasPw: false }); return DB[st].members; },
-    saveShift: function (st, key, date, member, a, b, memo, m) { DB[st].shifts.push([99, "n" + Date.now(), date, member, a, b, memo]); DB[st].ver++; return month(st, m); },
+    saveShift: function (st, key, date, member, a, b, memo, m) {
+      if (Q.get("savefail")) throw new Error("다른 기록과 겹쳐요 (stub)");
+      var o = DB[st], hit = null;
+      o.shifts.forEach(function (s) { if (key && s[1] === key) hit = s; });
+      if (hit) { hit[2] = date; hit[4] = a; hit[5] = b; hit[6] = memo; } else o.shifts.push([99, "n" + Date.now(), date, member, a, b, memo]);
+      o.ver++; return month(st, m);
+    },
+    deleteShift: function (st, key, member, m) {
+      if (Q.get("savefail")) throw new Error("기록을 찾지 못했어요 (stub)");
+      var o = DB[st]; o.shifts = o.shifts.filter(function (s) { return s[1] !== key; }); o.ver++; return month(st, m);
+    },
     getPage: function () { return null; },
     login: function () { return { token: "tok" }; }
   };

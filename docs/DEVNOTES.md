@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-18 (월별 마감: a closed month's 직원별 폐기 / 취식 totals are archived in the `월별 마감` sheet and no longer change)
+Last updated: 2026-11-19 (lazy saving: a 근무 save or delete shows at once and goes to the server in the background)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -340,6 +340,7 @@ The page polls `getMonth` every 5 s while visible; the version changes on every 
 - **Months seen stay in memory** (`MONTHS`, this session, this store): going back to a month draws it at once and only asks whether it changed. A month not seen yet shows the loading screen.
 - **Store** (see *Stores*): the title is the store name; tapping it (2+ stores) opens `점포 바꾸기`. A store whose 전산 isn't linked yet shows `전산 연결 전` in the sync label and `이 점포는 아직 전산과 연결되지 않았어요…` in the empty lists. A store whose chain has no 저회전 slips has no 저회전 tab (the tab bar's columns follow the tabs shown).
 - **Never wider than the screen** (2026-11-17): phones with big text or screen zoom (a Galaxy Z Flip 4 in the app) used to scroll sideways. Grid columns are `minmax(0, 1fr)` (a plain `1fr` or the default column can't shrink below its content), and `html, body { overflow-x: clip }` (clip, not hidden, so the sticky bar still works). To check: in the page stub at 360 px, run in the console a loop that sets every element's inline `font-size` to 1.3–1.6 × its computed size, then compare `document.documentElement.scrollWidth` with `innerWidth` and look for elements whose right edge is past the screen.
+- **Saving is lazy** (owner, 2026-11-19), for tags and 근무 기록 alike: the screen changes at once and the call runs behind it. A shift save closes the sheet and adds / changes the row with the times rounded like the server will (`slotHm`), faded (`.srow.pending`, temp key `tmp:…` for a new one) until the answer; a delete removes the row at once. While any write is on its way (`S.busy`) the sync label says `저장 중…`, polls don't overwrite the screen, a pending row can't be opened (`아직 저장 중이에요…`) and leaving the page asks first (`beforeunload`). The answer's month is taken once no other write is on its way; `res.trimmed` / `res.closed` show in a second snack. A refusal undoes the change, reopens the editor with what was typed (`저장하지 못했어요: …`) and reads the month again.
 - **Small touches**: buttons press in slightly, a tag gives a short vibration where the phone allows it.
 
 - **Month switcher** (‹ 2026년 11월 ›): steps one calendar month at a time, from **12 months before the oldest month with data** (`MONTHS_BACK`) up to the newest (this month). Months with no data open too (empty lists), so old 근무 can be added there with `+ 근무 직접 입력`; in a past month the editor's date starts at that month's 1st, and an empty 출근 tab says `이 달의 근무 기록이 없어요. ‘+ 근무 직접 입력’으로 적을 수 있어요.` (Before 2026-11-13 ‹ stopped at the oldest month with data.) The server never limited how early a hand-entered shift can be; `saveShift` only refuses times more than 1 h ahead.
