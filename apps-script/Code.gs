@@ -127,12 +127,18 @@ var SH_MEMBERS = '직원';
 var SH_SUMMARY = '월별 합계';
 var SH_LOG = '가져오기 기록';
 var SH_SHIFTS = '출근일지';
+var SH_CLOSE = '월별 마감';
 
 // 폐기목록 columns (1-based)
 var C = { KEY: 1, DATE: 2, TIME: 3, NAME: 4, CODE: 5, CAT: 6, QTY: 7, WPRICE: 8, WAMT: 9, MPRICE: 10, MAMT: 11, CHIT: 12, TYPE: 13, WHO: 14, MEMBER: 15, AT: 16, MONTH: 17, NOTE: 18, SRC: 19 };
 var NCOL = 19;
 var HEADERS = ['키', '일자', '생성시각', '품명', '상품코드', '분류', '수량', '원가단가', '원가금액', '매가단가', '매가금액', '전표번호', '구분', '등록이름', '직원', '등록시각', '월', '확인', '전표'];
 var OFFSHIFT_NOTE = '근무외';
+
+// 월별 마감: 지난 달 직원별 폐기 / 취식 수량·원가를 한 번 적어 두고, 그 뒤로는 그 숫자를 보여 줌 (나중에 바뀌지 않게)
+var CLOSE_HEADERS = ['월', '직원', '폐기 수량', '폐기 원가', '취식 수량', '취식 원가', '마감시각'];
+var CLOSE_TODO = '(미등록)';   // 직원 열: 그 달 미등록 폐기 (폐기 수량·원가 열에 적음)
+var CLOSE_AFTER_DAYS = 1;      // 달이 바뀌고 이만큼 지나서 마감 (마지막 날 밤 근무자가 아침까지 등록할 수 있게)
 
 // 가져오는 전표 종류. SRC 열: 폐기 = '' (비어 있음), 저회전상품철수 = '저회전'
 var PYEGI_DIV = '10';          // 통합전표 조회 전표구분 (공통코드 S312) 10 = 폐기
@@ -254,6 +260,7 @@ function onOpen() {
     .addItem('어제 폐기·저회전 지금 가져오기', 'nightly')
     .addItem('기간 지정해서 가져오기', 'menuImportRange')
     .addItem('저회전 지난 날짜 모두 가져오기 (' + STORES[0].short + ')', 'menuJeoBackfill')
+    .addItem('월 마감 다시 하기 (지난 달 합계를 지금 숫자로)', 'menuReclose')
     .addSeparator()
     .addItem('매일 자동 가져오기 켜기', 'installNightlyTrigger')
     .addItem('실시간 가져오기 켜기 (5분마다 + 링크 열려 있으면 1분마다)', 'menuLiveOn')
@@ -297,6 +304,16 @@ function menuJeoBackfill() {
   pdel_('JEO_BACKFILL', STORES[0]);
   var r = inStore_(STORES[0], function () { return jeoBackfill_(null, true); });
   ui.alert(r.error ? JEO + ' 가져오지 못했어요:\n' + r.error : JEO + ' ' + r.range + ': 전표 ' + r.chits + '장, 새 품목 ' + r.added + '건 추가');
+}
+function menuReclose() {
+  var ui = SpreadsheetApp.getUi();   // first: throws when called from the web page
+  var sts = askStores_(ui, onStores_(), false);
+  if (!sts || !sts.length) return;
+  var r = ui.prompt('월 마감 다시 하기 · ' + sts[0].name, '어느 달인가요? 예: 2026-10\n그 달 합계를 지금 폐기목록 숫자로 다시 적어요.', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var m = r.getResponseText().replace(/\s/g, '');
+  if (!/^\d{4}-\d\d$/.test(m) || m > closeTarget_()) { ui.alert('지난 달을 2026-10 처럼 적어 주세요. (이번 달은 마감 전이에요)'); return; }
+  ui.alert(inStore_(sts[0], function () { return closeMonth_(m); }));
 }
 function menuLiveOn() {
   var ui = SpreadsheetApp.getUi();   // first: throws when called from the web page
@@ -377,6 +394,7 @@ function removeLiveTrigger_() {
 function liveTick(e) {
   if (!fromTrigger_(e)) adminOnly_();
   onStores_().forEach(function (st) { try { inStore_(st, autoOutAll_); } catch (x) {} });
+  closeAll_();
   try { inStore_(STORES[0], octOnce_); } catch (x) {}
   var sts = importStores_().sort(function (a, b) { return Number(pget_('LIVE_AT', a) || 0) - Number(pget_('LIVE_AT', b) || 0); });
   if (sts.length) inStore_(sts[0], liveGate_);
@@ -388,7 +406,7 @@ function onEdit(e) {
   try {
     var name = e.range.getSheet().getName();
     onStores_().forEach(function (st) {
-      if (![SH_ITEMS, SH_MEMBERS, SH_SHIFTS].some(function (b) { return sheetName_(b, st) === name; })) return;
+      if (![SH_ITEMS, SH_MEMBERS, SH_SHIFTS, SH_CLOSE].some(function (b) { return sheetName_(b, st) === name; })) return;
       var v = nextVer_(st);
       pset_('VER', v, st);
       if (name === sheetName_(SH_SHIFTS, st)) pset_('SVER', v, st);
@@ -427,6 +445,7 @@ function nightly(e) {
     try { out.push(st.name + ' ' + inStore_(st, function () { return importRange_(d2, d1); })); }
     catch (x) { err = err || x; out.push(st.name + ' 실패: ' + x.message); }
   });
+  closeAll_();
   if (err) throw new Error(out.join('\n'));
   return out.join('\n');
 }
@@ -1228,6 +1247,19 @@ function getMonth(month, knownVersion, fresh) {
   month = /^\d{4}-\d\d$/.test(String(month || '')) ? String(month) : '';
   var st = store_(), ckey = 'mo|' + st.id + '|' + month + '|' + v;
   if (!fresh) { var hit = bigGet_(ckey); if (hit) return hit; }
+  var lines = monthLines_(month);
+  var closed = month && month <= pget_('CLOSED') ? readClose_(month) : null;
+  var all = readShifts_();
+  var out = { version: v, store: st.id, month: month, rows: lines.rows, cancels: lines.cancels, closed: closed, shifts: shiftsFor_(month, all), usual: usualShifts_(all), members: members_(), others: otherShifts_(month) };
+  bigPut_(ckey, out, MONTH_CACHE_S);
+  return out;
+}
+
+/**
+ * The month's lines from 폐기목록: rows (canceled lines left out, partly canceled ones scaled) and cancels
+ * (negative lines), in the shapes getMonth sends (DEVNOTES → Web app API).
+ */
+function monthLines_(month) {
   var sh = itemsSheet_();
   var n = sh.getLastRow() - 1;
   var rows = [], cancels = [];
@@ -1255,10 +1287,103 @@ function getMonth(month, knownVersion, fresh) {
         Math.round(Number(nums[i][1]) || 0), wamt, mamt, r[C.TYPE - 1], r[C.MEMBER - 1], r[C.WHO - 1], r[C.DATE - 1], r[C.NOTE - 1], r[C.SRC - 1]]);
     }
   }
-  var all = readShifts_();
-  var out = { version: v, store: st.id, month: month, rows: rows, cancels: cancels, shifts: shiftsFor_(month, all), usual: usualShifts_(all), members: members_(), others: otherShifts_(month) };
-  bigPut_(ckey, out, MONTH_CACHE_S);
-  return out;
+  return { rows: rows, cancels: cancels };
+}
+
+/* ======================= 월별 마감 (지난 달 합계 고정) ======================= */
+/*
+ * Once a month is over (CLOSE_AFTER_DAYS into the next one), its 직원별 폐기 / 취식 수량 and 원가 are written once
+ * into the store's 월별 마감 sheet, and from then on the page's 월별 합계 for that month shows those numbers.
+ * So nothing that happens later (a cancel slip of the next month, a late tag, a re-import, a hand edit of 폐기목록)
+ * moves a closed month's totals. Each line's own 원가 was already fixed when it was imported (BGF's slip amount).
+ * The owner can redo one month with the menu 월 마감 다시 하기, or edit the 월별 마감 sheet by hand.
+ */
+
+/** The newest month that is due: last month once CLOSE_AFTER_DAYS of this month have passed, else the month before. */
+function closeTarget_() {
+  var d = new Date(Date.now() - CLOSE_AFTER_DAYS * 86400000);
+  var y = Number(Utilities.formatDate(d, TZ, 'yyyy')), m = Number(Utilities.formatDate(d, TZ, 'MM')) - 1;
+  if (m < 1) { y--; m = 12; }
+  return y + '-' + ('0' + m).slice(-2);
+}
+
+/** Every store: close the months that are due. Cheap when nothing is due (one property read per store). */
+function closeAll_() {
+  onStores_().forEach(function (st) { try { inStore_(st, closeDue_); } catch (x) {} });
+}
+/** This store: every month up to closeTarget_() that has lines and isn't in 월별 마감 yet. Returns how many were closed. */
+function closeDue_() {
+  var target = closeTarget_();
+  if (pget_('CLOSED') >= target) return 0;
+  var have = {}, n = 0;
+  closeRows_().forEach(function (r) { have[r.d[0]] = 1; });
+  var months = {}, sh = itemsSheet_(), k = sh.getLastRow() - 1;
+  if (k > 0) sh.getRange(2, C.MONTH, k, 1).getDisplayValues().forEach(function (r) { if (r[0]) months[r[0]] = 1; });
+  Object.keys(months).sort().forEach(function (m) { if (m <= target && !have[m]) { closeMonth_(m); n++; } });
+  pset_('CLOSED', target);
+  return n;
+}
+
+/** Totals of a month's rows (getMonth row shape), the same way the page's 월별 합계 adds them. */
+function monthTotals_(rows) {
+  var by = {}, todo = { n: 0, w: 0 }, tot = { vn: 0, vw: 0, en: 0, ew: 0 };
+  rows.forEach(function (r) {
+    if (!r[8]) { if (!r[13]) { todo.n += r[4]; todo.w += r[6]; } return; }   // 미등록 = untagged 폐기 (저회전 never counts)
+    var k = r[9] || '(이름 없음)', o = by[k] = by[k] || { vn: 0, vw: 0, en: 0, ew: 0 };
+    if (r[8] === '취식') { o.en += r[4]; o.ew += r[6]; tot.en += r[4]; tot.ew += r[6]; }
+    else { o.vn += r[4]; o.vw += r[6]; tot.vn += r[4]; tot.vw += r[6]; }
+  });
+  return { by: by, todo: todo, tot: tot };
+}
+
+/** Writes (or rewrites) one month into 월별 마감 from 폐기목록 as it is now. Returns a line for the menu. */
+function closeMonth_(month) {
+  return withLock_(function () {
+    var t = monthTotals_(monthLines_(month).rows), at = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
+    var names = Object.keys(t.by).sort(function (a, b) { var x = t.by[a], y = t.by[b]; return (y.ew + y.vw) - (x.ew + x.vw) || (a < b ? -1 : 1); });
+    var add = names.map(function (k) { var o = t.by[k]; return [month, k, o.vn, o.vw, o.en, o.ew, at]; });
+    add.push([month, CLOSE_TODO, t.todo.n, t.todo.w, '', '', at]);   // always there, so every closed month has a row
+    var old = closeRows_(), keep = old.filter(function (r) { return r.d[0] !== month; }).map(function (r) { return r.v; });
+    var all = keep.concat(add).sort(function (a, b) { var x = String(a[0]), y = String(b[0]); return x < y ? 1 : x > y ? -1 : 0; });   // newest month on top
+    var sh = closeSheet_(), w = CLOSE_HEADERS.length;
+    if (old.length) sh.getRange(2, 1, old.length, w).clearContent();
+    sh.getRange(2, 1, all.length, w).setValues(all);
+    bumpVersion_();
+    return month + ' 마감 (' + at + '): ' + names.length + '명 · 취식 원가 ' + t.tot.ew.toLocaleString() + '원 · 폐기 원가 ' + t.tot.vw.toLocaleString() + '원 · 미등록 ' + t.todo.w.toLocaleString() + '원';
+  });
+}
+
+/** 월별 마감 sheet of this store, made on first use. */
+function closeSheet_() {
+  var name = sheetName_(SH_CLOSE), sh = doc_().getSheetByName(name);
+  if (sh) return sh;
+  sh = doc_().insertSheet(name, doc_().getNumSheets());
+  sh.getRange(1, 1, 1, CLOSE_HEADERS.length).setValues([CLOSE_HEADERS]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  sh.getRange('A:B').setNumberFormat('@');
+  sh.getRange('G:G').setNumberFormat('@');
+  sh.getRange('C:F').setNumberFormat('#,##0');
+  return sh;
+}
+/** The sheet's rows: [{ d: display values, v: values }] (empty rows left out). */
+function closeRows_() {
+  var sh = doc_().getSheetByName(sheetName_(SH_CLOSE)), n = sh ? sh.getLastRow() - 1 : 0;
+  if (n <= 0) return [];
+  var w = CLOSE_HEADERS.length, d = sh.getRange(2, 1, n, w).getDisplayValues(), v = sh.getRange(2, 1, n, w).getValues();
+  return d.map(function (r, i) { return { d: r, v: v[i] }; }).filter(function (r) { return r.d.join('') !== ''; });
+}
+/** One closed month for the page: { at, rows: [[memberFull, 폐기 수량, 폐기 원가, 취식 수량, 취식 원가]], todo: [수량, 원가] }, or null. */
+function readClose_(month) {
+  var num = function (x) { return Math.round(Number(String(x).replace(/[,\s원]/g, '')) || 0); };
+  var out = { at: '', rows: [], todo: [0, 0] }, hit = false;
+  closeRows_().forEach(function (r) {
+    var d = r.d;
+    if (d[0] !== month) return;
+    hit = true; out.at = out.at || d[6];
+    if (d[1] === CLOSE_TODO) out.todo = [num(d[2]), num(d[3])];
+    else out.rows.push([d[1], num(d[2]), num(d[3]), num(d[4]), num(d[5])]);
+  });
+  return hit ? out : null;
 }
 
 /**

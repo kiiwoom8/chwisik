@@ -141,6 +141,29 @@ ok('H one store failing: the other still imports, error reported', /두왕점 �
 threw = ''; try { exec("nightly({})"); } catch (e) { threw = e.message; }
 ok('H nightly refuses web callers', /관리자/.test(threw), threw);
 
+// ----- J. 월별 마감: a past month's totals are written once and don't move afterwards -----
+const old = (k, name, code, qty, w, type, member, src) => [k, '2020-01-31', '2020-01-31 10:00:00', name, code, '간편식', qty, w, w * qty, 1000, 1000, k, type, type === '폐기' ? member.slice(1) : member, type ? member : '', '', '2020-01', '', src || ''];
+items.data.push(old('OLD-1', '김밥', 'o1', 2, 500, '취식', '김성휘'), old('OLD-2', '우유', 'o2', 1, 700, '폐기', '전병훈'), old('OLD-3', '빵', 'o3', 1, 300, '', ''), old('OLD-4', '과자', 'o4', 1, 200, '', '', '저회전'));
+delete props.CLOSED;
+exec('closeAll_()');
+const cl = doc.getSheetByName('월별 마감');
+ok('J closed sheet made, old month written, this month not', cl && cl.data[0][0] === '월' && cl.data.some(x => x[0] === '2020-01') && !cl.data.some(x => x[0] === mon), cl && cl.data);
+ok('J CLOSED property = the due month', props.CLOSED === exec('closeTarget_()') && props.CLOSED < day(0).slice(0, 7), props.CLOSED);
+let jm = exec("api('25377', 'getMonth', ['2020-01', '', true])");
+ok('J getMonth sends the closed totals', jm.closed && jm.closed.rows.some(c => c[0] === '김성휘' && c[3] === 2 && c[4] === 1000) && jm.closed.rows.some(c => c[0] === '전병훈' && c[1] === 1 && c[2] === 700) && jm.closed.todo[0] === 1 && jm.closed.todo[1] === 300 && /^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(jm.closed.at), jm.closed);
+ok('J open month has no closed totals', exec("api('25377', 'getMonth', ['" + mon + "', '', true])").closed === null);
+// next month a cancel slip takes back 김밥: the lines change, the closed totals don't
+items.data.push(['NEW-1', '2020-02-01', '2020-02-01 09:00:00', '김밥', 'o1', '간편식', -2, -500, -1000, -1000, -1000, 'NEW', '', '', '', '', '2020-02', '', '']);
+exec('closeAll_()');
+jm = exec("api('25377', 'getMonth', ['2020-01', '', true])");
+ok('J canceled line gone from the list, closed totals kept', !jm.rows.some(r => r[1] === 'OLD-1') && jm.closed.rows.some(c => c[0] === '김성휘' && c[4] === 1000), [jm.rows.map(r => r[1]), jm.closed]);
+ok('J 2020-02 not closed again by itself (CLOSED is past it)', !cl.data.some(x => x[0] === '2020-02'));
+// the owner redoes January from the menu helper: now from today's lines
+out = exec("inStore_(STORES[0], function () { return closeMonth_('2020-01'); })");
+jm = exec("api('25377', 'getMonth', ['2020-01', '', true])");
+ok('J redo rewrites only that month', /2020-01 마감/.test(out) && !jm.closed.rows.some(c => c[0] === '김성휘') && jm.closed.rows.some(c => c[0] === '전병훈') && cl.data.filter(x => x[0] === '2020-01').length === 2, [out, cl.data]);
+ok('J other store has its own state', props.CLOSED_31949 === props.CLOSED && !doc.getSheetByName('두왕점 월별 마감'));
+
 // ----- I. passwords / tokens per store -----
 r = exec("api('31949', 'setPassword', ['김성휘', '', 'abcd'])");
 ok('I password set in 두왕 only', r.token && doc.getSheetByName('두왕점 직원').data[1][3] && !mem.data[1][3], r);

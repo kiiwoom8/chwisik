@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-17 (page never wider than the screen with big phone text / screen zoom: grid columns `minmax(0, 1fr)`, `overflow-x: clip`)
+Last updated: 2026-11-18 (월별 마감: a closed month's 직원별 폐기 / 취식 totals are archived in the `월별 마감` sheet and no longer change)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -189,6 +189,15 @@ A = full name, B = first name for 폐기 (auto: drops a 1-char surname, or a 2-c
 ### 월별 합계
 A QUERY over 폐기목록 grouped by 월, 구분, 직원, 등록이름, with count, quantity, 원가, 매가 totals. Rebuilt by `setup()`. 저회전 rows are counted under their 구분 `취식` / `폐기` like other rows (untagged 저회전 rows have no 구분, so they are not counted).
 
+### 월별 마감 (one row per person per closed month)
+Made on first use (`closeSheet_`), one per store (`두왕점 월별 마감`, …). Columns: **월** (`yyyy-MM`, text) · **직원** (full name, or `(미등록)`) · **폐기 수량** · **폐기 원가** · **취식 수량** · **취식 원가** · **마감시각** (`yyyy-MM-dd HH:mm`). The `(미등록)` row holds that month's untagged 폐기 (저회전 not counted) in the 폐기 columns, and is written even when nobody tagged anything, so every closed month has at least one row. Newest month on top.
+
+- **When:** a month is closed once `CLOSE_AFTER_DAYS` (1) of the next month have passed, i.e. at the nightly run of the **2nd** at 00:01 (after it re-read the 1st and the last day), or the first 5-min tick after that. The one extra day lets a night worker tag the last day's lines the next morning, and lets an early cancel slip land. `closeDue_` closes every month up to `closeTarget_()` that has 폐기목록 lines and no rows here yet, then sets ● `CLOSED`.
+- **What it fixes:** from then on the page's 월별 합계 for that month shows these numbers (`getMonth` → `closed`), whatever happens later: a BGF cancel slip of the next month (it still hides the line in the lists, see *Canceled lines*), a late or cleared tag, a re-import, a hand edit of 폐기목록. Each line's 원가 itself was already fixed at import (BGF's slip amount, never looked up again). The line lists and the 금액합계 card still show the lines as they are now.
+- **Redo / fix:** menu **월 마감 다시 하기** rewrites one month from 폐기목록 as it is now (only that month's rows). Or edit the numbers here by hand (moves the version, pages follow). Deleting a month's rows makes the page show the live totals again; it is not closed again by itself (`CLOSED` is past it), so use the menu item.
+- A past month whose lines arrive after `CLOSED` has passed it (e.g. an old range imported later) is not closed by itself either: use the menu item.
+- October 2026 (둘리점) is closed by the first tick after this went live (2026-11-18), from the numbers as they were then.
+
 ### 가져오기 기록
 One row per import run: time, date range, slip count, new lines, result. Nightly/manual runs always log; live runs log only when they add lines or when a failure streak starts. The result shows `· 저회전 N장` or `· 저회전 실패: …`. Nightly failures also email the owner.
 
@@ -205,6 +214,7 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 | ● `SVER` | shift writes (`bumpVersion_(true)`), hand edits of 출근일지 | version of the store's 출근일지; part of the **other** stores' version (근무 시간 crosses stores) |
 | ● `LIVE_AT` | live import | start of the last live attempt (throttle) |
 | ● `LIVE_OK_AT`, `LIVE_MS`, `LIVE_ERR` | live import | last success time, its duration, last error ('' = ok) |
+| ● `CLOSED` | `closeDue_` (nightly, 5-min tick) | newest month already closed into 월별 마감 (`yyyy-MM`); nothing to do while it equals `closeTarget_()` |
 | `LIVE_OFF` | menu 실시간 끄기 | `1` = live import off |
 | `LIVE_TRIGGER` | `installLiveTrigger_` | minutes of the live trigger that exists (`5`); any other value → `refreshNow` reinstalls it. (Was `1` for the old 10-min trigger.) |
 | `JEO_DIV` | `jeoDiv_` | cached 전표구분 search code for 저회전상품철수 (from common code S312). Delete it to look it up again. |
@@ -230,6 +240,7 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 - **어제 폐기·저회전 지금 가져오기**: runs `nightly()` now (every store).
 - **기간 지정해서 가져오기**: asks which store (a number; empty = all), then the range, e.g. `20261101-20261108` (both kinds; safe to repeat).
 - **저회전 지난 날짜 모두 가져오기 (둘리점)**: first store only (a one-time catch-up from before 저회전 import existed): from the earliest 일자 in 폐기목록 to today (safe to repeat).
+- **월 마감 다시 하기 (지난 달 합계를 지금 숫자로)**: asks which store, then a past month (`2026-10`); rewrites that month in 월별 마감 from 폐기목록 as it is now (`closeMonth_`). Not for the current month or one not due yet.
 - **매일 자동 가져오기 켜기**: recreates the nightly trigger.
 - **실시간 가져오기 켜기 / 끄기**: the 5-min trigger and the on-open refresh, for all stores. 끄기 sets `LIVE_OFF=1`; the nightly import keeps running.
 - **개발자 비밀번호 설정** (all stores), **직원 비밀번호 지우기** (asks which store): see *Passwords*.
@@ -286,7 +297,7 @@ The page calls the server with `run(fn, …args)`, always for its store. On the 
 | `getPage(knownHash)` | `{hash, html}` of `Index.html`, or `null` if the app already has that hash (app self-update) |
 | `api(store, fn, args)` | the `/exec` page's entry: sets the store, runs one of the functions below |
 | `getInit(me, token)` | members (`{full, short, hasPw}`), months (items + shifts), data version, live-import info (`{label, off, error, added, wait}`; `wait` = `'pw'` no 전산 password yet, `'adapter'` no import for this chain, else `''`), `meOk` (false = this phone must enter the password again), `store` (id), `stores` (`[{id, name, short, chain, jeo}]`, the stores that are on) |
-| `getMonth(month, knownVersion, fresh)` | rows + cancels + shifts + `usual` + `others` for `yyyy-MM`, with `store` and `version`; `null` if `knownVersion` is current (cheap polling). Kept in the cache per (store, month, version); `fresh = true` (pull to refresh, sync button) reads the sheets anyway. |
+| `getMonth(month, knownVersion, fresh)` | rows + cancels + shifts + `usual` + `others` + `closed` for `yyyy-MM`, with `store` and `version`; `null` if `knownVersion` is current (cheap polling). Kept in the cache per (store, month, version); `fresh = true` (pull to refresh, sync button) reads the sheets anyway. |
 | `setTag(rowHint, key, type, memberFull, month, note, me, token)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` kept only for 폐기. Refuses rows another worker tagged. Returns the fresh month. |
 | `addMember(full)` | adds to 직원 |
 | `saveShift(key, date, memberFull, start, end, memo, month, token)` | create (`key=''`) or edit own shift; checks format, overlap, future times; may trim another worker's 퇴근 (교대 겹침 정리), listed in `res.trimmed: [[member, end]]` |
@@ -301,6 +312,7 @@ Shapes sent to the page:
 - Shift: `[sheetRow, key, date, memberFull, start, end, memo]`. A month's shifts also include the last day of the month before (overnight shifts).
 - `usual` = `{fullName: [출근, 퇴근], '*': [...]}`: the most frequent closed shift pair per worker over the last 90 days (ties → most recent).
 - `others` = `[{id, short, shifts: [[date, memberFull, start, end], …]}]`: the month's shifts of every other store, for the 근무 시간 table.
+- `closed` = `null` (month not closed) or `{at: 'yyyy-MM-dd HH:mm', rows: [[memberFull, 폐기 수량, 폐기 원가, 취식 수량, 취식 원가], …], todo: [미등록 수량, 미등록 원가]}` from the 월별 마감 sheet.
 
 **Month cache (2026-11-16).** `getMonth` keeps its answer in CacheService (`mo|store|month|version`, cut into 30,000-character pieces, 1 h), so only the first caller after a change reads the sheets; every other phone's poll and every page start gets the kept answer. `getInitData_` keeps the list of months the same way (`mons|store|version`). What keeps it right:
 - every write flushes the sheet **before** the new version is set (`bumpVersion_` calls `SpreadsheetApp.flush()`), so nobody can read old data under the new version;
@@ -343,6 +355,7 @@ The page polls `getMonth` every 5 s while visible; the version changes on every 
 - Name filter (모두 + names that have something in that tab this month) on every tab except 미등록 and 취소. (일) is red and (토) blue in day headings.
 - Header "이번 달 취식 / 폐기" and the 월별 합계 table count 저회전 취식 / 폐기 as 취식 / 폐기; its footer shows only 미등록 **폐기**.
 - 월별 합계 tab shows every column at once (fits a 360 px phone): **직원별 폐기 / 취식** = 직원 · 폐기 수량 · 폐기 원가 · 취식 수량 · 취식 원가 (취식 on the right; no 매가; the 취식 원가 합계 is red; this store only) and **근무 시간** = 직원 · 근무일 · 근무 시간. Names are full names only.
+  - **A closed month shows its 월별 마감 numbers** (`S.closed`), not a sum of the lines, and the note ends with `· M월 D일 마감한 숫자예요 (그 뒤로는 안 바뀌어요)`. The name filter still picks one person's row. The current month is never closed, so the header's 이번 달 취식 / 폐기 is always live.
   - **근무 시간 is summed per person over all stores** (owner, 2026-11-16: the same person can work in 2 or 3 stores). Same full name = same person. The table lists everyone who worked in any store that month; 근무일 counts a day once even if worked in two stores; a person with hours outside this store has a small line under the name (`둘리점 10시간 · 두왕점 6시간`). When other stores add hours the title says `(모든 점포)` and the note `여러 점포에서 일한 시간을 사람별로 합쳤어요`. Shifts without 퇴근 are left out in every store (counted in the note).
 - Off-shift 폐기 check runs in the page: the line's 생성시각 must fall inside one of the worker's shifts, 30 min grace either side; an open shift counts up to now. Lines with only a date pass if any shift touches that day. Each line shows who was working then (`근무 지은`).
 - **Empty-time warning (출근 tab)**: for each past day of the month, from the first recorded day to yesterday, the page joins everyone's shifts (including overnight ones from the day before) over 00:00–24:00 and lists gaps ≥ 15 min. The store is treated as **open 24 h**. A shift without 퇴근 from a past day counts as unknown. Each gap has **내가 근무했어요**, which opens 근무 직접 입력 prefilled. Hidden while a name filter is on.

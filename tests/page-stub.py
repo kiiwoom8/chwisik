@@ -5,7 +5,8 @@
 
 It puts a fake google.script.run (api(store, fn, args)) with two stores of made-up data in front of the page script.
 Address options: ?delay=ms (server answer time, to see the loading screen), ?fail=N (the first N getBoot calls fail),
-?store=31949 (a link that names the store), ?gs=1 (adds a third store without 저회전 and without 전산).
+?store=31949 (a link that names the store), ?gs=1 (adds a third store without 저회전 and without 전산),
+?closed=1 (adds last month as a closed month: 월별 합계 shows its 월별 마감 numbers).
 The page keeps its data in localStorage: run localStorage.clear() in the console to start as a new phone.
 """
 import io, sys, re
@@ -20,6 +21,7 @@ stub = r'''
   var STORES = [{ id: "25377", name: "CU 울산둘리점", short: "둘리점", chain: "CU", jeo: true }, { id: "31949", name: "CU 울산두왕점", short: "두왕점", chain: "CU", jeo: true }];
   if (Q.get("gs")) STORES.push({ id: "gs-sinjeong", name: "GS25 울산신정중앙점", short: "신정중앙점", chain: "GS25", jeo: false });
   var now = new Date(Date.now() + 540 * 60000).toISOString(), today = now.slice(0, 10), mon = today.slice(0, 7);
+  var prevMon = new Date(Date.UTC(Number(mon.slice(0, 4)), Number(mon.slice(5, 7)) - 2, 1)).toISOString().slice(0, 7);
   function d(n) { return new Date(Date.now() + 540 * 60000 - n * 86400000).toISOString().slice(0, 10); }
   var DB = {
     "25377": { ver: 1, members: [{ full: "김성휘", short: "성휘", hasPw: false }, { full: "전병훈", short: "병훈", hasPw: false }, { full: "이국환", short: "국환", hasPw: true }],
@@ -40,11 +42,11 @@ stub = r'''
     var others = STORES.filter(function (x) { return x.id !== st; }).map(function (x) {
       return { id: x.id, short: x.short, shifts: DB[x.id].shifts.filter(function (s) { return s[2].slice(0, 7) === m; }).map(function (s) { return [s[2], s[3], s[4], s[5]]; }) };
     });
-    var ok = m === mon;
-    return { version: String(o.ver), store: st, month: m, rows: ok ? o.rows : [], cancels: [], shifts: o.shifts.filter(function (s) { return s[2].slice(0, 7) === m; }), usual: { "*": ["08:00", "13:00"] }, members: o.members, others: others };
+    var ok = m === mon, closed = !ok && Q.get("closed") ? { at: mon + "-02 00:01", rows: [["김성휘", 3, 3600, 5, 6000], ["전병훈", 1, 1200, 2, 2400]], todo: [4, 4800] } : null;
+    return { version: String(o.ver), store: st, month: m, rows: ok ? o.rows : [], cancels: [], closed: closed, shifts: o.shifts.filter(function (s) { return s[2].slice(0, 7) === m; }), usual: { "*": ["08:00", "13:00"] }, members: o.members, others: others };
   }
   var F = {
-    getBoot: function (st, me, tok) { return { init: { members: DB[st].members, months: [mon], version: String(DB[st].ver), live: { label: st === "25377" ? "21:31" : "", off: false, error: false, added: 0, wait: st === "25377" ? "" : st === "31949" ? "pw" : "adapter" }, store: st, stores: STORES, meOk: true }, month: month(st, mon) }; },
+    getBoot: function (st, me, tok) { return { init: { members: DB[st].members, months: Q.get("closed") ? [mon, prevMon] : [mon], version: String(DB[st].ver), live: { label: st === "25377" ? "21:31" : "", off: false, error: false, added: 0, wait: st === "25377" ? "" : st === "31949" ? "pw" : "adapter" }, store: st, stores: STORES, meOk: true }, month: month(st, mon) }; },
     getMonth: function (st, m, known, fresh) { return known === String(DB[st].ver) ? null : month(st, m); },
     refreshNow: function (st) { return { label: st === "25377" ? "21:32" : "", off: false, error: false, added: 0, wait: st === "25377" ? "" : "pw" }; },
     setTag: function (st, hint, key, type, member, m) { var o = DB[st]; o.rows.forEach(function (r) { if (r[1] === key) { r[8] = type; r[9] = type ? member : ""; r[10] = type ? member : ""; } }); o.ver++; return month(st, m); },

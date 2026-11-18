@@ -974,23 +974,35 @@ button.srow { cursor: pointer; }
     return out;
   }
 
+  /** '2026-12-02 00:01' → '12월 2일' (월별 마감 시각) */
+  function closedDay(at) {
+    var m = String(at || "").match(/^\d{4}-(\d\d)-(\d\d)/);
+    return m ? Number(m[1]) + "월 " + Number(m[2]) + "일" : "";
+  }
+
   function renderSum() {
     var box = $("sum"); box.textContent = "";
-    var by = {}, tot = { en: 0, ew: 0, vn: 0, vw: 0 }, todo = { n: 0, w: 0 }, who = curWho();
-    S.rows.forEach(function (r) {
+    var by = {}, tot = { en: 0, ew: 0, vn: 0, vw: 0 }, todo = { n: 0, w: 0 }, who = curWho(), cl = S.closed;
+    function add(k, vn, vw, en, ew) {
+      var o = by[k] = by[k] || { en: 0, ew: 0, vn: 0, vw: 0 };
+      o.vn += vn; o.vw += vw; o.en += en; o.ew += ew; tot.vn += vn; tot.vw += vw; tot.en += en; tot.ew += ew;
+    }
+    if (cl) {
+      // 마감된 달: 달이 끝날 때 적어 둔 숫자 (그 뒤 취소·등록이 바뀌어도 그대로)
+      todo.n = cl.todo[0]; todo.w = cl.todo[1];
+      cl.rows.forEach(function (c) { if (!who || c[0] === who) add(c[0], c[1], c[2], c[3], c[4]); });
+    } else S.rows.forEach(function (r) {
       if (!r[8]) { if (!r[13]) { todo.n += r[4]; todo.w += r[6]; } return; }
       if (who && r[9] !== who) return;
-      var k = r[9] || "(이름 없음)";
-      var o = by[k] = by[k] || { en: 0, ew: 0, vn: 0, vw: 0 };
-      if (r[8] === "취식") { o.en += r[4]; o.ew += r[6]; tot.en += r[4]; tot.ew += r[6]; }
-      else { o.vn += r[4]; o.vw += r[6]; tot.vn += r[4]; tot.vw += r[6]; }
+      if (r[8] === "취식") add(r[9] || "(이름 없음)", 0, 0, r[4], r[6]); else add(r[9] || "(이름 없음)", r[4], r[6], 0, 0);
     });
     var names = Object.keys(by).sort(function (a, b) { return (by[b].ew + by[b].vw) - (by[a].ew + by[a].vw); });
     var title = S.month.replace("-", "년 ") + "월 ";
+    var closedNote = cl ? " · " + closedDay(cl.at) + " 마감한 숫자예요 (그 뒤로는 안 바뀌어요)" : "";
     var eat = table(title + "직원별 폐기 / 취식", ["직원", "폐기 수량", "폐기 원가", "취식 수량", "취식 원가"],
       names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.vn), fmt(o.vw), fmt(o.en), fmt(o.ew)] }; }),
       ["합계", fmt(tot.vn), fmt(tot.vw), fmt(tot.en), fmt(tot.ew)],
-      "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식·폐기에는 저회전도 들어가요");
+      "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식·폐기에는 저회전도 들어가요" + closedNote);
     eat.querySelector("tfoot td:nth-child(5)").classList.add("hot");  // 취식 원가 합계는 빨간색으로 강조
     box.appendChild(eat);
 
@@ -1209,7 +1221,7 @@ button.srow { cursor: pointer; }
     if (!force && S.busy) return;
     var first = !S.ready;
     S.ready = true; S.failed = false;
-    S.version = res.version; S.rows = res.rows; S.cancels = res.cancels || []; S.shifts = res.shifts || []; S.others = res.others || []; S.usual = res.usual || {}; if (res.members) S.members = res.members;
+    S.version = res.version; S.rows = res.rows; S.cancels = res.cancels || []; S.shifts = res.shifts || []; S.others = res.others || []; S.closed = res.closed || null; S.usual = res.usual || {}; if (res.members) S.members = res.members;
     MONTHS[res.month] = res;
     render();
     if (first) arrive();
@@ -1303,7 +1315,7 @@ button.srow { cursor: pointer; }
     S.store = id;
     loadIdentity();
     S.busy = 0; S.refreshing = false; pend(-S.pend);
-    S.months = []; S.month = ""; S.version = ""; S.rows = []; S.cancels = []; S.shifts = []; S.others = []; S.usual = {}; S.members = [];
+    S.months = []; S.month = ""; S.version = ""; S.rows = []; S.cancels = []; S.shifts = []; S.others = []; S.closed = null; S.usual = {}; S.members = [];
     S.live = null; S.who = ""; S.q = ""; $("q").value = ""; S.ready = false; S.failed = false; S.online = true; MONTHS = {};
     ["picker", "pwSheet", "shiftEd", "confirm"].forEach(function (x) { $(x).hidden = true; });
     $("snack").hidden = true;
@@ -1425,7 +1437,7 @@ button.srow { cursor: pointer; }
     S.month = m;
     // 이번에 이미 본 달은 바로 그리고, 그 사이 바뀐 게 있는지만 물어봄
     if (MONTHS[m]) { take(MONTHS[m], true); window.scrollTo(0, 0); load(false); return; }
-    S.rows = []; S.cancels = []; S.shifts = []; S.others = []; S.version = ""; S.ready = false; render(); load(true);
+    S.rows = []; S.cancels = []; S.shifts = []; S.others = []; S.closed = null; S.version = ""; S.ready = false; render(); load(true);
   }
   $("mPrev").addEventListener("click", function () { goMonth(1); });
   $("mNext").addEventListener("click", function () { goMonth(-1); });
