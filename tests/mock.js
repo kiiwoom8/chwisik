@@ -19,6 +19,7 @@ class Range {
   setFontWeight() { return this; } setNumberFormat() { return this; }
   clearContent() { for (let i = 0; i < this.nr; i++) for (let j = 0; j < this.nc; j++) if (this.sh.data[this.r - 1 + i]) this.sh.data[this.r - 1 + i][this.c - 1 + j] = ''; return this; }
   getSheet() { return this.sh; }
+  copyTo(dest) { const v = this.getValues(); dest.sh.getRange(dest.r, dest.c, v.length, v[0].length).setValues(v); }
   createTextFinder(key) { const self = this; return { matchEntireCell() { return this; }, findNext() { for (let i = 0; i < self.sh.data.length; i++) if (String(self.sh.data[i][self.c - 1]) === key) return { getRow: () => i + 1 }; return null; } }; }
 }
 class Sheet {
@@ -28,6 +29,8 @@ class Sheet {
   getMaxColumns() { return this.cols; } getMaxRows() { return Math.max(1000, this.data.length); }
   insertColumnsAfter(c, n) { this.cols += n; }
   setFrozenRows() {} clear() { this.data = []; }
+  setName(n) { this.name = n; return this; } insertRowsAfter() {}
+  copyTo(d) { const s = d.insertSheet('Copy of ' + this.name); s.data = this.data.map(r => r.slice()); s.cols = this.cols; return s; }
   getRange(a, b, c, d) {
     if (typeof a === 'string') {
       let m = a.match(/^([A-Z]+):([A-Z]+)$/); if (m) return new Range(this, 1, colNum(m[1]), this.getMaxRows(), colNum(m[2]) - colNum(m[1]) + 1);
@@ -39,12 +42,22 @@ class Sheet {
   appendRow(row) { const n = this.getLastRow(); this.data.length = n; this.data.push(row.slice()); }
   deleteRow(r) { this.data.splice(r - 1, 1); }
 }
+// a spreadsheet file; docs[0] is the one the script is bound to, SpreadsheetApp.create adds more (backups)
+const docs = [];
+function newDoc(name, sheets) {
+  const id = 'ss' + docs.length;
+  const d = {
+    sheets, name,
+    getId: () => id, getName: () => d.name, getUrl: () => 'https://docs.google.com/spreadsheets/d/' + id,
+    getSheetByName: n => sheets.find(s => s.name === n) || null,
+    insertSheet(n) { if (this.getSheetByName(n)) throw new Error('sheet exists: ' + n); const s = new Sheet(n); sheets.push(s); return s; },
+    getNumSheets: () => sheets.length, getSheets: () => sheets, setSpreadsheetTimeZone() {}, deleteSheet(s) { if (sheets.length === 1) throw new Error('last sheet'); sheets.splice(sheets.indexOf(s), 1); }
+  };
+  docs.push(d);
+  return d;
+}
 const sheets = [];
-const doc = {
-  getSheetByName: n => sheets.find(s => s.name === n) || null,
-  insertSheet(n) { if (this.getSheetByName(n)) throw new Error('sheet exists: ' + n); const s = new Sheet(n); sheets.push(s); return s; },
-  getNumSheets: () => sheets.length, getSheets: () => sheets, setSpreadsheetTimeZone() {}, deleteSheet(s) { sheets.splice(sheets.indexOf(s), 1); }
-};
+const doc = newDoc('직원 취식 목록', sheets);
 const props = {}, cache = {}, log = { fetch: [], alerts: [], mail: [], triggers: [] };
 function fmt(d, tz, f) {
   const t = new Date(d.getTime() + (tz === 'UTC' ? 0 : 9) * 3600000), p = n => ('0' + n).slice(-2);
@@ -70,7 +83,9 @@ function parseReq(buf) {
 }
 const sandbox = {
   console, JSON, Math, Date, Object, Array, String, Number, RegExp, Error, parseInt, parseFloat, isNaN,
-  SpreadsheetApp: { getActive: () => doc, flush() {}, getUi: () => { throw new Error('no ui'); } },
+  SpreadsheetApp: { getActive: () => doc, flush() {}, getUi: () => { throw new Error('no ui'); },
+    create(name) { const d = newDoc(name, []); d.insertSheet('Sheet1'); return d; },
+    openById(id) { const d = docs.find(x => x.getId() === id && !x.gone); if (!d) throw new Error('no file ' + id); return d; } },
   PropertiesService: { getScriptProperties: () => ({
     getProperties: () => Object.assign({}, props), getProperty: k => (k in props ? props[k] : null),
     setProperty(k, v) { props[k] = String(v); }, setProperties(o) { Object.assign(props, o); }, deleteProperty(k) { delete props[k]; } }) },
@@ -129,4 +144,4 @@ vm.createContext(sandbox);
 for (const f of ['Code.gs', 'Oct2026.gs']) vm.runInContext(fs.readFileSync(path.join(root, 'apps-script', f), 'utf8'), sandbox, { filename: f });
 // every "execution" starts with fresh globals, like Apps Script: reset the per-execution caches
 function exec(src) { vm.runInContext('CUR_ = null; SS_DOC_ = null; PS_ = null; PSNAP_ = null; MEM_ = {};', sandbox); return vm.runInContext(src, sandbox); }
-module.exports = { exec, sandbox, sheets, doc, props, cache, log, BGF, Sheet, fmt };
+module.exports = { exec, sandbox, sheets, doc, docs, props, cache, log, BGF, Sheet, fmt };

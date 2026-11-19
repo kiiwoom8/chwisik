@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-20 (근무 시간 table: 모든 점포 / 지금 점포 filter)
+Last updated: 2026-11-20 (backups: nightly copy into separate files + 백업에서 되살리기 menu)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -225,6 +225,7 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 | `OCT_APPLY`, `OCT_APPLY2`, `OCT_APPLY_TRY` | `octApply_`, `octApply2_` (Oct2026.gs) | `1` = October 취식 tags and shifts were written once / the untouched lines were written as 이국환's 취식 once; time of the last try (a failed try waits 10 min). |
 | `PW_SALT`, `TOKEN_KEY` | first use | password hashing salt / token HMAC key. Deleting `TOKEN_KEY` logs every phone out; deleting `PW_SALT` invalidates every stored password |
 | `DEV_PW_HASH` | menu 개발자 비밀번호 설정 | hash of the developer bypass password |
+| `BAK_<slot>`, `BAK_AT_<slot>` | `backupTo_` | id of a backup spreadsheet file and the time of its last copy (`yyyy-MM-dd HH:mm`). Slots: `D0`–`D6` weekday (일–토), `M1`–`M12` month end, `H` 직접, `R` 되살리기 직전. Delete a pair to forget that file (the next backup of the slot makes a new one). |
 
 ## Passwords (optional, per name)
 
@@ -243,7 +244,20 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 - **월 마감 다시 하기 (지난 달 합계를 지금 숫자로)**: asks which store, then a past month (`2026-10`); rewrites that month in 월별 마감 from 폐기목록 as it is now (`closeMonth_`). Not for the current month or one not due yet.
 - **매일 자동 가져오기 켜기**: recreates the nightly trigger.
 - **실시간 가져오기 켜기 / 끄기**: the 5-min trigger and the on-open refresh, for all stores. 끄기 sets `LIVE_OFF=1`; the nightly import keeps running.
+- **지금 백업하기**: copies everything into the `직접` backup file now (`menuBackupNow`); the alert gives the file's link.
+- **백업에서 되살리기**: lists the backups (newest first), asks which one and which sheets (empty = all, or names with commas), confirms, then restores (`menuRestore` → `restoreFrom_`). See *Backups*.
 - **개발자 비밀번호 설정** (all stores), **직원 비밀번호 지우기** (asks which store): see *Passwords*.
+
+## Backups (since 2026-11-20)
+
+Why: the data (tags, 출근일지, 직원 and their password hashes, 월별 마감) exists only in the one spreadsheet. Anyone with the /exec link can write under password-less names, and an editor can empty or delete the file. Only 폐기 lines can be fetched from BGF again.
+
+- **Where:** separate spreadsheet files in the owner's Drive (root folder), named `직원 취식 목록 백업 · <slot>`: `월요일` … `일요일` (each overwritten a week later), `1월 말` … `12월 말` (overwritten a year later), `직접` (menu), `되살리기 직전`. So the last 7 days and the last 12 month ends are always there, also if this spreadsheet is deleted.
+- **When:** `nightly()` (00:01) after the import: today's weekday file, and on the 1st also last month's month-end file (`backupNightly_`). A backup failure fails the nightly run, so Google's trigger-failure email reaches the owner; the run's text says `백업 실패: …`.
+- **What:** every sheet (values + formats, `Sheet.copyTo`) except the `월별 합계` sheets (formulas; `setup()` writes them again), plus a `백업 정보` sheet (time, source, rows per sheet). New copies are made before the old ones are deleted, so a run that dies keeps the old backup. Script Properties are **not** copied (they hold the BGF passwords); losing `PW_SALT` / `TOKEN_KEY` means workers set passwords again.
+- **Restore** (`restoreFrom_(slot, only)`): first copies the live data into `되살리기 직전` (so a restore can be undone the same way), then inside the script lock: each backup sheet is copied in; a live sheet keeps its place and settings and gets the backup's contents + formats; a missing sheet comes back whole. Every store's `VER` / `SVER` moves, so open pages read again. 폐기 lines that came in after the backup: menu 기간 지정해서 가져오기.
+- **Permission:** only `SpreadsheetApp` (`create`, `openById`, `copyTo`), which the script already had. No `DriveApp`, so no new consent and no break of the /exec link. Side effect: old backup files can't be deleted by the script; the slots reuse the same 21 files at most.
+- **Not covered:** losing the owner's Google account itself (backups live in the same Drive). Between two nightly backups, Google Sheets' own version history (파일 → 버전 기록) covers single bad edits.
 
 ## BGF 점포시스템 protocol (reverse-engineered 2026-11-08, extended 2026-11-09)
 
@@ -417,6 +431,7 @@ Set up 2026-11-08.
 - **After code changes** → commit and push to `main`. GitHub Actions deploys it. The `/exec` URL stays the same.
 - **Code got deleted in the editor** → restore from `apps-script/` in this repo (push again or run the workflow by hand).
 - **A wrong tag by another worker** → owner clears columns M–P of that row in 폐기목록.
+- **Data ruined or deleted** (someone emptied sheets, deleted the 직원 list, wiped tags) → menu 취식 관리 → 백업에서 되살리기, pick the last good backup (empty = all sheets). If the whole spreadsheet file is gone: open the newest `직원 취식 목록 백업 · …` file in Drive (or restore the original from Drive's 휴지통 within 30 days). One bad edit only → 파일 → 버전 기록 in the spreadsheet.
 
 ## Known limits / gotchas
 

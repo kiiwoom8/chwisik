@@ -113,6 +113,13 @@ liveTick(e) ── one store ──┘                                          
 - `cancelMatch_(vals, nums)` — BGF cancel pairing; product key = `src|상품코드-or-품명`. Returns `{neg, left}`.
 - `setTag(rowHint, key, type, memberFull, month, note, me, token)` — the only writer of columns M–R. Checks: valid type, `authMember_`, own name only, row found by hint or key, row not owned by someone else (저회전 rows take 취식 or 폐기). Then writes and returns `getMonth`.
 
+### Backups — section `백업 / 되살리기` (end of file)
+
+- `bakName_(slot)`, `bakFile_(slot, make)` (opens the slot's file by `BAK_<slot>`, makes one when missing), `isSummarySheet_(name)`.
+- `backupTo_(slot)` — copies every sheet but 월별 합계 into the slot's file (new copies first, old deleted after), writes `백업 정보`, sets `BAK_AT_<slot>`. `backupNightly_()` — weekday slot + month-end slot on the 1st; called at the end of `nightly()`.
+- `backupList_()` — existing backups newest first. `restoreFrom_(slot, only)` — backs up into `R`, then copies the slot's sheets back in the script lock and moves every store's `VER` / `SVER`.
+- Menu: `menuBackupNow`, `menuRestore` (public names but call `SpreadsheetApp.getUi()` first, so they fail from the web).
+
 ### 출근일지 — section `출근일지`
 
 - `shiftSheet_()`, `readShifts_()`, `writeShift_(sh, row, s)`.
@@ -168,8 +175,8 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 
 ## tests/
 
-- `mock.js` — loads `Code.gs` + `Oct2026.gs` into a Node `vm` with in-memory SpreadsheetApp, PropertiesService, CacheService, LockService, ScriptApp, Utilities and a fake BGF behind `UrlFetchApp`. `exec(src)` = one Apps Script execution (resets the per-execution globals).
-- `server.test.js` — `node tests/server.test.js`: stores, caches, imports, nightly, passwords (43 checks).
+- `mock.js` — loads `Code.gs` + `Oct2026.gs` into a Node `vm` with in-memory SpreadsheetApp (several files: `SpreadsheetApp.create` / `openById` for backups), PropertiesService, CacheService, LockService, ScriptApp, Utilities and a fake BGF behind `UrlFetchApp`. `exec(src)` = one Apps Script execution (resets the per-execution globals).
+- `server.test.js` — `node tests/server.test.js`: stores, caches, imports, nightly, passwords, backups and restore (64 checks).
 - `page-stub.py` — writes a copy of `Index.html` with a fake `google.script.run.api` (two stores) for the browser.
 
 ## Recipes

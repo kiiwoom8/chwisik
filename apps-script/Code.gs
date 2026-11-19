@@ -262,6 +262,9 @@ function onOpen() {
     .addItem('저회전 지난 날짜 모두 가져오기 (' + STORES[0].short + ')', 'menuJeoBackfill')
     .addItem('월 마감 다시 하기 (지난 달 합계를 지금 숫자로)', 'menuReclose')
     .addSeparator()
+    .addItem('지금 백업하기', 'menuBackupNow')
+    .addItem('백업에서 되살리기', 'menuRestore')
+    .addSeparator()
     .addItem('매일 자동 가져오기 켜기', 'installNightlyTrigger')
     .addItem('실시간 가져오기 켜기 (5분마다 + 링크 열려 있으면 1분마다)', 'menuLiveOn')
     .addItem('실시간 가져오기 끄기', 'menuLiveOff')
@@ -446,6 +449,8 @@ function nightly(e) {
     catch (x) { err = err || x; out.push(st.name + ' 실패: ' + x.message); }
   });
   closeAll_();
+  try { out.push('백업: ' + backupNightly_().map(function (b) { return b.name.replace(BAK_PREFIX, '') + ' ' + b.sheets + '시트'; }).join(', ')); }
+  catch (x) { err = err || x; out.push('백업 실패: ' + x.message); }
   if (err) throw new Error(out.join('\n'));
   return out.join('\n');
 }
@@ -1828,4 +1833,135 @@ function addMember(full) {
     lock.releaseLock();
   }
   return members_();
+}
+
+/* ======================= 백업 / 되살리기 ======================= */
+/*
+ * Backups are separate spreadsheet files in the owner's Drive: one per weekday (overwritten a week later) and
+ * one per month end (overwritten a year later), so the last 7 days and the last 12 month ends can always be
+ * brought back, even if this spreadsheet is emptied or deleted. nightly() makes them; the menu makes one on
+ * demand ('직접', its own file) and brings one back. Before bringing one back, the live data goes to the
+ * '되살리기 직전' file, so a restore can be undone too.
+ * Only SpreadsheetApp is used (no DriveApp), so this asks the owner for no new permission.
+ * A backup copies every sheet (values + formats) except the 월별 합계 sheets (formulas, made by setup again),
+ * plus a '백업 정보' sheet. Files are found by the ids in Script Properties BAK_<slot>, times in BAK_AT_<slot>.
+ */
+var BAK_PREFIX = '직원 취식 목록 백업 · ';
+var BAK_INFO = '백업 정보';
+var BAK_DAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** Slot → file name. D0..D6 = weekday, M1..M12 = month end, H = 직접, R = 되살리기 직전. */
+function bakName_(slot) {
+  if (slot === 'R') return BAK_PREFIX + '되살리기 직전';
+  if (slot === 'H') return BAK_PREFIX + '직접';
+  if (slot.charAt(0) === 'D') return BAK_PREFIX + BAK_DAYS[Number(slot.slice(1))] + '요일';
+  return BAK_PREFIX + slot.slice(1) + '월 말';
+}
+function bakFile_(slot, make) {
+  var id = gget_('BAK_' + slot), ss = null;
+  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }   // deleted by hand: make a new one
+  if (!ss && make) { ss = SpreadsheetApp.create(bakName_(slot)); gset_('BAK_' + slot, ss.getId()); }
+  return ss;
+}
+function isSummarySheet_(name) { return name === SH_SUMMARY || name.slice(-(SH_SUMMARY.length + 1)) === ' ' + SH_SUMMARY; }
+
+/** Copies every sheet into the slot's file. New copies first, old ones deleted after, so a run that dies keeps the old backup. */
+function backupTo_(slot) {
+  var src = doc_(), dst = bakFile_(slot, true), when = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
+  var info = dst.getSheetByName(BAK_INFO) || dst.insertSheet(BAK_INFO, 0);
+  var made = [], rows = [];
+  src.getSheets().forEach(function (s) {
+    var n = s.getName();
+    if (n === BAK_INFO || isSummarySheet_(n)) return;
+    made.push({ sh: s.copyTo(dst), name: n });
+    rows.push([n, Math.max(0, s.getLastRow() - 1)]);
+  });
+  var keep = made.map(function (m) { return m.sh; });
+  dst.getSheets().slice().forEach(function (s) { if (s !== info && keep.indexOf(s) < 0) dst.deleteSheet(s); });
+  made.forEach(function (m) { m.sh.setName(m.name); });
+  info.clear();
+  info.getRange(1, 1, 3, 2).setValues([['백업 시각', when], ['원본', src.getName()], ['시트', '줄 수 (제목 줄 빼고)']]);
+  if (rows.length) info.getRange(4, 1, rows.length, 2).setValues(rows);
+  SpreadsheetApp.flush();
+  gset_('BAK_AT_' + slot, when);
+  return { slot: slot, name: bakName_(slot), when: when, sheets: rows.length, url: dst.getUrl() };
+}
+
+/** nightly(): today's weekday file, and on the 1st also last month's month-end file. */
+function backupNightly_() {
+  var now = new Date(), kst = Utilities.formatDate(now, TZ, 'yyyy-MM-dd');
+  var slots = ['D' + new Date(kst + 'T00:00:00Z').getUTCDay()];
+  if (kst.slice(8) === '01') slots.push('M' + Number(Utilities.formatDate(new Date(now.getTime() - 86400000), TZ, 'M')));
+  return slots.map(backupTo_);
+}
+
+/** Backups that exist, newest first: [{ slot, name, when }]. */
+function backupList_() {
+  var all = snap_(), out = [];
+  Object.keys(all).forEach(function (k) {
+    var m = k.match(/^BAK_AT_(D[0-6]|M\d{1,2}|H|R)$/);
+    if (m && all['BAK_' + m[1]]) out.push({ slot: m[1], name: bakName_(m[1]), when: String(all[k]) });
+  });
+  return out.sort(function (a, b) { return a.when < b.when ? 1 : a.when > b.when ? -1 : 0; });
+}
+
+/**
+ * Brings the slot's sheets back into this spreadsheet (only: list of sheet names, or null = all).
+ * The live data goes to the 'R' file first (unless restoring from 'R' itself). A live sheet keeps its place and
+ * settings; its contents and formats become the backup's. A missing sheet comes back as a whole.
+ * Every store's data version moves, so open pages read it again. Returns the restored sheet names.
+ */
+function restoreFrom_(slot, only) {
+  var bak = bakFile_(slot, false);
+  if (!bak) throw new Error('그 백업 파일을 찾지 못했어요.');
+  if (slot !== 'R') backupTo_('R');
+  var doc = doc_(), done = [];
+  withLock_(function () {
+    bak.getSheets().forEach(function (b) {
+      var n = b.getName();
+      if (n === BAK_INFO || (only && only.indexOf(n) < 0)) return;
+      var tmp = b.copyTo(doc), live = doc.getSheetByName(n);
+      if (!live) { tmp.setName(n); done.push(n); return; }
+      var r = tmp.getMaxRows(), c = tmp.getMaxColumns();
+      if (live.getMaxRows() < r) live.insertRowsAfter(live.getMaxRows(), r - live.getMaxRows());
+      if (live.getMaxColumns() < c) live.insertColumnsAfter(live.getMaxColumns(), c - live.getMaxColumns());
+      live.clear();
+      tmp.getRange(1, 1, r, c).copyTo(live.getRange(1, 1));
+      doc.deleteSheet(tmp);
+      done.push(n);
+    });
+    SpreadsheetApp.flush();
+    onStores_().forEach(function (st) { var v = nextVer_(st); pset_('VER', v, st); pset_('SVER', v, st); });
+  });
+  return done;
+}
+
+function menuBackupNow() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var r = backupTo_('H');
+    ui.alert('백업했어요 (' + r.when + ', 시트 ' + r.sheets + '개).\n\n파일: ' + r.name + '\n' + r.url);
+  } catch (e) { ui.alert('백업하지 못했어요: ' + e.message); }
+}
+
+function menuRestore() {
+  var ui = SpreadsheetApp.getUi();
+  var list = backupList_();
+  if (!list.length) { ui.alert('아직 백업이 없어요. 매일 밤 00:01 무렵 자동으로 만들어져요. 지금 만들려면 [지금 백업하기].'); return; }
+  var r = ui.prompt('백업에서 되살리기', '어느 백업인가요? 번호를 적어 주세요.\n\n' +
+    list.map(function (b, i) { return (i + 1) + ' = ' + b.when + ' · ' + b.name.replace(BAK_PREFIX, ''); }).join('\n'), ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var b = list[Number(r.getResponseText().trim()) - 1];
+  if (!b) { ui.alert('번호를 적어 주세요. 예: 1'); return; }
+  r = ui.prompt('되살릴 시트', '비워 두면 모든 시트를 되살려요.\n일부만: 시트 이름을 쉼표로 (예: 출근일지, 두왕점 직원)', ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var t = r.getResponseText().trim(), only = t ? t.split(',').map(function (x) { return x.trim(); }).filter(String) : null;
+  var what = only ? only.join(', ') : '모든 시트';
+  if (ui.alert('되살리기 확인', b.when + ' 백업으로 ' + what + '을(를) 바꿔요.\n그 뒤에 적힌 내용은 이 시트에서 사라지고, 지금 내용은 먼저 [' + bakName_('R').replace(BAK_PREFIX, '') + '] 백업에 남겨요.\n\n계속할까요?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  try {
+    var done = restoreFrom_(b.slot, only);
+    if (!done.length) { ui.alert('그 이름의 시트가 백업에 없어요. 이름을 확인해 주세요.'); return; }
+    ui.alert('되살렸어요: ' + done.join(', ') +
+      '\n\n백업 뒤에 들어온 폐기는 [기간 지정해서 가져오기]로 다시 가져오세요. 되돌리려면 [백업에서 되살리기]에서 [' + bakName_('R').replace(BAK_PREFIX, '') + ']를 고르세요.');
+  } catch (e) { ui.alert('되살리지 못했어요: ' + e.message); }
 }

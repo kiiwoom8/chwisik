@@ -174,4 +174,45 @@ ok('I 둘리 name still open', !!r && r.shifts.length >= 1);
 r = exec("api('31949', 'login', ['김성휘', 'abcd'])");
 ok('I login gives the token', !!r.token);
 
+// ----- K. backups: nightly copies every sheet into its own file; the menu helper brings them back -----
+const kst = fmt(new Date(), 'KST', 'yyyy-MM-dd'), dSlot = 'D' + new Date(kst + 'T00:00:00Z').getUTCDay();
+const bakOf = slot => M.docs.find(d => d.getId() === props['BAK_' + slot]);
+let bk = bakOf(dSlot);
+const plain = n => !/월별 합계$/.test(n);
+ok('K nightly made today\'s weekday backup', bk && props['BAK_AT_' + dSlot] && bk.getName() === '직원 취식 목록 백업 · ' + '일월화수목금토'[+dSlot.slice(1)] + '요일', Object.keys(props).filter(k => /^BAK/.test(k)));
+exec("backupTo_('" + dSlot + "')");   // again: 월별 마감 was made (J) after the nightly backup (H)
+ok('K backup = every sheet but 월별 합계, + 백업 정보, no "Copy of"',
+  JSON.stringify(bk.sheets.map(x => x.name).filter(n => n !== '백업 정보').sort()) === JSON.stringify(sheets.map(x => x.name).filter(plain).sort()) && bk.sheets[0].name === '백업 정보' && !bk.sheets.some(x => /Copy of|Sheet1/.test(x.name)), bk.sheets.map(x => x.name));
+ok('K same slot again: replaced, not doubled', bakOf(dSlot) === bk && bk.sheets.length === sheets.filter(x => plain(x.name)).length + 1, bk.sheets.map(x => x.name));
+// rows as the sheet shows them (a restore copies the whole grid, so the mock pads with empty cells)
+const snap = x => JSON.stringify(x.data.slice(0, x.getLastRow()).map(r => { r = r.slice(); while (r.length && (r[r.length - 1] === '' || r[r.length - 1] === undefined)) r.pop(); return r; }));
+const goodShifts = snap(sh), goodMem = snap(mem), nDocs = M.docs.length;
+// someone ruins the data: 출근일지 emptied, 직원 sheet deleted, 폐기 tags wiped
+sh.data.length = 1;
+M.sheets.splice(M.sheets.indexOf(mem), 1);
+const goodTags = snap(items);
+items.data.forEach((x, i) => { if (i) x[12] = x[13] = x[14] = x[15] = ''; });
+const vBefore = props.VER;
+let back = exec("restoreFrom_('" + dSlot + "', null)");
+ok('K restore brings back every sheet', back.length === bk.sheets.length - 1 && snap(doc.getSheetByName('출근일지')) === goodShifts && snap(doc.getSheetByName('직원')) === goodMem && snap(items) === goodTags && goodTags.indexOf('취식') > 0, back);
+ok('K live sheet object kept, nothing left over', doc.getSheetByName('출근일지') === sh && !sheets.some(x => /Copy of/.test(x.name)) && sheets.filter(x => x.name === '직원').length === 1, sheets.map(x => x.name));
+ok('K versions moved so pages reload', props.VER !== vBefore && props.SVER && props.VER_31949, [vBefore, props.VER]);
+const rb = bakOf('R');
+ok('K the ruined state went to 되살리기 직전 first', rb && rb.getSheetByName('출근일지').data.length === 1 && !rb.getSheetByName('직원') && M.docs.length === nDocs + 1, rb && rb.sheets.map(x => x.name));
+// only some sheets
+sh.data.length = 1; const m2 = doc.getSheetByName('직원'), memRows = m2.getLastRow(); m2.getRange(memRows + 1, 1, 1, 4).setValues([['새사람', '사람', '', '']]);
+back = exec("restoreFrom_('" + dSlot + "', ['출근일지'])");
+ok('K restore only the named sheet', back.length === 1 && snap(sh) === goodShifts && m2.getLastRow() === memRows + 1, back);
+ok('K list newest first, has R', (() => { const l = exec('backupList_()'); return l.length >= 2 && l[0].when >= l[l.length - 1].when && l.some(b => b.slot === 'R'); })());
+// a backup file deleted by hand: the next backup makes a new one
+bk.gone = true;
+exec("backupTo_('" + dSlot + "')");
+ok('K deleted backup file is made again', bakOf(dSlot) && bakOf(dSlot) !== bk && bakOf(dSlot).getSheetByName('출근일지'));
+threw = ''; try { exec("restoreFrom_('M7', null)"); } catch (e) { threw = e.message; }
+ok('K missing slot refused', /찾지 못했어요/.test(threw), threw);
+threw = ''; try { exec("api('25377', 'restoreFrom_', ['" + dSlot + "', null])"); } catch (e) { threw = e.message; }
+ok('K not callable through api()', /알 수 없는/.test(threw), threw);
+threw = ''; try { exec('menuRestore()'); } catch (e) { threw = e.message; }
+ok('K menu needs the spreadsheet ui', /no ui/.test(threw), threw);
+
 console.log(process.exitCode ? 'SOME FAILED' : 'ALL ' + n + ' PASSED');
