@@ -997,7 +997,8 @@ button.srow { cursor: pointer; }
       if (who && r[9] !== who) return;
       if (r[8] === "취식") add(r[9] || "(이름 없음)", 0, 0, r[4], r[6]); else add(r[9] || "(이름 없음)", r[4], r[6], 0, 0);
     });
-    var names = Object.keys(by).sort(function (a, b) { return (by[b].ew + by[b].vw) - (by[a].ew + by[a].vw); });
+    // 취식 원가가 많은 사람부터 (같으면 폐기 + 취식 원가 합, 그다음 이름)
+    var names = Object.keys(by).sort(function (a, b) { var x = by[a], y = by[b]; return y.ew - x.ew || (y.ew + y.vw) - (x.ew + x.vw) || a.localeCompare(b, "ko"); });
     var title = S.month.replace("-", "년 ") + "월 ";
     var closedNote = cl ? " · " + closedDay(cl.at) + " 마감한 숫자예요 (그 뒤로는 안 바뀌어요)" : "";
     var eat = table(title + "직원별 폐기 / 취식", ["직원", "폐기 수량", "폐기 원가", "취식 수량", "취식 원가"],

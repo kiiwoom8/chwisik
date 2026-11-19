@@ -1340,7 +1340,7 @@ function monthTotals_(rows) {
 function closeMonth_(month) {
   return withLock_(function () {
     var t = monthTotals_(monthLines_(month).rows), at = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
-    var names = Object.keys(t.by).sort(function (a, b) { var x = t.by[a], y = t.by[b]; return (y.ew + y.vw) - (x.ew + x.vw) || (a < b ? -1 : 1); });
+    var names = Object.keys(t.by).sort(function (a, b) { var x = t.by[a], y = t.by[b]; return y.ew - x.ew || (y.ew + y.vw) - (x.ew + x.vw) || (a < b ? -1 : 1); });   // 취식 원가 first, like the page
     var add = names.map(function (k) { var o = t.by[k]; return [month, k, o.vn, o.vw, o.en, o.ew, at]; });
     add.push([month, CLOSE_TODO, t.todo.n, t.todo.w, '', '', at]);   // always there, so every closed month has a row
     var old = closeRows_(), keep = old.filter(function (r) { return r.d[0] !== month; }).map(function (r) { return r.v; });

@@ -43,6 +43,7 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
 - Column order: **직원 · 폐기 수량 · 폐기 원가 · 취식 수량 · 취식 원가**, so 취식 is on the right (title `직원별 폐기 / 취식`).
 - Names are the **full name only** (`김성휘`), not `김성휘 (성휘)`.
 - **No 취식 매가 column** (removed on the owner's request). The **취식 원가 합계** number is red.
+- **직원별 폐기 / 취식 rows go by 취식 원가, most first** (owner, 2026-11-20: "order along 취식 원가 … instead of sum of 폐기 and 취식"). Ties: 폐기 + 취식 원가 sum, then name. (Was: by the sum of 폐기 원가 + 취식 원가.)
 
 **Tab bar**
 - **전체 and 취소 live under `더보기`** (a menu at the end of the tab bar), not as their own tabs (owner, 2026-11-11: hide them so the bar stays clean).
@@ -274,3 +275,6 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
   - **While saving:** the sync label says `저장 중…` (spinning) for tags too; a row still on its way can't be opened (`아직 저장 중이에요. 잠시 후 다시 눌러 주세요.`); leaving the page asks first (`beforeunload`).
   - Checked: `node --check` on both files; `node tests/server.test.js` (51 passed); page stub (now with `deleteShift`, editing by key and `?savefail=1`) driven with Playwright at 360 px: with a 3 s server the sheet closed and the faded row (`14:00 – 18:00` for 14:10 typed) showed in 0.08 s with `저장 중…`, tapping it was refused, the label went back after the answer; delete showed in 0 s; with `?savefail=1` the row went away again and the editor came back with `15:00`, `19:00`, the memo and the reason. Not tried on a phone or against the live server.
 
+## 2026-11-20
+
+- **(this commit) — 월별 합계: 직원별 폐기 / 취식 sorted by 취식 원가.** The owner: "order along 취식 원가 from 월별합계's 직원별 폐기/취식 instead of sum of 폐기 and 취식". `renderSum()` in `Index.html` now sorts by 취식 원가 descending (ties: 폐기 + 취식 원가 sum, then name in Korean order); closed months are re-sorted the same way on the page. `closeMonth_()` in `Code.gs` writes the 월별 마감 rows in the same order so the sheet matches (already-closed months keep their old row order in the sheet; the page sorts them anyway).
