@@ -184,7 +184,7 @@ main .wrap { padding-block: 8px calc(110px + env(safe-area-inset-bottom, 0px)); 
 /* 데이터가 처음 그려질 때 살짝 떠오름 */
 .arrive { animation: arrive .24s ease-out; }
 @keyframes arrive { from { opacity: 0; transform: translateY(6px); } }
-@media (prefers-reduced-motion: reduce) { .sk::after { animation: none; display: none; } .loading .lt i { animation-duration: 2s; } .arrive { animation: none; } .pbar.on i { animation-duration: 2.4s; } .stamp, .tab, .wchip, .primary, .ghost, .clock, .fchip, .fchip .fchev { transition: none; } .fmenu { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .sk::after { animation: none; display: none; } .loading .lt i { animation-duration: 2s; } .arrive { animation: none; } .pbar.on i { animation-duration: 2.4s; } .stamp, .tab, .wchip, .primary, .ghost, .clock, .fchip, .fchip .fchev, .sortbtn .tri { transition: none; } .fmenu { animation: none; } }
 
 .sum { margin-top: 14px; display: grid; gap: 14px; }
 .sum h2 { font-size: 15px; margin: 0; }
@@ -194,6 +194,18 @@ table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
 th, td { padding: 9px 10px; text-align: right; border-bottom: 1px solid var(--rule); white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; }
 thead th { color: var(--muted); font-weight: 500; font-size: 12px; }
+/* 월별 합계 표 머리글: 누르면 그 열로 정렬. 이름 뒤 작은 삼각형 (아래 = 큰 것부터, 위 = 작은 것부터) */
+thead th.sortable { padding: 0; }
+.sortbtn { display: flex; align-items: center; justify-content: flex-end; gap: 3px; width: 100%; padding: 9px 10px; border: 0; background: none; color: inherit; font: inherit; line-height: inherit; text-align: inherit; white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+th:first-child .sortbtn { justify-content: flex-start; }
+th:not(:first-child) .sortbtn { padding-left: 2px; gap: 2px; }   /* 숫자 열은 오른쪽 정렬이라 왼쪽 여백을 줄여 360 px에 5열이 그대로 들어가게 */
+.sortbtn .tri { width: 7px; height: 7px; flex: none; opacity: .45; transition: transform .18s ease, opacity .15s; }
+th[aria-sort] .sortbtn { color: var(--ink); }
+th[aria-sort] .tri { opacity: 1; }
+th[aria-sort="ascending"] .tri { transform: rotate(180deg); }
+@media (hover: hover) { .sortbtn:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); } }
+.sortbtn:active { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.sortbtn:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: 6px; }
 tfoot td { font-weight: 700; border-bottom: 0; }
 tfoot td.hot { color: var(--void); }
 tr.meRow td:first-child { color: var(--accent); font-weight: 700; }
@@ -418,6 +430,10 @@ button.srow { cursor: pointer; }
   var K_SUMVIEW = "chwisik.sumView";   // 월별 합계 보기: "eat" (취식, default) or "all" (폐기 + 취식); per phone, all stores
   S.sumView = lsGet(K_SUMVIEW) === "all" ? "all" : "eat";
   var SUM_OPTS = { eat: "취식", all: "폐기 + 취식" };
+  // 월별 합계 표 정렬: { 표 id: { h: 머리글 이름, d: "asc" | "desc" } }, 이 폰에만. 없거나 깨졌으면 표마다 기본 정렬
+  var K_SUMSORT = "chwisik.sumSort";
+  function sumSort() { try { var o = JSON.parse(lsGet(K_SUMSORT) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
+  function setSumSort(id, v) { var o = sumSort(); if (v) o[id] = v; else delete o[id]; lsSet(K_SUMSORT, JSON.stringify(o)); }
   var SF = null;   // 월별 합계 필터 메뉴가 열려 있으면 { btn, menu, y }
   function closeSumMenu(focusBtn) {
     if (!SF) return;
@@ -1035,13 +1051,15 @@ button.srow { cursor: pointer; }
       });
       var t = all
         ? table(title + "직원별 폐기 / 취식", ["직원", "폐기 수량", "폐기 원가", "취식 수량", "취식 원가"],
-            names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.vn), fmt(o.vw), fmt(o.en), fmt(o.ew)] }; }),
+            names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.vn), fmt(o.vw), fmt(o.en), fmt(o.ew)], keys: [k, o.vn, o.vw, o.en, o.ew] }; }),
             ["합계", fmt(tot.vn), fmt(tot.vw), fmt(tot.en), fmt(tot.ew)],
-            "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식·폐기에는 저회전도 들어가요" + closedNote)
+            "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식·폐기에는 저회전도 들어가요" + closedNote,
+            { id: "people", col: -1, dir: "desc" })   // 기본 = 폐기 + 취식 원가 순 (names 순서): 열이 따로 없어서 삼각형은 모두 옅게
         : table(title + "직원별 취식", ["직원", "취식 수량", "취식 원가"],
-            names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.en), fmt(o.ew)] }; }),
+            names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.en), fmt(o.ew)], keys: [k, o.en, o.ew] }; }),
             ["합계", fmt(tot.en), fmt(tot.ew)],
-            "원가 기준 · 취식에는 저회전도 들어가요" + closedNote);
+            "원가 기준 · 취식에는 저회전도 들어가요" + closedNote,
+            { id: "people", col: 2, dir: "desc" });
       t.querySelector("tfoot td:last-child").classList.add("hot");  // 취식 원가 합계는 빨간색으로 강조
       return t;
     }
@@ -1120,26 +1138,63 @@ button.srow { cursor: pointer; }
       return f;
     }
     box.appendChild(table(title + "근무 시간" + (away ? " (모든 점포)" : ""), ["직원", "근무일", "근무 시간"],
-      hn.map(function (k) { return { me: k === S.me, cells: [nameCell(k), Object.keys(hb[k].days).length + "일", dur(hb[k].m)] }; }),
+      hn.map(function (k) { return { me: k === S.me, cells: [nameCell(k), Object.keys(hb[k].days).length + "일", dur(hb[k].m)], keys: [k, Object.keys(hb[k].days).length, hb[k].m] }; }),
       ["합계", Object.keys(allDays).length + "일", dur(totM)],
       (openN ? "퇴근을 안 찍은 기록 " + openN + "건은 빠져 있어요. 퇴근을 찍거나 고치면 합산돼요." : "출근일지 기준 (퇴근까지 찍은 기록만)")
-        + (away ? " · 여러 점포에서 일한 시간을 사람별로 합쳤어요" : "")));
+        + (away ? " · 여러 점포에서 일한 시간을 사람별로 합쳤어요" : ""),
+      { id: "hours", col: 2, dir: "desc" }));
   }
 
-  function table(title, heads, rows, foot, note) {
+  // sort (있으면): { id, col, dir } = 이 표의 기본 정렬 (col -1 = 어느 한 열이 아닌 기본 순서). rows는 기본 정렬 순서로 오고
+  // (같을 때 순서까지), 각 행의 keys는 열마다 비교할 값 (이름은 글자, 나머지는 숫자). 머리글을 누르면 그 열로:
+  // 처음은 큰 것부터 (직원 이름은 가나다순), 한 번 더 누르면 반대로. 합계 줄은 그대로.
+  function table(title, heads, rows, foot, note, sort) {
     var wrap = mk("div"), head = mk("div", "sumhead");
     head.appendChild(mk("h2", "", title));
     wrap.appendChild(head);
     var tw = mk("div", "tbl"), t = mk("table");
-    var th = mk("thead"), htr = mk("tr");
-    heads.forEach(function (h) { htr.appendChild(mk("th", "", h)); });
-    th.appendChild(htr); t.appendChild(th);
-    var tb = mk("tbody");
+    var th = mk("thead"), htr = mk("tr"), ths = [];
+    var tb = mk("tbody"), trs = [];
     rows.forEach(function (r) {
       var tr = mk("tr", r.me ? "meRow" : "");
       r.cells.forEach(function (v, i) { var td = mk("td", i ? "num" : "", v && v.nodeType ? null : v); if (v && v.nodeType) td.appendChild(v); tr.appendChild(td); });
-      tb.appendChild(tr);
+      trs.push(tr); tb.appendChild(tr);
     });
+    var cur = null;
+    if (sort) {
+      var saved = sumSort()[sort.id], sc = saved ? heads.indexOf(saved.h) : -1;
+      if (saved && sc < 0) setSumSort(sort.id, null);   // 고른 열이 이 보기에 없으면 기본 정렬로 돌아감
+      cur = sc >= 0 && (saved.d === "asc" || saved.d === "desc") ? { col: sc, dir: saved.d } : { col: sort.col, dir: sort.dir };
+    }
+    function apply() {
+      ths.forEach(function (c, i) { if (i === cur.col) c.setAttribute("aria-sort", cur.dir === "asc" ? "ascending" : "descending"); else c.removeAttribute("aria-sort"); });
+      var order = trs.map(function (tr, i) { return i; });
+      if (!(cur.col === sort.col && cur.dir === sort.dir)) {   // 기본 정렬이면 받은 순서 그대로
+        var sign = cur.dir === "asc" ? 1 : -1;
+        order.sort(function (a, b) {
+          var x = rows[a].keys[cur.col], y = rows[b].keys[cur.col];
+          var c = typeof x === "string" ? x.localeCompare(String(y), "ko") : Number(x) - Number(y);
+          return sign * c || a - b;
+        });
+      }
+      order.forEach(function (i) { tb.appendChild(trs[i]); });
+    }
+    heads.forEach(function (h, i) {
+      var c = mk("th", sort ? "sortable" : "", sort ? null : h);
+      if (sort) {
+        var b = mk("button", "sortbtn"); b.type = "button";
+        b.appendChild(mk("span", "", h));
+        b.insertAdjacentHTML("beforeend", '<svg class="tri" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 3h8L5 8z" fill="currentColor"/></svg>');
+        b.onclick = function () {
+          cur = cur.col === i ? { col: i, dir: cur.dir === "asc" ? "desc" : "asc" } : { col: i, dir: i ? "desc" : "asc" };
+          setSumSort(sort.id, { h: h, d: cur.dir }); apply();
+        };
+        c.appendChild(b);
+      }
+      ths.push(c); htr.appendChild(c);
+    });
+    th.appendChild(htr); t.appendChild(th);
+    if (sort) apply();
     if (!rows.length) { var tr0 = mk("tr"), td0 = mk("td", "", "아직 기록이 없어요."); td0.colSpan = heads.length; td0.style.textAlign = "center"; tr0.appendChild(td0); tb.appendChild(tr0); }
     t.appendChild(tb);
     var tf = mk("tfoot"), trf = mk("tr");
