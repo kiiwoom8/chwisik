@@ -184,7 +184,7 @@ main .wrap { padding-block: 8px calc(110px + env(safe-area-inset-bottom, 0px)); 
 /* 데이터가 처음 그려질 때 살짝 떠오름 */
 .arrive { animation: arrive .24s ease-out; }
 @keyframes arrive { from { opacity: 0; transform: translateY(6px); } }
-@media (prefers-reduced-motion: reduce) { .sk::after { animation: none; display: none; } .loading .lt i { animation-duration: 2s; } .arrive { animation: none; } .pbar.on i { animation-duration: 2.4s; } .stamp, .tab, .wchip, .primary, .ghost, .clock, .seg .thumb, .seg button { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sk::after { animation: none; display: none; } .loading .lt i { animation-duration: 2s; } .arrive { animation: none; } .pbar.on i { animation-duration: 2.4s; } .stamp, .tab, .wchip, .primary, .ghost, .clock, .fchip, .fchip .chev { transition: none; } .fmenu { animation: none; } }
 
 .sum { margin-top: 14px; display: grid; gap: 14px; }
 .sum h2 { font-size: 15px; margin: 0; }
@@ -197,14 +197,23 @@ thead th { color: var(--muted); font-weight: 500; font-size: 12px; }
 tfoot td { font-weight: 700; border-bottom: 0; }
 tfoot td.hot { color: var(--void); }
 tr.meRow td:first-child { color: var(--accent); font-weight: 700; }
-/* 월별 합계 보기 전환 (취식 / 폐기 + 취식): pill segmented control, thumb slides to the chosen side */
-.seg { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 4px; margin: 0 0 10px; background: var(--band); border-radius: 999px; }
-.seg .thumb { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); border-radius: 999px; background: var(--sheet); box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.06); transition: transform .22s cubic-bezier(.3,.7,.4,1); }
-.seg[data-i="1"] .thumb { transform: translateX(100%); }
-@media (prefers-color-scheme: dark) { .seg { background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule); } .seg .thumb { background: var(--accent-soft); box-shadow: none; } }
-.seg button { position: relative; z-index: 1; min-width: 0; min-height: 44px; border: 0; background: transparent; border-radius: 999px; padding: 0 8px; cursor: pointer; font: inherit; font-size: 14px; font-weight: 500; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .18s; }
-.seg button[aria-checked="true"] { color: var(--accent); font-weight: 700; }
-.seg button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+/* 월별 합계 직원별 표: 제목 줄 오른쪽 끝의 작은 필터 버튼 (취식 / 폐기 + 취식) + 그 아래 작은 메뉴 */
+.sumhead h2 { min-width: 0; }
+.sumhead.hasf { align-items: center; }
+.fwrap { position: relative; flex: none; }
+.fchip { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px 0 9px; border: 1px solid var(--rule); border-radius: 999px; background: var(--sheet); color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 500; line-height: 1; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s; }
+.fchip::before { content: ""; position: absolute; inset: -8px -4px; }   /* 손가락으로 누르기 쉽게 누르는 자리만 넓힘 */
+.fchip svg { width: 13px; height: 13px; flex: none; color: var(--accent); }
+.fchip .chev { width: 4.5px; height: 4.5px; margin-left: 1px; color: var(--muted); }
+.fchip[aria-expanded="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.fchip[aria-expanded="true"] .chev { transform: translateY(1px) rotate(-135deg); }
+.fchip:active { background: var(--band); }
+.fchip:focus-visible, .fmenu .mi:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.fmenu { min-width: 156px; top: calc(100% + 6px); z-index: 7; }
+.fmenu .mi { min-height: 44px; padding: 6px 10px; }
+.fmenu .mi b { font-size: 14px; }
+.fmenu .mi .ck { width: 16px; height: 16px; flex: none; color: var(--accent); visibility: hidden; }
+.fmenu .mi[aria-checked="true"] .ck { visibility: visible; }
 /* 근무 시간: 여러 점포에서 일한 사람은 이름 아래에 점포별 시간 */
 td .bystore { display: block; white-space: normal; font-size: 11.5px; font-weight: 400; color: var(--muted); line-height: 1.35; }
 
@@ -408,6 +417,14 @@ button.srow { cursor: pointer; }
   function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
   var K_SUMVIEW = "chwisik.sumView";   // 월별 합계 보기: "eat" (취식, default) or "all" (폐기 + 취식); per phone, all stores
   S.sumView = lsGet(K_SUMVIEW) === "all" ? "all" : "eat";
+  var SUM_OPTS = { eat: "취식", all: "폐기 + 취식" };
+  var SF = null;   // 월별 합계 필터 메뉴가 열려 있으면 { btn, menu, y }
+  function closeSumMenu(focusBtn) {
+    if (!SF) return;
+    SF.menu.hidden = true; SF.btn.setAttribute("aria-expanded", "false");
+    if (focusBtn) SF.btn.focus({ preventScroll: true });
+    SF = null;
+  }
   S.store = lsGet(K_STORE) || "";
   try { S.stores = JSON.parse(lsGet(K_STORES) || "[]") || []; } catch (e) { S.stores = []; }
   function sid() { return S.store || LEGACY_STORE; }
@@ -1028,34 +1045,45 @@ button.srow { cursor: pointer; }
       t.querySelector("tfoot td:last-child").classList.add("hot");  // 취식 원가 합계는 빨간색으로 강조
       return t;
     }
-    var seg = mk("div", "seg"), opts = [["eat", "취식"], ["all", "폐기 + 취식"]];
-    seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-label", "직원별 표 보기");
-    seg.appendChild(mk("span", "thumb"));
-    function setSeg() {
-      seg.setAttribute("data-i", S.sumView === "all" ? "1" : "0");
-      [].forEach.call(seg.querySelectorAll("button"), function (b) {
-        var on = b.getAttribute("data-v") === S.sumView;
-        b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
+    // 제목 줄 오른쪽 끝의 작은 필터 버튼: 누르면 바로 아래에 [취식] [폐기 + 취식] 메뉴
+    function withFilter(t) {
+      var head = t.querySelector(".sumhead"), fw = mk("div", "fwrap"), btn = mk("button", "fchip"), menu = mk("div", "moremenu fmenu");
+      head.classList.add("hasf");
+      btn.type = "button"; btn.setAttribute("aria-haspopup", "menu"); btn.setAttribute("aria-expanded", "false");
+      btn.setAttribute("aria-label", "보기: " + SUM_OPTS[S.sumView]);
+      btn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11l-4.2 5v4l-2.6 1.2V8.5z"/></svg>';
+      btn.appendChild(mk("span", "", SUM_OPTS[S.sumView]));
+      var ch = mk("i", "chev"); ch.setAttribute("aria-hidden", "true"); btn.appendChild(ch);
+      menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "직원별 표 보기"); menu.hidden = true;
+      Object.keys(SUM_OPTS).forEach(function (v) {
+        var it = mk("button", "mi"); it.type = "button"; it.setAttribute("role", "menuitemradio"); it.setAttribute("data-v", v);
+        it.setAttribute("aria-checked", v === S.sumView ? "true" : "false");
+        it.appendChild(mk("b", "", SUM_OPTS[v]));
+        it.insertAdjacentHTML("beforeend", '<svg class="ck" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>');
+        it.onclick = function () { closeSumMenu(true); pick(v); };
+        menu.appendChild(it);
       });
+      menu.onkeydown = function (e) {   // ↑ ↓ 로 메뉴 안에서 움직이기
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+        e.preventDefault(); var its = menu.querySelectorAll(".mi"), k = [].indexOf.call(its, document.activeElement);
+        its[(k + (e.key === "ArrowDown" ? 1 : its.length - 1)) % its.length].focus();
+      };
+      btn.onclick = function () {
+        if (SF) { closeSumMenu(); return; }
+        menu.hidden = false; btn.setAttribute("aria-expanded", "true"); SF = { btn: btn, menu: menu, y: window.scrollY };
+        if (btn.matches(":focus-visible")) (menu.querySelector('[aria-checked="true"]') || menu.firstChild).focus();
+      };
+      fw.appendChild(btn); fw.appendChild(menu); head.appendChild(fw);
+      return t;
     }
     function pick(v) {
       if (v === S.sumView) return;
-      S.sumView = v; lsSet(K_SUMVIEW, v); setSeg();
-      var nt = eatTable(); eat.replaceWith(nt); eat = nt;
+      S.sumView = v; lsSet(K_SUMVIEW, v);
+      var nt = withFilter(eatTable()); eat.replaceWith(nt); eat = nt; nt.querySelector(".fchip").focus({ preventScroll: true });
     }
-    opts.forEach(function (o) {
-      var b = mk("button", "", o[1]); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("data-v", o[0]);
-      b.onclick = function () { pick(o[0]); };
-      b.onkeydown = function (e) {   // ← → 로도 바꿀 수 있게 (radiogroup)
-        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-        e.preventDefault(); var v = S.sumView === "all" ? "eat" : "all"; pick(v); seg.querySelector('[data-v="' + v + '"]').focus();
-      };
-      seg.appendChild(b);
-    });
-    setSeg();
-    var eat = eatTable(), eatWrap = mk("div");
-    eatWrap.appendChild(seg); eatWrap.appendChild(eat);
-    box.appendChild(eatWrap);
+    SF = null;
+    var eat = withFilter(eatTable());
+    box.appendChild(eat);
 
     // 근무 시간: 같은 사람(같은 전체 이름)이 여러 점포에서 일할 수 있어서, 모든 점포의 시간을 사람별로 합침
     var nowM = nowMin(), hb = {}, totM = 0, openN = 0, cs = curStore(), here = cs ? cs.short : "", stOrder = [here], away = false;
@@ -1523,8 +1551,12 @@ button.srow { cursor: pointer; }
   });
   document.addEventListener("pointerdown", function (e) {
     if (!$("moreMenu").hidden && !(e.target.closest && e.target.closest("#moreMenu, #moreBtn"))) closeMore();
+    if (SF && !(e.target.closest && e.target.closest(".fwrap"))) closeSumMenu();
   });
-  window.addEventListener("scroll", function () { if (!$("moreMenu").hidden && Math.abs(window.scrollY - moreY) > 12) closeMore(); }, { passive: true });
+  window.addEventListener("scroll", function () {
+    if (!$("moreMenu").hidden && Math.abs(window.scrollY - moreY) > 12) closeMore();
+    if (SF && Math.abs(window.scrollY - SF.y) > 12) closeSumMenu();
+  }, { passive: true });
   $("q").addEventListener("input", function () { S.q = this.value; render(); });
   function goMonth(delta) {
     // 달력 순서로 한 달씩 (기록 없는 달도 열어서 근무를 직접 적을 수 있게)
@@ -1635,7 +1667,8 @@ button.srow { cursor: pointer; }
 
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
-    if (!$("moreMenu").hidden) { closeMore(); $("moreBtn").focus(); }
+    if (SF) closeSumMenu(true);
+    else if (!$("moreMenu").hidden) { closeMore(); $("moreBtn").focus(); }
     else if (!$("confirm").hidden) closeConfirm();
     else if (!$("storeSheet").hidden) closeStores();
     else if (!$("pwSheet").hidden) closePw();
