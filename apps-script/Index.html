@@ -431,6 +431,8 @@ button.srow { cursor: pointer; }
   var K_SUMVIEW = "chwisik.sumView";   // 월별 합계 보기: "eat" (취식, default) or "all" (폐기 + 취식); per phone, all stores
   S.sumView = lsGet(K_SUMVIEW) === "all" ? "all" : "eat";
   var SUM_OPTS = { eat: "취식", all: "폐기 + 취식" };
+  var K_HOURSVIEW = "chwisik.hoursView";   // 근무 시간 표 보기: "all" (모든 점포 합계, default) or "here" (지금 점포만); per phone, all stores
+  S.hoursView = lsGet(K_HOURSVIEW) === "here" ? "here" : "all";
   // 월별 합계 표 정렬: { 표 id: { h: 머리글 이름, d: "asc" | "desc" } }, 이 폰에만. 없거나 깨졌으면 표마다 기본 정렬
   var K_SUMSORT = "chwisik.sumSort";
   function sumSort() { try { var o = JSON.parse(lsGet(K_SUMSORT) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -1065,23 +1067,24 @@ button.srow { cursor: pointer; }
       t.querySelector("tfoot td:last-child").classList.add("hot");  // 취식 원가 합계는 빨간색으로 강조
       return t;
     }
-    // 제목 줄 오른쪽 끝의 작은 필터 버튼: 누르면 바로 아래에 [취식] [폐기 + 취식] 메뉴
-    function withFilter(t) {
+    // 제목 줄 오른쪽 끝의 작은 필터 버튼: 누르면 바로 아래에 메뉴 (직원별 표 = [취식] [폐기 + 취식], 근무 시간 = [모든 점포] [지금 점포])
+    // f = { opts: { 값: 이름 }, cur: 지금 값, label: 메뉴 이름, pick: function (값) }
+    function withFilter(t, f) {
       var head = t.querySelector(".sumhead"), fw = mk("div", "fwrap"), btn = mk("button", "fchip"), menu = mk("div", "moremenu fmenu");
       head.classList.add("hasf");
       btn.type = "button"; btn.setAttribute("aria-haspopup", "menu"); btn.setAttribute("aria-expanded", "false");
-      btn.setAttribute("aria-label", "보기: " + SUM_OPTS[S.sumView]);
+      btn.setAttribute("aria-label", "보기: " + f.opts[f.cur]);
       // 선 아이콘 (깔때기) · 지금 보기 · 아래 화살표. 테두리·채움 없는 버튼, 누를 때만 옅은 배경
       btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5h17l-6.5 7.5v5.5l-4 2v-7.5z"/></svg>';
-      btn.appendChild(mk("span", "", SUM_OPTS[S.sumView]));
+      btn.appendChild(mk("span", "", f.opts[f.cur]));
       btn.insertAdjacentHTML("beforeend", '<svg class="fchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 9.5l5.5 5.5 5.5-5.5"/></svg>');
-      menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "직원별 표 보기"); menu.hidden = true;
-      Object.keys(SUM_OPTS).forEach(function (v) {
+      menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", f.label); menu.hidden = true;
+      Object.keys(f.opts).forEach(function (v) {
         var it = mk("button", "mi"); it.type = "button"; it.setAttribute("role", "menuitemradio"); it.setAttribute("data-v", v);
-        it.setAttribute("aria-checked", v === S.sumView ? "true" : "false");
-        it.appendChild(mk("b", "", SUM_OPTS[v]));
+        it.setAttribute("aria-checked", v === f.cur ? "true" : "false");
+        it.appendChild(mk("b", "", f.opts[v]));
         it.insertAdjacentHTML("beforeend", '<svg class="ck" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>');
-        it.onclick = function () { closeSumMenu(true); pick(v); };
+        it.onclick = function () { closeSumMenu(true); if (v !== f.cur) f.pick(v); };
         menu.appendChild(it);
       });
       menu.onkeydown = function (e) {   // ↑ ↓ 로 메뉴 안에서 움직이기
@@ -1090,61 +1093,77 @@ button.srow { cursor: pointer; }
         its[(k + (e.key === "ArrowDown" ? 1 : its.length - 1)) % its.length].focus();
       };
       btn.onclick = function () {
-        if (SF) { closeSumMenu(); return; }
+        if (SF) { var same = SF.btn === btn; closeSumMenu(); if (same) return; }   // 다른 표의 메뉴가 열려 있으면 닫고 이 메뉴를 엶
         menu.hidden = false; btn.setAttribute("aria-expanded", "true"); SF = { btn: btn, menu: menu, y: window.scrollY };
         if (btn.matches(":focus-visible")) (menu.querySelector('[aria-checked="true"]') || menu.firstChild).focus();
       };
       fw.appendChild(btn); fw.appendChild(menu); head.appendChild(fw);
       return t;
     }
-    function pick(v) {
-      if (v === S.sumView) return;
-      S.sumView = v; lsSet(K_SUMVIEW, v);
-      var nt = withFilter(eatTable()); eat.replaceWith(nt); eat = nt; nt.querySelector(".fchip").focus({ preventScroll: true });
+    function eatFiltered() {
+      return withFilter(eatTable(), { opts: SUM_OPTS, cur: S.sumView, label: "직원별 표 보기", pick: function (v) {
+        S.sumView = v; lsSet(K_SUMVIEW, v);
+        var nt = eatFiltered(); eat.replaceWith(nt); eat = nt; nt.querySelector(".fchip").focus({ preventScroll: true });
+      } });
     }
     SF = null;
-    var eat = withFilter(eatTable());
+    var eat = eatFiltered();
     box.appendChild(eat);
 
-    // 근무 시간: 같은 사람(같은 전체 이름)이 여러 점포에서 일할 수 있어서, 모든 점포의 시간을 사람별로 합침
-    var nowM = nowMin(), hb = {}, totM = 0, openN = 0, cs = curStore(), here = cs ? cs.short : "", stOrder = [here], away = false;
-    function addHours(name, date, mins, st) {
-      var o = hb[name] = hb[name] || { days: {}, m: 0, by: {} };
-      o.days[date] = 1; o.m += mins; o.by[st] = (o.by[st] || 0) + mins; totM += mins;
-    }
-    S.shifts.forEach(function (s) {
-      if (s[2].slice(0, 7) !== S.month || (who && s[3] !== who)) return;
-      var sp = span(s, nowM);
-      if (sp.open) { openN++; return; }
-      addHours(s[3], s[2], sp.b - sp.a, here);
-    });
-    (S.others || []).forEach(function (o) {
-      stOrder.push(o.short);
-      (o.shifts || []).forEach(function (x) {   // [date, memberFull, start, end]
-        if (who && x[1] !== who) return;
-        if (!x[3]) { openN++; return; }
-        var a = toMin(x[0], x[2]), b = toMin(x[0], x[3]);
-        if (b < a) b += 1440;
-        addHours(x[1], x[0], b - a, o.short); away = true;
+    // 근무 시간: 같은 사람(같은 전체 이름)이 여러 점포에서 일할 수 있어서, 기본은 모든 점포의 시간을 사람별로 합침.
+    // 제목 줄 필터로 [모든 점포] / [지금 점포] (점포가 하나뿐이면 필터 없음)
+    var cs = curStore(), here = cs ? cs.short : "", multi = (S.others || []).length > 0;
+    var HOURS_OPTS = { all: "모든 점포", here: here || "이 점포" };
+    function hoursTable() {
+      var mine = multi && S.hoursView === "here";
+      var nowM = nowMin(), hb = {}, totM = 0, openN = 0, stOrder = [here], away = false;
+      function addHours(name, date, mins, st) {
+        var o = hb[name] = hb[name] || { days: {}, m: 0, by: {} };
+        o.days[date] = 1; o.m += mins; o.by[st] = (o.by[st] || 0) + mins; totM += mins;
+      }
+      S.shifts.forEach(function (s) {
+        if (s[2].slice(0, 7) !== S.month || (who && s[3] !== who)) return;
+        var sp = span(s, nowM);
+        if (sp.open) { openN++; return; }
+        addHours(s[3], s[2], sp.b - sp.a, here);
       });
-    });
-    var hn = Object.keys(hb).sort(function (a, b) { return hb[b].m - hb[a].m; });
-    var allDays = {};
-    hn.forEach(function (k) { Object.keys(hb[k].days).forEach(function (d) { allDays[d] = 1; }); });
-    function nameCell(k) {
-      var by = hb[k].by, parts = stOrder.filter(function (st) { return by[st]; });
-      if (parts.length < 2 && (!parts.length || parts[0] === here)) return k;   // 이 점포에서만 일한 사람은 이름만
-      var f = document.createDocumentFragment();
-      f.appendChild(document.createTextNode(k));
-      f.appendChild(mk("span", "bystore", parts.map(function (st) { return st + " " + dur(by[st]); }).join(" · ")));
-      return f;
+      (mine ? [] : S.others || []).forEach(function (o) {
+        stOrder.push(o.short);
+        (o.shifts || []).forEach(function (x) {   // [date, memberFull, start, end]
+          if (who && x[1] !== who) return;
+          if (!x[3]) { openN++; return; }
+          var a = toMin(x[0], x[2]), b = toMin(x[0], x[3]);
+          if (b < a) b += 1440;
+          addHours(x[1], x[0], b - a, o.short); away = true;
+        });
+      });
+      var hn = Object.keys(hb).sort(function (a, b) { return hb[b].m - hb[a].m; });
+      var allDays = {};
+      hn.forEach(function (k) { Object.keys(hb[k].days).forEach(function (d) { allDays[d] = 1; }); });
+      function nameCell(k) {
+        var by = hb[k].by, parts = stOrder.filter(function (st) { return by[st]; });
+        if (parts.length < 2 && (!parts.length || parts[0] === here)) return k;   // 이 점포에서만 일한 사람은 이름만
+        var f = document.createDocumentFragment();
+        f.appendChild(document.createTextNode(k));
+        f.appendChild(mk("span", "bystore", parts.map(function (st) { return st + " " + dur(by[st]); }).join(" · ")));
+        return f;
+      }
+      return table(title + "근무 시간" + (multi ? "" : away ? " (모든 점포)" : ""), ["직원", "근무일", "근무 시간"],
+        hn.map(function (k) { return { me: k === S.me, cells: [nameCell(k), Object.keys(hb[k].days).length + "일", dur(hb[k].m)], keys: [k, Object.keys(hb[k].days).length, hb[k].m] }; }),
+        ["합계", Object.keys(allDays).length + "일", dur(totM)],
+        (openN ? "퇴근을 안 찍은 기록 " + openN + "건은 빠져 있어요. 퇴근을 찍거나 고치면 합산돼요." : "출근일지 기준 (퇴근까지 찍은 기록만)")
+          + (mine ? " · " + HOURS_OPTS.here + "에서 일한 시간만" : away ? " · 여러 점포에서 일한 시간을 사람별로 합쳤어요" : ""),
+        { id: "hours", col: 2, dir: "desc" });
     }
-    box.appendChild(table(title + "근무 시간" + (away ? " (모든 점포)" : ""), ["직원", "근무일", "근무 시간"],
-      hn.map(function (k) { return { me: k === S.me, cells: [nameCell(k), Object.keys(hb[k].days).length + "일", dur(hb[k].m)], keys: [k, Object.keys(hb[k].days).length, hb[k].m] }; }),
-      ["합계", Object.keys(allDays).length + "일", dur(totM)],
-      (openN ? "퇴근을 안 찍은 기록 " + openN + "건은 빠져 있어요. 퇴근을 찍거나 고치면 합산돼요." : "출근일지 기준 (퇴근까지 찍은 기록만)")
-        + (away ? " · 여러 점포에서 일한 시간을 사람별로 합쳤어요" : ""),
-      { id: "hours", col: 2, dir: "desc" }));
+    function hoursFiltered() {
+      if (!multi) return hoursTable();
+      return withFilter(hoursTable(), { opts: HOURS_OPTS, cur: S.hoursView, label: "근무 시간 보기", pick: function (v) {
+        S.hoursView = v; lsSet(K_HOURSVIEW, v);
+        var nt = hoursFiltered(); hrs.replaceWith(nt); hrs = nt; nt.querySelector(".fchip").focus({ preventScroll: true });
+      } });
+    }
+    var hrs = hoursFiltered();
+    box.appendChild(hrs);
   }
 
   // sort (있으면): { id, col, dir } = 이 표의 기본 정렬 (col -1 = 어느 한 열이 아닌 기본 순서). rows는 기본 정렬 순서로 오고
