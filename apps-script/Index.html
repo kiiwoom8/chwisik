@@ -87,6 +87,7 @@ h1 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.01em; flex
 .tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); background: var(--band); border-radius: var(--r); padding: 3px; gap: 3px; }
 .tab { border: 0; background: transparent; padding: 7px 1px; white-space: nowrap; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); line-height: 1.2; }
 .tab .num { display: block; font-size: 11.5px; }
+.tab .num.hot { color: var(--ov3); font-weight: 600; }   /* 미등록 / 저회전 left to tag */
 .tab[aria-selected="true"] { background: var(--sheet); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 /* [더보기] tab + its menu (전체 / 취소). The tab shows the picked view's name and count while one of them is open. */
 .tabwrap { position: relative; }
@@ -645,6 +646,7 @@ button.srow { cursor: pointer; }
     S.shifts.forEach(function (s) { if (span(s, nowM).on) working[s[3]] = 1; });
     var nWork = Object.keys(working).length;
     $("c-todo").textContent = fmt(cTodo); $("c-eat").textContent = fmt(cEat); $("c-void").textContent = fmt(cVoid); $("c-all").textContent = fmt(cAll); $("c-jeo").textContent = fmt(cJeo);
+    $("c-todo").classList.toggle("hot", cTodo > 0); $("c-jeo").classList.toggle("hot", cJeo > 0);   // 남은 미등록 / 저회전이 있으면 숫자를 빨간색으로
     $("c-cancel").textContent = fmt(S.cancels.length);
     $("c-more").textContent = inMore ? $("c-" + S.view).textContent : "";
     $("c-shift").textContent = nWork ? nWork + "명" : "일지";
@@ -673,7 +675,7 @@ button.srow { cursor: pointer; }
     $("fail").hidden = !(wait && S.failed);
     if (wait && !S.failed) skeleton();
     if (wait) {
-      ["c-todo", "c-eat", "c-void", "c-all", "c-jeo", "c-cancel"].forEach(function (id) { $(id).textContent = "–"; });
+      ["c-todo", "c-eat", "c-void", "c-all", "c-jeo", "c-cancel"].forEach(function (id) { $(id).textContent = "–"; $(id).classList.remove("hot"); });
       if (inMore) $("c-more").textContent = "–";
       $("myEat").textContent = "– 개 · – 원"; $("myVoid").textContent = "– 개 · – 원";
       $("list").hidden = true; $("shifts").hidden = true; $("sum").hidden = true; $("emptyMsg").hidden = true; $("pin").hidden = true; }
