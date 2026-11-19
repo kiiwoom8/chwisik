@@ -184,7 +184,7 @@ main .wrap { padding-block: 8px calc(110px + env(safe-area-inset-bottom, 0px)); 
 /* 데이터가 처음 그려질 때 살짝 떠오름 */
 .arrive { animation: arrive .24s ease-out; }
 @keyframes arrive { from { opacity: 0; transform: translateY(6px); } }
-@media (prefers-reduced-motion: reduce) { .sk::after { animation: none; display: none; } .loading .lt i { animation-duration: 2s; } .arrive { animation: none; } .pbar.on i { animation-duration: 2.4s; } .stamp, .tab, .wchip, .primary, .ghost, .clock { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sk::after { animation: none; display: none; } .loading .lt i { animation-duration: 2s; } .arrive { animation: none; } .pbar.on i { animation-duration: 2.4s; } .stamp, .tab, .wchip, .primary, .ghost, .clock, .seg .thumb, .seg button { transition: none; } }
 
 .sum { margin-top: 14px; display: grid; gap: 14px; }
 .sum h2 { font-size: 15px; margin: 0; }
@@ -197,6 +197,14 @@ thead th { color: var(--muted); font-weight: 500; font-size: 12px; }
 tfoot td { font-weight: 700; border-bottom: 0; }
 tfoot td.hot { color: var(--void); }
 tr.meRow td:first-child { color: var(--accent); font-weight: 700; }
+/* 월별 합계 보기 전환 (취식 / 폐기 + 취식): pill segmented control, thumb slides to the chosen side */
+.seg { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 4px; margin: 0 0 10px; background: var(--band); border-radius: 999px; }
+.seg .thumb { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); border-radius: 999px; background: var(--sheet); box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.06); transition: transform .22s cubic-bezier(.3,.7,.4,1); }
+.seg[data-i="1"] .thumb { transform: translateX(100%); }
+@media (prefers-color-scheme: dark) { .seg { background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule); } .seg .thumb { background: var(--accent-soft); box-shadow: none; } }
+.seg button { position: relative; z-index: 1; min-width: 0; min-height: 44px; border: 0; background: transparent; border-radius: 999px; padding: 0 8px; cursor: pointer; font: inherit; font-size: 14px; font-weight: 500; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .18s; }
+.seg button[aria-checked="true"] { color: var(--accent); font-weight: 700; }
+.seg button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 /* 근무 시간: 여러 점포에서 일한 사람은 이름 아래에 점포별 시간 */
 td .bystore { display: block; white-space: normal; font-size: 11.5px; font-weight: 400; color: var(--muted); line-height: 1.35; }
 
@@ -398,6 +406,8 @@ button.srow { cursor: pointer; }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function mk(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  var K_SUMVIEW = "chwisik.sumView";   // 월별 합계 보기: "eat" (취식, default) or "all" (폐기 + 취식); per phone, all stores
+  S.sumView = lsGet(K_SUMVIEW) === "all" ? "all" : "eat";
   S.store = lsGet(K_STORE) || "";
   try { S.stores = JSON.parse(lsGet(K_STORES) || "[]") || []; } catch (e) { S.stores = []; }
   function sid() { return S.store || LEGACY_STORE; }
@@ -997,16 +1007,55 @@ button.srow { cursor: pointer; }
       if (who && r[9] !== who) return;
       if (r[8] === "취식") add(r[9] || "(이름 없음)", 0, 0, r[4], r[6]); else add(r[9] || "(이름 없음)", r[4], r[6], 0, 0);
     });
-    // 취식 원가가 많은 사람부터 (같으면 폐기 + 취식 원가 합, 그다음 이름)
-    var names = Object.keys(by).sort(function (a, b) { var x = by[a], y = by[b]; return y.ew - x.ew || (y.ew + y.vw) - (x.ew + x.vw) || a.localeCompare(b, "ko"); });
     var title = S.month.replace("-", "년 ") + "월 ";
     var closedNote = cl ? " · " + closedDay(cl.at) + " 마감한 숫자예요 (그 뒤로는 안 바뀌어요)" : "";
-    var eat = table(title + "직원별 폐기 / 취식", ["직원", "폐기 수량", "폐기 원가", "취식 수량", "취식 원가"],
-      names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.vn), fmt(o.vw), fmt(o.en), fmt(o.ew)] }; }),
-      ["합계", fmt(tot.vn), fmt(tot.vw), fmt(tot.en), fmt(tot.ew)],
-      "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식·폐기에는 저회전도 들어가요" + closedNote);
-    eat.querySelector("tfoot td:nth-child(5)").classList.add("hot");  // 취식 원가 합계는 빨간색으로 강조
-    box.appendChild(eat);
+    // 직원별 표: 취식 보기 = 취식 원가가 많은 사람부터 (취식이 없는 사람은 빼고), 폐기 + 취식 보기 = 둘을 더한 원가가 많은 사람부터. 같으면 이름 순
+    function eatTable() {
+      var all = S.sumView === "all";
+      var names = Object.keys(by).filter(function (k) { return all || by[k].en || by[k].ew; }).sort(function (a, b) {
+        var x = by[a], y = by[b];
+        return (all ? (y.ew + y.vw) - (x.ew + x.vw) || y.ew - x.ew : y.ew - x.ew || (y.ew + y.vw) - (x.ew + x.vw)) || a.localeCompare(b, "ko");
+      });
+      var t = all
+        ? table(title + "직원별 폐기 / 취식", ["직원", "폐기 수량", "폐기 원가", "취식 수량", "취식 원가"],
+            names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.vn), fmt(o.vw), fmt(o.en), fmt(o.ew)] }; }),
+            ["합계", fmt(tot.vn), fmt(tot.vw), fmt(tot.en), fmt(tot.ew)],
+            "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식·폐기에는 저회전도 들어가요" + closedNote)
+        : table(title + "직원별 취식", ["직원", "취식 수량", "취식 원가"],
+            names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.en), fmt(o.ew)] }; }),
+            ["합계", fmt(tot.en), fmt(tot.ew)],
+            "원가 기준 · 취식에는 저회전도 들어가요" + closedNote);
+      t.querySelector("tfoot td:last-child").classList.add("hot");  // 취식 원가 합계는 빨간색으로 강조
+      return t;
+    }
+    var seg = mk("div", "seg"), opts = [["eat", "취식"], ["all", "폐기 + 취식"]];
+    seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-label", "직원별 표 보기");
+    seg.appendChild(mk("span", "thumb"));
+    function setSeg() {
+      seg.setAttribute("data-i", S.sumView === "all" ? "1" : "0");
+      [].forEach.call(seg.querySelectorAll("button"), function (b) {
+        var on = b.getAttribute("data-v") === S.sumView;
+        b.setAttribute("aria-checked", on ? "true" : "false"); b.tabIndex = on ? 0 : -1;
+      });
+    }
+    function pick(v) {
+      if (v === S.sumView) return;
+      S.sumView = v; lsSet(K_SUMVIEW, v); setSeg();
+      var nt = eatTable(); eat.replaceWith(nt); eat = nt;
+    }
+    opts.forEach(function (o) {
+      var b = mk("button", "", o[1]); b.type = "button"; b.setAttribute("role", "radio"); b.setAttribute("data-v", o[0]);
+      b.onclick = function () { pick(o[0]); };
+      b.onkeydown = function (e) {   // ← → 로도 바꿀 수 있게 (radiogroup)
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault(); var v = S.sumView === "all" ? "eat" : "all"; pick(v); seg.querySelector('[data-v="' + v + '"]').focus();
+      };
+      seg.appendChild(b);
+    });
+    setSeg();
+    var eat = eatTable(), eatWrap = mk("div");
+    eatWrap.appendChild(seg); eatWrap.appendChild(eat);
+    box.appendChild(eatWrap);
 
     // 근무 시간: 같은 사람(같은 전체 이름)이 여러 점포에서 일할 수 있어서, 모든 점포의 시간을 사람별로 합침
     var nowM = nowMin(), hb = {}, totM = 0, openN = 0, cs = curStore(), here = cs ? cs.short : "", stOrder = [here], away = false;

@@ -44,6 +44,10 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
 - Names are the **full name only** (`김성휘`), not `김성휘 (성휘)`.
 - **No 취식 매가 column** (removed on the owner's request). The **취식 원가 합계** number is red.
 - **직원별 폐기 / 취식 rows go by 취식 원가, most first** (owner, 2026-11-20: "order along 취식 원가 … instead of sum of 폐기 and 취식"). Ties: 폐기 + 취식 원가 sum, then name. (Was: by the sum of 폐기 원가 + 취식 원가.)
+- **The per-person table has a view toggle: 취식 (default) and 폐기 + 취식** (owner, 2026-11-20: "add filter options (취식 in default, 폐기 + 취식). always choose modern ui design"). 취식 shows only the 취식 columns, by 취식 원가; 폐기 + 취식 shows all columns, by 폐기 + 취식 원가. A pill segmented control, remembered per phone. The 월별 마감 sheet has no toggle and keeps the 취식 원가 order.
+
+**UI design**
+- **Always choose a modern UI design** (owner, 2026-11-20): new controls are modern and fit the page (pills, sliding thumbs, big tap targets), not plain links or bare selects.
 
 **Tab bar**
 - **전체 and 취소 live under `더보기`** (a menu at the end of the tab bar), not as their own tabs (owner, 2026-11-11: hide them so the bar stays clean).
@@ -278,3 +282,4 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
 ## 2026-11-20
 
 - **(this commit) — 월별 합계: 직원별 폐기 / 취식 sorted by 취식 원가.** The owner: "order along 취식 원가 from 월별합계's 직원별 폐기/취식 instead of sum of 폐기 and 취식". `renderSum()` in `Index.html` now sorts by 취식 원가 descending (ties: 폐기 + 취식 원가 sum, then name in Korean order); closed months are re-sorted the same way on the page. `closeMonth_()` in `Code.gs` writes the 월별 마감 rows in the same order so the sheet matches (already-closed months keep their old row order in the sheet; the page sorts them anyway).
+- **(this commit) — 월별 합계: 취식 / 폐기 + 취식 toggle for the per-person table.** The owner: "add filter options (취식 in default, 폐기 + 취식). always choose modern ui design". A pill segmented control (`.seg`: two equal halves, 44 px tall, a thumb that slides to the chosen side, `role="radiogroup"` with ← → keys, no slide with reduced motion) above the table. **취식** (default): `직원별 취식`, 직원 · 취식 수량 · 취식 원가, people without 취식 left out, sorted by 취식 원가. **폐기 + 취식**: the full table as before, sorted by 폐기 + 취식 원가 (then 취식 원가, then name). The choice is kept per phone for all stores in localStorage `chwisik.sumView` (read and written through `lsGet` / `lsSet`, which swallow storage errors; anything else falls back to 취식). Switching redraws only that table. The 월별 마감 sheet is unchanged (취식 원가 order). Checked: `node --check`; the page stub at 360 px in light and dark: page width 360 (no sideways scroll), buttons 44 px, 취식 view 3 columns and 폐기 + 취식 view 5 columns with the red 합계 on the last cell, the choice kept after a reload; the page's own sort run on the real November 둘리점 totals: 취식 = 주현정 > 박경현 > 김성휘 > 이국환 > 전병훈, 폐기 + 취식 = 박경현 > 전병훈 > 주현정 > 김성휘 > 이국환, a 폐기-only person missing from 취식. Not checked on a phone.

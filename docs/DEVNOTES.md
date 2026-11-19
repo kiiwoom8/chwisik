@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-20 (월별 합계: 직원별 폐기 / 취식 rows sorted by 취식 원가)
+Last updated: 2026-11-20 (월별 합계: 취식 / 폐기 + 취식 toggle for the per-person table)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -86,7 +86,7 @@ Added 2026-11-16. The list is `STORES` at the top of `Code.gs`; the import code 
 | Sheets | `폐기목록`, `직원`, `출근일지`, `월별 합계` | `<short> 폐기목록` … e.g. `두왕점 폐기목록` (`sheetName_`). Made by themselves on the store's first request (`storeSheets_`), then marked with Script Property `SHEETS_<id>`. A sheet deleted by hand is made again (empty). |
 | Script Properties | `VER`, `LIVE_AT`, `BGF_PW`, … | the same key + `_<id>`: `VER_31949`, `BGF_PW_31949` (`pget_` / `pset_` / `pdel_`) |
 | CacheService keys | — | key + `\|<id>` (`ck_`): kept BGF login, `live_running`, password tries |
-| Page localStorage | `chwisik.me`, `chwisik.tok`, `chwisik.cache` | `chwisik.me.<id>`, `chwisik.tok.<id>`, `chwisik.cache.<id>` |
+| Page localStorage | `chwisik.me`, `chwisik.tok`, `chwisik.cache` | `chwisik.me.<id>`, `chwisik.tok.<id>`, `chwisik.cache.<id>` (`chwisik.sumView`, the 월별 합계 view, is one key for all stores) |
 
 **Shared by all stores:** the spreadsheet file, `가져오기 기록` (lines of other stores start with `[두왕점]`), `PW_SALT` / `TOKEN_KEY` / `DEV_PW_HASH`, `LIVE_OFF`, `LIVE_TRIGGER`, `JEO_DIV` (a BGF-wide code), the triggers, the page and the app.
 
@@ -355,7 +355,7 @@ The page polls `getMonth` every 5 s while visible; the version changes on every 
 - **Header.** Two parts: `.hdr` (title + month, 나: 이름 + sync label, 이번 달 취식 / 폐기) scrolls away with the page; `.top` (tab bar, search, `#pin`) sticks to the top. It slides away while scrolling down and glides back on a slight scroll up (like Chrome's toolbar / Material's enter-always app bar): after it sticks it stays for one more bar height of scrolling; past that it moves with the content pixel for pixel (inline `transform`, no transition): up and away while scrolling down, back down while scrolling up. When scrolling stops (120 ms without a scroll event) with the bar part way, it glides the rest: back in if the last move was 5 px or more up, else to the nearer end. The glide takes 220–450 ms depending on the distance left, on a gentle ease-in-out curve (`cubic-bezier(.4, 0, .2, 1)`). Never hidden above that point, while the search box has focus or while a sheet is open; tapping a tab scrolls to the top, so it shows. This keeps the stuck part short at 360 px (취식 with 모두 ≈ 260 px, 미등록 ≈ 170 px, 출근 ≈ 70 px). The safe-area top padding is on `.hdr`, so if the app ever goes edge-to-edge the stuck `.top` would need it too.
 - Name filter (모두 + names that have something in that tab this month) on every tab except 미등록 and 취소. (일) is red and (토) blue in day headings.
 - Header "이번 달 취식 / 폐기" and the 월별 합계 table count 저회전 취식 / 폐기 as 취식 / 폐기; its footer shows only 미등록 **폐기**.
-- 월별 합계 tab shows every column at once (fits a 360 px phone): **직원별 폐기 / 취식** = 직원 · 폐기 수량 · 폐기 원가 · 취식 수량 · 취식 원가 (취식 on the right; no 매가; the 취식 원가 합계 is red; this store only; rows sorted by 취식 원가, most first, then 폐기 + 취식 원가, then name) and **근무 시간** = 직원 · 근무일 · 근무 시간. Names are full names only.
+- 월별 합계 tab shows every column at once (fits a 360 px phone). Above the per-person table a pill toggle (`.seg`, radiogroup, 44 px buttons, ← → keys) picks the view, remembered per phone for all stores in localStorage `chwisik.sumView` (`eat` / `all`; anything else = `eat`): **취식** (default) = title `직원별 취식`, 직원 · 취식 수량 · 취식 원가, only people with some 취식, sorted by 취식 원가 most first (then 폐기 + 취식 원가, then name); **폐기 + 취식** = title `직원별 폐기 / 취식`, 직원 · 폐기 수량 · 폐기 원가 · 취식 수량 · 취식 원가 (취식 on the right), everyone, sorted by 폐기 원가 + 취식 원가 (then 취식 원가, then name), note with 미등록 폐기. Both: no 매가, the 취식 원가 합계 is red, this store only. Switching redraws only that table. Below it, **근무 시간** = 직원 · 근무일 · 근무 시간. Names are full names only.
   - **A closed month shows its 월별 마감 numbers** (`S.closed`), not a sum of the lines, and the note ends with `· M월 D일 마감한 숫자예요 (그 뒤로는 안 바뀌어요)`. The name filter still picks one person's row. The current month is never closed, so the header's 이번 달 취식 / 폐기 is always live.
   - **근무 시간 is summed per person over all stores** (owner, 2026-11-16: the same person can work in 2 or 3 stores). Same full name = same person. The table lists everyone who worked in any store that month; 근무일 counts a day once even if worked in two stores; a person with hours outside this store has a small line under the name (`둘리점 10시간 · 두왕점 6시간`). When other stores add hours the title says `(모든 점포)` and the note `여러 점포에서 일한 시간을 사람별로 합쳤어요`. Shifts without 퇴근 are left out in every store (counted in the note).
 - Off-shift 폐기 check runs in the page: the line's 생성시각 must fall inside one of the worker's shifts, 30 min grace either side; an open shift counts up to now. Lines with only a date pass if any shift touches that day. Each line shows who was working then (`근무 지은`).
