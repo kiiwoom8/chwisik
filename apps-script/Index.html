@@ -221,7 +221,9 @@ tr.meRow td:first-child { color: var(--accent); font-weight: 700; }
 @media (hover: hover) { .fchip:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); } }
 .fchip:active, .fchip[aria-expanded="true"] { background: color-mix(in srgb, var(--ink) 9%, transparent); }
 .fchip[aria-expanded="true"] .fchev { transform: rotate(180deg); }
-.fchip:focus-visible, .fmenu .mi:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.fchip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.fmenu .mi:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }   /* 메뉴 안쪽에 그림: 바깥으로 그리면 메뉴 테두리를 넘어 입력칸처럼 보임 */
+.fmenu .mi:focus-visible:not([aria-checked="true"]) { background: var(--band); }
 .fmenu { min-width: 156px; top: calc(100% + 6px); z-index: 7; }
 .fmenu .mi { min-height: 44px; padding: 6px 10px; }
 .fmenu .mi b { font-size: 14px; }
