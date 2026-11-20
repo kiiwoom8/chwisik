@@ -1,6 +1,6 @@
 # Code map — 직원 취식 목록
 
-Last updated: 2026-11-16
+Last updated: 2026-11-21
 
 A guide to where things are in the code and how they connect. Functions are listed by name (search for `function <name>`), not by line number, so this file stays right when code moves. Keep it in sync with every change (see `CLAUDE.md`).
 
@@ -158,10 +158,10 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 - Stores: `openStores(must)` / `closeStores()` (the `#storeSheet` list), `setStore(id)` (switch in place: identity, state, kept data, `boot()`), `carryMe` (the name to offer in the next store).
 - Data: `take(res, force)` (sets `S.ready`, remembers the month in `MONTHS`, `arrive()` on the first draw; also `saveCache`), `saveCache(res)` / `loadCache()` (localStorage `K("cache")`: newest month's data for an instant start), `load(force, fresh)` (poll with version; `fresh` = skip the server's kept answer; returns a promise), `refreshLive()` (`refreshNow`), `setOnline`, `renderSync` (picks the text), `setSync(cls, text)` (writes the `#sync` button: text + `.ico` ↻; class `go` spins it).
 - Misc: `snack(text, undo)`, tab click handlers (all `[data-view]`, tabs and menu items), `closeMore()` + 더보기 open / outside-tap / scroll / Esc close, search, `goMonth` (one calendar month, inside `monthRange()`), Esc handling, `visibilitychange`.
-- App update: `checkAppUpdate(now)` (app only: `getPage(CHWISIK_PAGE_HASH)` → localStorage `chwisik.page`; `now` (pull to refresh, sync tap) → `location.reload()` at once unless `S.busy` or a sheet is open; else reload on next `visibilitychange`). The script's first lines clear `chwisik.pageTry` (tells the loader the page started).
+- App update: `checkAppUpdate()` checks the running or pending hash on start, foreground, reconnect, once per visible minute, pull, and sync tap. `applyAppUpdate()` writes the new page and reloads when safe, retrying every five seconds. `run()` tracks outstanding staff writes across stores and lets a store-independent `getPage` reply finish after a store change. The script clears `chwisik.pageTry` on start for the loader.
 - Pull to refresh: an IIFE after the sync button handler; `touchstart`/`touchmove`/`touchend` on `document`, `.ptr` spinner element; on release past `GO` calls `refreshLive()` + `load(true)`.
 - Sticky bar hide / show: an IIFE right after pull to refresh; `check()` on `scroll` (passive) moves `.top` with `place(px, glide)` (inline `transform`; `shift` = px moved up) after an offset (`.hdr` + `.top` height): follows the scroll both ways; `settle()` after `SETTLE_MS` 120 glides a part-way bar in (last move `UP_TOL` 5 px+ up) or to the nearer end, glide length `GLIDE_MIN`–`GLIDE_MAX` ms by distance; never moved while `#q` has focus or a sheet is open.
-- Boot: `loadCache()` draws the last data → `boot()` (`getBoot`; retries by itself after a failure, `bootSeq` voids a superseded one) and `refreshLive()` together → `afterBoot(init)`: store (new phone, 2+ stores) → name → password → once: `checkAppUpdate()` + intervals (poll 5 s, live 1 min, re-render 출근 every minute). A `?store=` in the address names the store for a phone that has none (`google.script.url.getLocation` on the `/exec` link).
+- Boot: `loadCache()` draws the last data → `boot()` (`getBoot`; retries by itself after a failure, `bootSeq` voids a superseded one) and `refreshLive()` together → `afterBoot(init)`: store (new phone, 2+ stores) → name → password → once: intervals (poll 5 s, live 1 min, re-render 출근 every minute). A `?store=` in the address names the store for a phone that has none (`google.script.url.getLocation` on the `/exec` link).
 
 ---
 

@@ -464,6 +464,7 @@ button.srow { cursor: pointer; }
      Web mode (/exec link): google.script.run. Same server functions either way. */
   var API = window.CHWISIK_API || "";
   try { localStorage.removeItem("chwisik.pageTry"); } catch (e) {}  // tells the app loader this page started fine
+  var writesInFlight = 0;  // includes saves for a store the worker has since left
   function run(fn) {
     var args = Array.prototype.slice.call(arguments, 1), st = sid(), p;
     if (API) p = fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn: fn, args: args, store: st }) })
@@ -472,9 +473,15 @@ button.srow { cursor: pointer; }
     else p = new Promise(function (resolve, reject) {
       google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(st, fn, args);
     });
-    // An answer for a store this phone has left since is dropped (its promise never settles; setStore() resets the counters).
+    var write = /^(setTag|saveShift|deleteShift|setPassword|login|addMember)$/.test(fn);
+    if (write) writesInFlight++;
+    // Page code is shared by all stores. Other replies for a store we left are dropped.
     return new Promise(function (resolve, reject) {
-      p.then(function (r) { if (st === sid()) resolve(r); }, function (e) { if (st === sid()) reject(e); });
+      function finish(callback, value) {
+        if (write) writesInFlight--;
+        if (fn === "getPage" || st === sid()) callback(value);
+      }
+      p.then(function (r) { finish(resolve, r); }, function (e) { finish(reject, e); });
     });
   }
   /** Top progress bar: on while something the user is waiting for is on its way (start, month / store change, refresh). */
@@ -1646,7 +1653,7 @@ button.srow { cursor: pointer; }
   }
   $("mPrev").addEventListener("click", function () { goMonth(1); });
   $("mNext").addEventListener("click", function () { goMonth(-1); });
-  $("sync").addEventListener("click", function () { refreshLive(); load(true, true); checkAppUpdate(true); });
+  $("sync").addEventListener("click", function () { refreshLive(); load(true, true); checkAppUpdate(); });
 
   /* ---------- pull to refresh ----------
      At the top of the page, drag down and let go: same as tapping the sync button (BGF check + reload).
@@ -1696,7 +1703,7 @@ button.srow { cursor: pointer; }
       ptr.style.transition = "transform .2s"; ptr.style.transform = "translateY(" + (GO - 44) + "px)";
       var t0 = Date.now();
       refreshLive();
-      checkAppUpdate(true);  // 새 화면 코드가 있으면 바로 다시 불러옴 (앱을 껐다 켤 필요 없음)
+      checkAppUpdate();  // 새 화면 코드가 있으면 바로 다시 불러옴 (앱을 껐다 켤 필요 없음)
       var over = false;
       function done() { if (over) return; over = true; setTimeout(function () { busy = false; hide(); }, Math.max(0, 450 - (Date.now() - t0))); }
       load(true, true).then(done, done);
@@ -1754,22 +1761,33 @@ button.srow { cursor: pointer; }
   });
   document.addEventListener("visibilitychange", function () { if (!document.hidden && S.month) { load(false); refreshLive(); } });
 
-  /* ---------- app self-update ----------
-     The app ships a copy of this page; on start, on pull to refresh and on a tap on the sync label it asks
-     the server for the current one (by hash) and keeps it in localStorage. now = true (pull / tap): switch to it
-     right away (location.reload → the loader shows the stored page); otherwise the next time the app comes back
-     to the front. Never while a save is still on its way (S.busy) or a sheet is open: then on the next return. */
-  var pageReady = false;
-  function checkAppUpdate(now) {
-    if (!API) return;
-    run("getPage", window.CHWISIK_PAGE_HASH || "").then(function (p) {
-      if (!p || !p.html) return;
-      lsSet("chwisik.page", JSON.stringify(p));
-      pageReady = true;
-      if (now && !S.busy && !document.querySelector(".sheet:not([hidden])")) location.reload();
-    }, function () {});
+  /* ---------- app self-update (Android / installed web app) ---------- */
+  var pendingPage = null, checkingPage = false, reloadingPage = false;
+  function applyAppUpdate() {
+    if (!pendingPage || reloadingPage || document.hidden || writesInFlight || snackUndoFn ||
+        document.querySelector(".sheet:not([hidden])") || document.activeElement === $("q")) return;
+    // Only reload once the loader can read the new page. Storage can be full or disabled.
+    try { localStorage.setItem("chwisik.page", JSON.stringify(pendingPage)); } catch (e) { return; }
+    reloadingPage = true;
+    location.reload();
   }
-  document.addEventListener("visibilitychange", function () { if (pageReady && !document.hidden && !S.busy) location.reload(); });
+  function checkAppUpdate() {
+    if (!API || document.hidden || checkingPage || reloadingPage) return;
+    var running = window.CHWISIK_PAGE_HASH || "";
+    checkingPage = true;
+    run("getPage", pendingPage ? pendingPage.hash : running).then(function (page) {
+      checkingPage = false;
+      if (page && page.hash && page.html) pendingPage = page.hash === running ? null : page;
+      applyAppUpdate();
+    }, function () { checkingPage = false; });
+  }
+  if (API) {
+    checkAppUpdate();
+    document.addEventListener("visibilitychange", checkAppUpdate);
+    window.addEventListener("online", checkAppUpdate);
+    setInterval(checkAppUpdate, LIVE_MS);
+    setInterval(applyAppUpdate, POLL_MS);  // retry after the worker finishes a form, save or undo
+  }
 
   /* ---------- boot ----------
      boot() = one getBoot for the current store (init + newest month). It runs at page start, after a store
@@ -1796,7 +1814,6 @@ button.srow { cursor: pointer; }
       afterBoot(init);
       if (started) return;
       started = true;
-      checkAppUpdate();
       setInterval(function () { if (!document.hidden && S.month) load(false); }, POLL_MS);
       setInterval(function () { if (!document.hidden) refreshLive(); }, LIVE_MS);
       setInterval(function () { if (!document.hidden && !S.busy && S.view === "shift") render(); }, 60000);
