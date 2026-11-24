@@ -257,4 +257,21 @@ ok('L ACCESS_OFF = 1 opens it (emergency switch)', out.ok === true, out.err);
 threw = ''; try { exec('menuAccessShow()'); } catch (e) { threw = e.message; }
 ok('L access menu needs the spreadsheet ui', /no ui/.test(threw), threw);
 
+// ----- M. Android app key (AppKeys.gs) -----
+delete props.ACCESS_OFF;
+const appKey = 'test-app-key-1234567890';
+exec("APP_KEYS_.push('" + require('crypto').createHash('sha256').update(appKey).digest('hex') + "')");
+delete cache.accessFail;   // forget section L's 30 wrong codes
+let mo = post({ fn: 'redeemApp', args: [appKey] });
+ok('M listed app key gives a device key', mo.ok === true && /^[\w-]{16}\.[\w-]{32}$/.test(mo.r.dev), mo);
+ok('M that key opens data', post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: mo.r.dev }).ok === true);
+mo = post({ fn: 'redeemApp', args: ['not-a-built-key'] });
+ok('M unknown app key refused', mo.ok === false && /^\[접근\]/.test(mo.err), mo);
+props.APP_ACCESS_OFF = '1';
+mo = post({ fn: 'redeemApp', args: [appKey] });
+ok('M APP_ACCESS_OFF: app key refused', mo.ok === false && /^\[접근\]/.test(mo.err), mo);
+delete props.APP_ACCESS_OFF;
+threw = ''; try { exec('menuAppAccess()'); } catch (e) { threw = e.message; }
+ok('M app access menu needs the spreadsheet ui', /no ui/.test(threw), threw);
+
 console.log(process.exitCode ? 'SOME FAILED' : 'ALL ' + n + ' PASSED');

@@ -530,7 +530,7 @@ body.gated { overflow: hidden; }
      모든 폰 접근 끊기) -> the gate screen; redeem(code) gives a key. The invite link …/#code=XXXXXXXX fills it in. */
   var K_DEV = "chwisik.dev";
   function isAccessErr(e) { return String((e && e.message) || "").indexOf("[접근]") >= 0; }
-  var gateOn = false;
+  var gateOn = false, appTried = false;
   function gate(code) {
     if (gateOn) return;
     gateOn = true;
@@ -538,6 +538,12 @@ body.gated { overflow: hidden; }
     try {   // nothing kept from before stays on this phone's screen
       for (var i = localStorage.length - 1; i >= 0; i--) { var k = localStorage.key(i); if (/^chwisik\.cache(\.|$)/.test(k)) localStorage.removeItem(k); }
     } catch (e) {}
+    // Android app: its build's app key gets a device key without the code (once per page start; refused -> the screen)
+    if (!code && window.CHWISIK_APP_KEY && !appTried) {
+      appTried = true;
+      run("redeemApp", window.CHWISIK_APP_KEY).then(gotKey, function () { gateOn = false; gate(); });
+      return;
+    }
     document.body.classList.add("gated");
     $("gate").hidden = false;
     $("gateErr").textContent = "";
@@ -548,16 +554,17 @@ body.gated { overflow: hidden; }
     var c = $("gateCode").value;
     if (!c.trim()) { $("gateErr").textContent = "코드를 적어 주세요."; return; }
     $("gateOk").disabled = true; $("gateErr").textContent = "확인 중…";
-    run("redeem", c).then(function (r) {
-      lsSet(K_DEV, r.dev);
-      installUrl();
-      gateOn = false; $("gate").hidden = true; document.body.classList.remove("gated");
-      $("gateOk").disabled = false; $("gateCode").value = ""; $("gateErr").textContent = "";
-      bootTries = 0; boot(); refreshLive();
-    }, function (e) {
+    run("redeem", c).then(gotKey, function (e) {
       $("gateOk").disabled = false;
       $("gateErr").textContent = errMsg(e, "연결을 확인해 주세요.");
     });
+  }
+  function gotKey(r) {
+    lsSet(K_DEV, r.dev);
+    installUrl();
+    gateOn = false; $("gate").hidden = true; document.body.classList.remove("gated");
+    $("gateOk").disabled = false; $("gateCode").value = ""; $("gateErr").textContent = "";
+    bootTries = 0; boot(); refreshLive();
   }
   $("gateForm").addEventListener("submit", function (ev) { ev.preventDefault(); gateSubmit(); });
   /* iPhone: 홈 화면에 추가 saves the address on screen (the manifest has no start_url), and the home-screen app gets

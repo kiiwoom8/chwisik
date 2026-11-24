@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-25 (free iPhone path: step card, key carried into the home-screen app)
+Last updated: 2026-11-25 (Android app gets in without the 접근 코드: per-build app key)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -212,6 +212,7 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 | ● `BGF_PW` | menu BGF 점포시스템 비밀번호 입력 · <store> | BGF store password (only place it exists). A store without it is not imported. |
 | `ACCESS_CODE` | first `redeem` / menu 접근 코드 보기 (made if missing), 접근 코드 바꾸기, 모든 폰 접근 끊기 | the 8-sign access code staff enter once per phone (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`). Secret: never in docs, commits or chat logs. |
 | `ACCESS_KEY` | `secret_` (first use), 모든 폰 접근 끊기 | HMAC key of the device keys. Changing it disconnects every phone. |
+| `APP_ACCESS_OFF` | menu 안드로이드 앱 자동 접근 (켜기 / 끄기) | `1` = the Android app's built-in key no longer gets a device key (the app asks for the 접근 코드 like everyone else). |
 | `ACCESS_OFF` | by hand only | `1` = no access check (emergency, e.g. if the check itself breaks). Phones without a key still see the code screen; any phone with a key gets in. Delete it to turn the check back on. |
 | ● `BGF_SS` | `bgfSsFromLogin_` (not the first store) | JSON of the store's `SS_*` variables, taken from its last login answer |
 | ● `SHEETS` | `storeSheets_` (not the first store) | `1` = the store's sheets were made. Delete it (or run `setup()`) to have them checked again. |
@@ -262,7 +263,11 @@ anyone who found them could read every name, 취식 / 폐기 count and shift, an
   (`#gate`, over everything) before any data call. A call refused with `[접근]` (key from before 모든 폰 접근 끊기) →
   the key and every `chwisik.cache*` are deleted and the code screen opens; `boot()` doesn't retry meanwhile.
   `#code=…` in the address (API mode) fills the code in and sends it at once, then the address is cleaned.
-- iPhone: the home-screen copy has its own storage, so the code is entered once more there (the invite message says so).
+- **Android app: no code** (owner, 2026-11-25: "pass 접근코드 for apk users"). Each APK build gets its own random app key: `android.yml` writes it into `app/www/index.html` (`%%CHWISIK_APP_KEY%%`, only in that build's copy, never in git), then commits its SHA-256 to `apps-script/AppKeys.gs` (`APP_KEYS_`, commit by github-actions, `// android-1.<run>`) and starts the deploy (`gh workflow run deploy.yml`, since a token push starts no workflow). The loader passes it as `window.CHWISIK_APP_KEY` (only inside Capacitor); `gate()` first tries `redeemApp(key)` → device key, and shows the code screen only if that is refused. So 모든 폰 접근 끊기 doesn't keep the app out (it gets a new device key by itself).
+  - **Having the APK = in.** The APK is on the public Releases and its key can be read out of it. Kill switches: menu 안드로이드 앱 자동 접근 (all builds; then also 모든 폰 접근 끊기 to drop keys already handed out), or delete one build's line in AppKeys.gs (push = deploy).
+  - APKs from before this have no key: their users enter the code once, or install the new APK.
+  - The CI commit lands on `main`: pull before working (rule 3 already says so).
+- iPhone: the home-screen copy has its own storage; the Safari address carries the key into it (see App → iPhone without paying).
 - Old `/exec` link: `Move.html` doesn't carry the key (it has none); people enter the code on the new address.
 
 ## Passwords (optional, per name)

@@ -275,6 +275,7 @@ function onOpen() {
     .addItem('접근 코드 보기 (직원 초대)', 'menuAccessShow')
     .addItem('접근 코드 바꾸기 (들어온 폰은 그대로)', 'menuAccessNewCode')
     .addItem('모든 폰 접근 끊기 + 새 접근 코드', 'menuAccessRevokeAll')
+    .addItem('안드로이드 앱 자동 접근 (켜기 / 끄기)', 'menuAppAccess')
     .addToUi();
 }
 
@@ -1030,7 +1031,7 @@ function devOk_(dev) {
 /** api() / doPost(): a good device key opens the data functions for this execution. */
 function checkAccess_(fn, dev) {
   ACCESS_ = accessOff_() || devOk_(dev);
-  if (!ACCESS_ && fn !== 'getPage' && fn !== 'redeem') throw new Error(ACCESS_TAG + ' 접근 코드를 넣어 주세요.');
+  if (!ACCESS_ && fn !== 'getPage' && fn !== 'redeem' && fn !== 'redeemApp') throw new Error(ACCESS_TAG + ' 접근 코드를 넣어 주세요.');
 }
 /** First line of every data function anyone could call. */
 function access_() {
@@ -1045,8 +1046,34 @@ function redeem(code) {
     cache.put('accessFail', String(fails + 1), 600);
     throw new Error('접근 코드가 맞지 않아요.');
   }
+  return newDev_();
+}
+function newDev_() {
   var id = b64_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid(), Utilities.Charset.UTF_8)).slice(0, 16);
   return { dev: id + '.' + devSig_(id) };
+}
+/** Android app: the key built into the APK (AppKeys.gs) -> device key, no 접근 코드. Off: APP_ACCESS_OFF = '1'. */
+function redeemApp(appKey) {
+  if (gget_('APP_ACCESS_OFF') === '1') throw new Error(ACCESS_TAG + ' 접근 코드를 넣어 주세요.');
+  var cache = CacheService.getScriptCache();
+  var fails = Number(cache.get('accessFail') || 0);
+  if (fails >= 30) throw new Error('접근 코드가 너무 여러 번 틀렸어요. 10분 뒤에 다시 해 주세요.');
+  var h = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(appKey || ''), Utilities.Charset.UTF_8)
+    .map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
+  if (!appKey || APP_KEYS_.indexOf(h) < 0) {
+    cache.put('accessFail', String(fails + 1), 600);
+    throw new Error(ACCESS_TAG + ' 이 앱은 접근 코드가 필요해요.');
+  }
+  return newDev_();
+}
+function menuAppAccess() {
+  var ui = SpreadsheetApp.getUi();
+  var off = gget_('APP_ACCESS_OFF') === '1';
+  var q = off ? '지금은 꺼져 있어요: 안드로이드 앱도 접근 코드를 넣어야 해요.\n다시 켤까요? (앱만 있으면 코드 없이 들어와요)'
+              : '지금은 켜져 있어요: 안드로이드 앱은 접근 코드 없이 들어와요 (APK는 공개 Releases에서 누구나 받을 수 있어요).\n끌까요? 끄면 새로 여는 앱은 코드를 넣어야 하고, 이미 들어온 폰까지 막으려면 모든 폰 접근 끊기도 하세요.';
+  if (ui.alert('안드로이드 앱 자동 접근', q, ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  if (off) gdel_('APP_ACCESS_OFF'); else gset_('APP_ACCESS_OFF', '1');
+  ui.alert(off ? '켰어요.' : '껐어요.');
 }
 function accessMessage_(c) {
   return '취식 앱: ' + WEB_APP_URL + '#code=' + c + '\n접근 코드: ' + showCode_(c) +
@@ -1078,7 +1105,7 @@ function apiFns_() {
   return {
     getBoot: getBoot, getInit: getInit, getMonth: getMonth, setTag: setTag, addMember: addMember,
     saveShift: saveShift, deleteShift: deleteShift,
-    login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage, redeem: redeem
+    login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage, redeem: redeem, redeemApp: redeemApp
   };
 }
 function doPost(e) {

@@ -24,6 +24,9 @@
    gave last time (localStorage chwisik.page), else the copy shipped with the app (page.html).
    If a downloaded page never started (chwisik.pageTry still set), it falls back to the shipped copy. */
 (function () {
+  // Android build only: android.yml replaces this with the build's own app key (AppKeys.gs). Elsewhere it stays as is = none.
+  var APP_KEY = "%%CHWISIK_APP_KEY%%";
+  if (APP_KEY.indexOf("%%") === 0 || !window.Capacitor) APP_KEY = "";
   var API = "https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec";
   function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } }
   // KakaoTalk's in-app browser can't put the page on the home screen: open the same address in the phone's browser.
@@ -32,7 +35,8 @@
   }
   function show(html, hash) {
     // document.write replaces this head, so the home-screen tags (iPhone: 공유 -> 홈 화면에 추가) go into the new one too.
-    var head = '<script>window.CHWISIK_API=' + JSON.stringify(API) + ';window.CHWISIK_PAGE_HASH=' + JSON.stringify(hash) + ';<\/script>' +
+    var head = '<script>window.CHWISIK_API=' + JSON.stringify(API) + ';window.CHWISIK_PAGE_HASH=' + JSON.stringify(hash) +
+      ';window.CHWISIK_APP_KEY=' + JSON.stringify(APP_KEY) + ';<\/script>' +
       '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">' +
       '<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" href="icon-192.png">' +
       '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">' +
