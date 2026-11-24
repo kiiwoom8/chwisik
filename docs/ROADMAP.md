@@ -11,7 +11,7 @@ Goal: staff get an app icon on their phone that opens straight to the list, with
    - Host a small static shell (GitHub Pages from this repo, `app/` folder) with a manifest, an icon, and a service worker.
    - The shell talks to the Apps Script backend through a JSON endpoint (`doPost` / `doGet?api=…` returning `ContentService` JSON), instead of `google.script.run`. This also removes the Google banner and iframe.
    - "홈 화면에 추가" on Android and iOS gives an app icon.
-2. **Store apps (Android first, then iOS)**, if a PWA isn't enough.
+2. **Store apps (Android first, then iOS)**, if a PWA isn't enough. iOS: 2026-11-25 the build pipeline is ready (`ios.yml`, TestFlight); waiting for the owner's Apple Developer membership + API key secrets. Later, optionally: an unlisted App Store app (one link, no TestFlight app, no 90-day builds; needs full App Review).
    - Wrap the same shell with **Capacitor** (or a Trusted Web Activity on Android) so there is one codebase.
    - Distribute on Android as an APK or through the Play internal-testing track. iOS needs TestFlight and an Apple developer account.
 3. **Push notifications.** After the nightly import: "어제 폐기 23건이 올라왔어요. 등록해 주세요." Use Firebase Cloud Messaging, called from Apps Script with UrlFetch.

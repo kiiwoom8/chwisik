@@ -52,7 +52,7 @@ button, input, select { font: inherit; color: inherit; }
 .hdr { background: var(--sheet); padding-top: env(safe-area-inset-top, 0px); }
 .hdr .wrap { padding-top: 12px; display: grid; gap: 10px; }
 /* transform is set by the script ("sticky bar"): follows the scroll both ways, glides to an end when scrolling stops */
-.top { position: sticky; top: 0; z-index: 5; background: var(--sheet); border-bottom: 1px solid var(--rule); will-change: transform; }
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--sheet); border-bottom: 1px solid var(--rule); will-change: transform; }
 .top .wrap { padding-block: 10px; display: grid; gap: 10px; }
 .titlebar { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; }
 h1 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.01em; flex: 1 1 auto; min-width: 0; }
@@ -300,6 +300,9 @@ button.srow { cursor: pointer; }
 .snack { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(560px, calc(100% - 32px)); background: var(--ink); color: var(--paper); border-radius: 12px; padding: 10px 10px 10px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.25); z-index: 40; font-size: 14px; }
 .snack span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snack button { border: 0; background: transparent; color: var(--accent); font-weight: 700; padding: 8px 10px; cursor: pointer; filter: brightness(1.3); }
+/* Where the page runs under the status bar (iPhone app: Capacitor draws edge to edge; inset 0 elsewhere), keep the
+   status bar area covered, so the sticky tab bar (top: inset) never shows rows scrolling under the clock. */
+body::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: env(safe-area-inset-top, 0px); background: var(--sheet); z-index: 6; pointer-events: none; }
 /* 접근 코드 screen (gate): over everything until this phone has a device key */
 .gate { position: fixed; inset: 0; z-index: 200; background: var(--paper); display: grid; place-items: center; overflow-y: auto;
   padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }

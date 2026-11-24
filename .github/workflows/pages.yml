@@ -50,10 +50,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           URL: ${{ steps.deploy.outputs.page_url }}
+          TF: ${{ vars.TESTFLIGHT_URL }}
         run: |
           npx --yes qrcode@1.5.4 -w 600 -o chwisik-iphone-qr.png "$URL"
           cat > notes.md <<EOF
-          아이폰은 앱스토어 앱 대신 **홈 화면 앱**으로 써요. 받을 파일은 없어요.
+          $( [ -n "$TF" ] && printf '**아이폰 앱 (TestFlight)**: 아이폰에 TestFlight 앱을 받고 %s 를 열어 [설치]. 앱은 알아서 최신으로 바뀌어요. 아래는 앱 없이 쓰는 방법이에요.\n\n' "$TF" )
+          아이폰은 앱스토어 앱 대신 **홈 화면 앱**으로도 써요. 받을 파일은 없어요.
 
           1. 아이폰 카메라로 아래 QR을 찍거나, Safari에서 열기: $URL
           2. 공유 버튼 → **홈 화면에 추가** (iOS 26: ⋯ → 공유 → 홈 화면에 추가)

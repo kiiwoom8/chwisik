@@ -1,0 +1,121 @@
+name: iPhone app
+
+# Builds the iPhone app: the same Capacitor shell as Android (app/www loader -> the staff page from the server),
+# on a GitHub macOS runner (free: the repo is public). The app updates its page by itself, like the APK.
+# - With the App Store Connect secrets (ASC_KEY_P8, ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID): signs with
+#   Apple's cloud-managed certificate (automatic signing through the API key) and uploads to TestFlight, then
+#   makes the release ios-1.<run>. Staff install it through the TestFlight public link (repo variable TESTFLIGHT_URL).
+# - Without them: only checks that the app builds (simulator build, no signing), nothing is uploaded or released.
+# TestFlight builds stop opening 90 days after upload, so a scheduled run uploads a fresh one every month.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/ios.yml"
+      - "!app/make-icons.py"
+      - "!app/icon-source.*"
+      - "!app/icon-preview.png"
+      - "!app/android-res/**"
+  schedule:
+    - cron: "0 18 1 * *"   # 1st of every month, 03:00 KST
+  workflow_dispatch:
+
+concurrency:
+  group: ios-app
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    env:
+      SIGN: ${{ secrets.ASC_KEY_P8 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
+      BUNDLE_ID: com.kiiwoom8.chwisik
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Capacitor and copy the page in
+        working-directory: app
+        run: |
+          npm ci --no-audit --no-fund
+          node build.mjs
+
+      - name: Create the iOS project
+        working-directory: app
+        run: |
+          npx cap add ios
+          A=ios/App/App
+          # our icon and launch screen instead of Capacitor's logo (made by app/make-icons.py)
+          cp ios-res/AppIcon-512@2x.png "$A/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"
+          for f in "$A"/Assets.xcassets/Splash.imageset/*.png; do cp ios-res/splash-2732x2732.png "$f"; done
+          P="$A/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0" "$P"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$P"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 취식" "$P" || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 취식" "$P"
+          # only standard HTTPS: no export-compliance question on every upload
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$P"
+          npx cap sync ios
+          /usr/libexec/PlistBuddy -c "Print" "$P" | grep -E "CFBundle(ShortVersionString|Version|DisplayName)|ITSApp"
+
+      - name: Check that it builds (no signing)
+        if: env.SIGN != 'true'
+        working-directory: app/ios/App
+        run: |
+          echo "::warning::No App Store Connect secrets: built for the simulator only, nothing uploaded. See docs/DEVNOTES.md, App, iPhone app."
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" TARGETED_DEVICE_FAMILY=1 CODE_SIGNING_ALLOWED=NO \
+            build | tail -n 25
+          test "${PIPESTATUS[0]}" = 0
+
+      - name: Archive, sign and upload to TestFlight
+        if: env.SIGN == 'true'
+        working-directory: app/ios/App
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$KEY"
+          AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" "${AUTH[@]}" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" TARGETED_DEVICE_FAMILY=1 \
+            archive | tail -n 25
+          test "${PIPESTATUS[0]}" = 0
+          cat > "$RUNNER_TEMP/export.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          EOF
+          sed -i '' 's/^          //' "$RUNNER_TEMP/export.plist"
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
+            -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}" | tail -n 25
+          test "${PIPESTATUS[0]}" = 0
+          rm -f "$KEY"
+
+      - name: Release ios-1.<run>
+        if: env.SIGN == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TF: ${{ vars.TESTFLIGHT_URL }}
+        run: |
+          NOTES="TestFlight 빌드 1.0 (${GITHUB_RUN_NUMBER}), 커밋 ${GITHUB_SHA::7} ($(git log -1 --pretty=%s | cut -c1-80)).
+          설치: 아이폰에 TestFlight 앱을 받고 ${TF:-TestFlight 공개 링크} 를 열어 [설치]. 새 빌드는 TestFlight가 알아서 받아요. 앱 화면은 서버에서 알아서 최신으로 바뀌어요."
+          gh release create "ios-1.${GITHUB_RUN_NUMBER}" --latest=false \
+            --title "취식 아이폰 앱 1.0 (${GITHUB_RUN_NUMBER}) — TestFlight" --notes "$NOTES" --target "$GITHUB_SHA"

@@ -16,7 +16,7 @@ Instructions for Claude (and any other agent or person) working in this repo.
    - `docs/CODEMAP.md`: whenever functions are added, renamed, removed or change role.
    - `docs/ROADMAP.md`: strike through items that got done; add new ideas the owner mentions.
    - `README.md` / this file: when the overview, layout or rules change.
-5. **Every app build goes to GitHub Releases.** Any app made from this repo (Android now, others later) is built by CI and published as a release: its own versioned release (`android-1.<run>`) plus the moving `android-latest`. Don't hand out builds that aren't on Releases.
+5. **Every app build goes to GitHub Releases.** Any app made from this repo (Android now, others later) is built by CI and published as a release: its own versioned release (`android-1.<run>`) plus the moving `android-latest`; the iPhone app goes to TestFlight with a release `ios-1.<run>` (the IPA can't be installed from a release), and `ios-latest` holds the install steps. Don't hand out builds that aren't on Releases.
 6. **Never commit secrets.** The BGF password lives only in the Apps Script project's Script Properties (`BGF_PW`), never in code, docs, or commit messages. If a secret is committed by mistake, tell the owner so the password can be changed.
 
 ## Code ↔ Apps Script ↔ GitHub

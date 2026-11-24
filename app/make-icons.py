@@ -2,8 +2,9 @@
 Source: app/icon-source.png (or .jpg) — the owner's green character drawing.
 - Removes the white background (flood fill from the edges, so white inside the face stays: eyes, nose, teeth).
 - Keeps only the biggest drawn shape (the character); the speech bubble and stray marks are dropped.
-- Crops square around the character's head and writes the Android launcher icons (transparent background)
-  and the web/iPhone icons (on a light background, since iOS fills transparency with black).
+- Crops square around the character's head and writes the Android launcher icons (transparent background),
+  the web/iPhone icons (on a light background, since iOS fills transparency with black) and the iPhone app's
+  icon + launch screen (app/ios-res/).
 Needs Pillow, numpy, scipy."""
 import glob, os
 import numpy as np
@@ -63,5 +64,13 @@ for name, px in {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 
     os.makedirs(out, exist_ok=True)
     icon(px, 0.04).save(os.path.join(out, "ic_launcher.png"))
     icon(px, 0.04).save(os.path.join(out, "ic_launcher_round.png"))
+# iPhone app (ios.yml copies these into the generated Xcode project): App Store icon 1024 px, no transparency
+# (Apple rejects alpha); launch screen = page background with the icon in the middle (Capacitor's logo replaced).
+ios = os.path.join(HERE, "ios-res")
+os.makedirs(ios, exist_ok=True)
+icon(1024, 0.08, BG).save(os.path.join(ios, "AppIcon-512@2x.png"))
+splash = Image.new("RGB", (2732, 2732), BG[:3])
+splash.paste(icon(560, 0.0, BG), ((2732 - 560) // 2, (2732 - 560) // 2))
+splash.save(os.path.join(ios, "splash-2732x2732.png"))
 icon(512, 0.0).save(os.path.join(HERE, "icon-preview.png"))
 print("icons written from", os.path.basename(src))
