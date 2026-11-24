@@ -272,10 +272,8 @@ function onOpen() {
     .addItem('개발자 비밀번호 설정', 'menuSetDevPw')
     .addItem('직원 비밀번호 지우기', 'menuClearMemberPw')
     .addSeparator()
-    .addItem('접근 코드 보기 (직원 초대)', 'menuAccessShow')
-    .addItem('접근 코드 바꾸기 (들어온 폰은 그대로)', 'menuAccessNewCode')
-    .addItem('모든 폰 접근 끊기 + 새 접근 코드', 'menuAccessRevokeAll')
-    .addItem('안드로이드 앱 자동 접근 (켜기 / 끄기)', 'menuAppAccess')
+    .addItem('접근 계정 (허용 · 끊기)', 'menuAccounts')
+    .addItem('모든 폰 다시 로그인하게 하기', 'menuAccessRevokeAll')
     .addToUi();
 }
 
@@ -986,6 +984,7 @@ function ymd_(d) { return Utilities.formatDate(d, TZ, 'yyyyMMdd'); }
 var WEB_APP_URL = 'https://kiiwoom8.github.io/chwisik/';
 function doGet(e) {
   var p = (e && e.parameter) || {};
+  if (p.allow) return allowPage_(p);   // the owner's 허용 link from the access-request mail
   if (p.stay === '1') {
     return HtmlService.createHtmlOutputFromFile('Index')
       .setTitle('직원 취식 목록')
@@ -997,103 +996,188 @@ function doGet(e) {
   return t.evaluate().setTitle('취식 주소가 바뀌었어요').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-/* ---------- 접근 (기기 키) ----------
- * The page and this server's address are public (GitHub Pages, public repo; the Android app carries the address
- * too), so every data call needs a device key. A phone gets one by entering the access code (접근 코드,
- * Script Property ACCESS_CODE, 8 characters) once: redeem(code) -> 'id.sig', sig = HMAC(ACCESS_KEY, id).
- * Nothing is stored per phone. 모든 폰 접근 끊기 makes a new ACCESS_KEY (every key stops working) and a new code;
- * 접근 코드 바꾸기 makes only a new code (phones already in keep working).
- * Open without a key: getPage (the page source is public anyway) and redeem.
+/* ---------- 접근 (Google 계정) ----------
+ * The page and this server's address are public (GitHub Pages, public repo, the APK), so every data call needs a
+ * device key, and a phone gets one only for a Google account the owner allowed (owner, 2026-11-25: "instead of
+ * 접근코드 or apk access, allow permission through google account. once the account is allowed, always allow the
+ * account"). docs/DEVNOTES.md, Access.
+ *
+ * Sign-in: the page makes a random nonce, opens LOGIN_PAGE?n=<nonce> (GitHub Pages, app/www/login.html; in a new tab,
+ * or the phone's browser for the Android app, since Google sign-in doesn't work inside an app's WebView). There Sign
+ * in with Google (Google Identity Services, client GOOGLE_CLIENT_ID) gives an ID token, posted here with the nonce
+ * (gLogin): Google's tokeninfo checks it, and nonce -> email is kept 6 h. The page asks gPoll(nonce) until the
+ * account is allowed and then gets its device key.
+ * Accounts: Script Property ACCOUNTS = {email: {s: 'ok' | 'wait' | 'no', t: first seen, a: allowed at, n: note}}.
+ * The owner (the account this script runs as) is always allowed. A new account is 'wait' and the owner gets a mail
+ * with a 허용 link (/exec?allow=…&s=…, signed with ALLOW_KEY). Once 'ok' it stays allowed on every phone until the
+ * owner cuts it (menu 접근 계정).
+ * Device key = 'g:<email>:<sig>', sig = HMAC(ACCESS_KEY, 'g|' + email). Every call checks the sig AND that the account
+ * is still allowed, so cutting an account stops its phones at once. Nothing is stored per phone.
+ * Open without a key: getPage (the page source is public anyway), gLogin, gPoll.
  * Direct google.script.run calls to the data functions are refused too: they check ACCESS_ (set only by api()
  * / doPost() after the key check; every execution starts with it false).
  * Script Property ACCESS_OFF = '1' turns the check off (emergency switch; the tests use it). */
+var GOOGLE_CLIENT_ID = '274035594907-i92r76rlpp0c9h1dt79bm6fcheb77b44.apps.googleusercontent.com';   // Google Cloud project chwisik (noerror96), public value
+var LOGIN_PAGE = WEB_APP_URL + 'login.html';
+var EXEC_URL = 'https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec';
+/* Phones that came in with the old 접근 코드 / APK key: their account is allowed by itself on its first Google sign-in
+ * (they were invited already), until this day (KST). After it, a new account always waits for the owner. */
+var ACCESS_OLD_UNTIL = '2026-12-09';
 var ACCESS_TAG = '[접근]';
 var ACCESS_ = false;
-var CODE_CHARS_ = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // 32 signs: no I, O, 0, 1
+var OPEN_FNS_ = ['getPage', 'gLogin', 'gPoll'];
+var NONCE_RE_ = /^[A-Za-z0-9_-]{22,64}$/;
 function accessOff_() { return gget_('ACCESS_OFF') === '1'; }
-function newAccessCode_() {
-  var b = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Utilities.getUuid(), Utilities.Charset.UTF_8);
-  var c = '';
-  for (var i = 0; i < 8; i++) c += CODE_CHARS_.charAt((b[i] + 256) % 32);
-  gset_('ACCESS_CODE', c);
-  return c;
+function ownerEmail_() {
+  try { return String(Session.getEffectiveUser().getEmail() || '').toLowerCase(); } catch (e) { return ''; }
 }
-function accessCode_() {
-  var c = gget_('ACCESS_CODE') || ps_().getProperty('ACCESS_CODE') || '';
-  return c || newAccessCode_();
+function accounts_() {
+  try { return JSON.parse(gget_('ACCOUNTS') || '{}') || {}; } catch (e) { return {}; }
 }
-function showCode_(c) { return c.slice(0, 4) + '-' + c.slice(4); }
-function devSig_(id) { return b64_(Utilities.computeHmacSha256Signature('dev|' + id, secret_('ACCESS_KEY'))).slice(0, 32); }
-function devOk_(dev) {
+/** 'ok' | 'wait' | 'no' | '' (never seen). */
+function accountState_(email) {
+  if (!email) return '';
+  if (email === ownerEmail_()) return 'ok';
+  var a = accounts_()[email];
+  return a ? a.s : '';
+}
+/** Change ACCOUNTS under the script lock, starting from the stored value (another run may have changed it). */
+function setAccount_(email, s, note) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var acc;
+    try { acc = JSON.parse(ps_().getProperty('ACCOUNTS') || '{}') || {}; } catch (e) { acc = {}; }
+    var a = acc[email] || { t: Date.now() };
+    a.s = s;
+    if (s === 'ok') a.a = Date.now();
+    if (note) a.n = note;
+    acc[email] = a;
+    // at most 40 waiting requests (oldest dropped): strangers can't fill the property up
+    var wait = Object.keys(acc).filter(function (k) { return acc[k].s === 'wait'; }).sort(function (x, y) { return acc[x].t - acc[y].t; });
+    while (wait.length > 40) delete acc[wait.shift()];
+    gset_('ACCOUNTS', JSON.stringify(acc));
+  } finally {
+    lock.releaseLock();
+  }
+}
+function accSig_(email) { return b64_(Utilities.computeHmacSha256Signature('g|' + email, secret_('ACCESS_KEY'))).slice(0, 32); }
+function accDev_(email) { return 'g:' + email + ':' + accSig_(email); }
+/** The account a device key was made for ('' = not a good key). */
+function devEmail_(dev) {
+  var m = /^g:([^:\s]{3,254}):([A-Za-z0-9_-]{32})$/.exec(String(dev || ''));
+  return m && m[2] === accSig_(m[1]) ? m[1] : '';
+}
+/** A key from the 접근 코드 days ('id.sig'), only for ACCESS_OLD_UNTIL. */
+function oldDevOk_(dev) {
   var m = /^([A-Za-z0-9_-]{16})\.([A-Za-z0-9_-]{32})$/.exec(String(dev || ''));
-  return !!m && m[2] === devSig_(m[1]);
+  return !!m && m[2] === b64_(Utilities.computeHmacSha256Signature('dev|' + m[1], secret_('ACCESS_KEY'))).slice(0, 32);
 }
-/** api() / doPost(): a good device key opens the data functions for this execution. */
+/** api() / doPost(): a good device key of an allowed account opens the data functions for this execution. */
 function checkAccess_(fn, dev) {
-  ACCESS_ = accessOff_() || devOk_(dev);
-  if (!ACCESS_ && fn !== 'getPage' && fn !== 'redeem' && fn !== 'redeemApp') throw new Error(ACCESS_TAG + ' 접근 코드를 넣어 주세요.');
+  ACCESS_ = accessOff_() || accountState_(devEmail_(dev)) === 'ok';
+  if (!ACCESS_ && OPEN_FNS_.indexOf(fn) < 0) throw new Error(ACCESS_TAG + ' Google 계정으로 들어와 주세요.');
 }
 /** First line of every data function anyone could call. */
 function access_() {
-  if (!ACCESS_ && !accessOff_()) throw new Error(ACCESS_TAG + ' 접근 코드를 넣어 주세요.');
+  if (!ACCESS_ && !accessOff_()) throw new Error(ACCESS_TAG + ' Google 계정으로 들어와 주세요.');
 }
-/** Access code -> device key for this phone. 30 wrong codes in 10 min (all callers together) -> wait. */
-function redeem(code) {
-  var cache = CacheService.getScriptCache();
-  var fails = Number(cache.get('accessFail') || 0);
-  if (fails >= 30) throw new Error('접근 코드가 너무 여러 번 틀렸어요. 10분 뒤에 다시 해 주세요.');
-  if (String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '') !== accessCode_()) {
-    cache.put('accessFail', String(fails + 1), 600);
-    throw new Error('접근 코드가 맞지 않아요.');
+/** Google's ID token (Sign in with Google on LOGIN_PAGE) -> the account's email, checked by Google's tokeninfo. */
+function idTokenEmail_(cred) {
+  if (!/\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID)) throw new Error('Google 로그인이 아직 설정되지 않았어요. 사장님께 알려 주세요.');
+  cred = String(cred || '');
+  if (!/^[\w-]+\.[\w-]+\.[\w-]+$/.test(cred) || cred.length > 4096) throw new Error('Google 로그인을 확인하지 못했어요. 다시 해 주세요.');
+  var res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(cred), { muteHttpExceptions: true });
+  var t = {};
+  try { t = JSON.parse(res.getContentText()) || {}; } catch (e) {}
+  if (res.getResponseCode() !== 200 || t.aud !== GOOGLE_CLIENT_ID || !/^(https:\/\/)?accounts\.google\.com$/.test(String(t.iss)) ||
+      String(t.email_verified) !== 'true' || !t.email || Number(t.exp) * 1000 < Date.now()) {
+    throw new Error('Google 로그인을 확인하지 못했어요. 다시 해 주세요.');
   }
-  return newDev_();
+  return String(t.email).trim().toLowerCase();
 }
-function newDev_() {
-  var id = b64_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid(), Utilities.Charset.UTF_8)).slice(0, 16);
-  return { dev: id + '.' + devSig_(id) };
+/** LOGIN_PAGE: nonce + ID token -> remember who signed in for that nonce; a new account asks the owner. */
+function gLogin(n, cred) {
+  if (!NONCE_RE_.test(String(n || ''))) throw new Error('이 화면은 취식 앱의 [Google 계정으로 들어가기] 버튼으로 열어 주세요.');
+  var email = idTokenEmail_(cred);
+  CacheService.getScriptCache().put('gl:' + n, email, 21600);
+  var s = accountState_(email);
+  if (!s) { setAccount_(email, 'wait'); s = 'wait'; notifyOwner_(email); }
+  return { s: s, email: email };
 }
-/** Android app: the key built into the APK (AppKeys.gs) -> device key, no 접근 코드. Off: APP_ACCESS_OFF = '1'. */
-function redeemApp(appKey) {
-  if (gget_('APP_ACCESS_OFF') === '1') throw new Error(ACCESS_TAG + ' 접근 코드를 넣어 주세요.');
-  var cache = CacheService.getScriptCache();
-  var fails = Number(cache.get('accessFail') || 0);
-  if (fails >= 30) throw new Error('접근 코드가 너무 여러 번 틀렸어요. 10분 뒤에 다시 해 주세요.');
-  var h = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(appKey || ''), Utilities.Charset.UTF_8)
-    .map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
-  if (!appKey || APP_KEYS_.indexOf(h) < 0) {
-    cache.put('accessFail', String(fails + 1), 600);
-    throw new Error(ACCESS_TAG + ' 이 앱은 접근 코드가 필요해요.');
+/** The page, every few seconds after opening LOGIN_PAGE: {s: 'none'} (no sign-in yet) | 'wait' | 'no' | 'ok' + dev. */
+function gPoll(n, old) {
+  var email = NONCE_RE_.test(String(n || '')) ? CacheService.getScriptCache().get('gl:' + n) : null;
+  if (!email) return { s: 'none' };
+  var s = accountState_(email);
+  if (s === 'wait' && oldDevOk_(old) && Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd') <= ACCESS_OLD_UNTIL) {
+    setAccount_(email, 'ok', '접근 코드 쓰던 폰');
+    s = 'ok';
   }
-  return newDev_();
+  return s === 'ok' ? { s: 'ok', email: email, dev: accDev_(email) } : { s: s || 'wait', email: email };
 }
-function menuAppAccess() {
-  var ui = SpreadsheetApp.getUi();
-  var off = gget_('APP_ACCESS_OFF') === '1';
-  var q = off ? '지금은 꺼져 있어요: 안드로이드 앱도 접근 코드를 넣어야 해요.\n다시 켤까요? (앱만 있으면 코드 없이 들어와요)'
-              : '지금은 켜져 있어요: 안드로이드 앱은 접근 코드 없이 들어와요 (APK는 공개 Releases에서 누구나 받을 수 있어요).\n끌까요? 끄면 새로 여는 앱은 코드를 넣어야 하고, 이미 들어온 폰까지 막으려면 모든 폰 접근 끊기도 하세요.';
-  if (ui.alert('안드로이드 앱 자동 접근', q, ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
-  if (off) gdel_('APP_ACCESS_OFF'); else gset_('APP_ACCESS_OFF', '1');
-  ui.alert(off ? '켰어요.' : '껐어요.');
+function allowSig_(email) { return b64_(Utilities.computeHmacSha256Signature('allow|' + email, secret_('ALLOW_KEY'))).slice(0, 32); }
+/** Mail to the owner with a 허용 link (at most 20 a day). */
+function notifyOwner_(email) {
+  var cache = CacheService.getScriptCache(), sent = Number(cache.get('glMail') || 0);
+  if (sent >= 20) return;
+  cache.put('glMail', String(sent + 1), 86400);
+  var link = EXEC_URL + '?allow=' + encodeURIComponent(email) + '&s=' + allowSig_(email);
+  try {
+    MailApp.sendEmail(ownerEmail_(), '[직원 취식 목록] 접근 요청: ' + email,
+      email + ' 계정이 취식 앱에 들어오려고 해요.\n\n아는 사람이면 아래 링크에서 [허용]을 누르세요. 한 번 허용하면 그 계정은 어느 폰에서든 계속 들어와요.\n' +
+      link + '\n\n모르는 계정이면 그냥 두세요 (들어오지 못해요). 시트 메뉴 취식 관리 > 접근 계정 에서도 허용하고 끊을 수 있어요.');
+  } catch (e) {}
 }
-function accessMessage_(c) {
-  return '취식 앱: ' + WEB_APP_URL + '#code=' + c + '\n접근 코드: ' + showCode_(c) +
-    '\n(링크를 누르면 바로 들어가져요. 아이폰은 홈 화면에 추가한 뒤 그 앱에서 코드를 한 번 더 넣어요. 안드로이드 앱도 처음 한 번 넣어요.)';
+/** The page behind the mail link: one button -> allowAccount. */
+function allowPage_(p) {
+  var email = String(p.allow || '').trim().toLowerCase(), ok = String(p.s || '') === allowSig_(email);
+  var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); };
+  var js = function (v) { return JSON.stringify(v).replace(/</g, '\\u003c'); };
+  var body = !ok ? '<p>링크가 맞지 않아요. 메일의 링크를 그대로 눌러 주세요.</p>' :
+    (accountState_(email) === 'ok' ? '<p><b>' + esc(email) + '</b> 계정은 이미 허용돼 있어요.</p>' :
+    '<p><b>' + esc(email) + '</b> 계정을 취식 앱에 들어오게 할까요?<br>한 번 허용하면 어느 폰에서든 계속 들어와요.</p>' +
+    '<button id="b">허용</button><p id="m" role="status"></p><script>document.getElementById("b").onclick=function(){var b=this,m=document.getElementById("m");' +
+    'b.disabled=true;m.textContent="허용하는 중…";google.script.run.withSuccessHandler(function(){m.textContent="허용했어요. 그 폰에서 바로 들어가져요.";b.hidden=true;})' +
+    '.withFailureHandler(function(e){b.disabled=false;m.textContent=(e&&e.message)||"다시 해 주세요.";}).allowAccount(' + js(email) + ',' + js(String(p.s)) + ');};</script>');
+  return HtmlService.createHtmlOutput('<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font:16px/1.6 system-ui,sans-serif;max-width:420px;margin:0 auto;padding:24px 16px;color:#19201c}' +
+    'b{word-break:break-all}button{min-height:44px;min-width:120px;border:0;border-radius:10px;background:#1f7a4d;color:#fff;font:inherit;font-weight:700;cursor:pointer}</style></head><body><h2>취식 앱 접근 허용</h2>' +
+    body + '</body></html>').setTitle('접근 허용').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
-function menuAccessShow() {
-  var ui = SpreadsheetApp.getUi();
-  ui.alert('접근 코드', '직원 단톡방에 아래를 그대로 보내 주세요.\n\n' + accessMessage_(accessCode_()) +
-    '\n\n그만둔 사람이 있으면: 모든 폰 접근 끊기 + 새 접근 코드.', ui.ButtonSet.OK);
+function allowAccount(email, sig) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email || String(sig || '') !== allowSig_(email)) throw new Error('링크가 맞지 않아요.');
+  if (accountState_(email) !== 'ok') setAccount_(email, 'ok', '메일 링크로 허용');
+  return true;
 }
-function menuAccessNewCode() {
-  var ui = SpreadsheetApp.getUi();
-  if (ui.alert('접근 코드 바꾸기', '새 코드를 만들어요. 옛 코드로는 더 들어올 수 없고, 이미 들어온 폰은 그대로 써요.', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
-  ui.alert('새 접근 코드', accessMessage_(newAccessCode_()), ui.ButtonSet.OK);
+/** Menu 접근 계정: the list; a number flips 허용 <-> 끊기, an email allows that account ahead of time. */
+function menuAccounts() {
+  var ui = SpreadsheetApp.getUi(), acc = accounts_();
+  var list = Object.keys(acc).sort(function (x, y) { return (acc[y].t || 0) - (acc[x].t || 0); });
+  var L = { ok: '허용', wait: '허용 기다림', no: '끊김' };
+  var day = function (ms) { return ms ? Utilities.formatDate(new Date(ms), 'Asia/Seoul', 'M/d') : ''; };
+  var text = (list.length ? list.map(function (e, i) {
+    var a = acc[e];
+    return (i + 1) + '. ' + e + ' - ' + L[a.s] + ' (' + day(a.s === 'ok' ? a.a : a.t) + (a.n ? ', ' + a.n : '') + ')';
+  }).join('\n') : '아직 들어온 계정이 없어요.') +
+    '\n\n사장님 계정(' + ownerEmail_() + ')은 늘 들어와요.' +
+    '\n\n번호를 적으면 허용 <-> 끊기가 바뀌어요 (기다림은 허용으로). 이메일을 적으면 그 계정을 미리 허용해요.';
+  var r = ui.prompt('접근 계정', text, ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  var v = r.getResponseText().trim().toLowerCase();
+  if (!v) return;
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { setAccount_(v, 'ok', '미리 허용'); ui.alert(v + ' 허용했어요. 그 계정으로 로그인하면 바로 들어와요.'); return; }
+  var e = list[Number(v) - 1];
+  if (!e) { ui.alert('목록의 번호나 이메일을 적어 주세요.'); return; }
+  var s = acc[e].s === 'ok' ? 'no' : 'ok';
+  setAccount_(e, s);
+  ui.alert(e + (s === 'ok' ? ' 허용했어요.' : ' 끊었어요. 그 계정으로 들어온 폰은 바로 막혀요.'));
 }
 function menuAccessRevokeAll() {
   var ui = SpreadsheetApp.getUi();
-  if (ui.alert('모든 폰 접근 끊기', '모든 폰(안드로이드 앱, 아이폰, 브라우저, z)이 새 접근 코드를 넣어야 다시 들어올 수 있어요. 할까요?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  if (ui.alert('모든 폰 다시 로그인', '모든 폰(안드로이드 앱, 아이폰, 브라우저, z)이 Google 계정으로 다시 들어와야 해요. 허용된 계정은 그대로라 로그인만 하면 돼요. 할까요?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
   gset_('ACCESS_KEY', Utilities.getUuid() + Utilities.getUuid());
-  ui.alert('새 접근 코드', '직원 단톡방에 보내 주세요.\n\n' + accessMessage_(newAccessCode_()), ui.ButtonSet.OK);
+  ui.alert('했어요.');
 }
 
 /* ---------- 앱 API (JSON) ----------
@@ -1105,7 +1189,7 @@ function apiFns_() {
   return {
     getBoot: getBoot, getInit: getInit, getMonth: getMonth, setTag: setTag, addMember: addMember,
     saveShift: saveShift, deleteShift: deleteShift,
-    login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage, redeem: redeem, redeemApp: redeemApp
+    login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage, gLogin: gLogin, gPoll: gPoll
   };
 }
 function doPost(e) {

@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-25 (Android app gets in without the 접근 코드: per-build app key)
+Last updated: 2026-11-25 (access by Google account; 접근 코드 and APK key removed)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -210,10 +210,10 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 | Key | Set by | Meaning |
 |---|---|---|
 | ● `BGF_PW` | menu BGF 점포시스템 비밀번호 입력 · <store> | BGF store password (only place it exists). A store without it is not imported. |
-| `ACCESS_CODE` | first `redeem` / menu 접근 코드 보기 (made if missing), 접근 코드 바꾸기, 모든 폰 접근 끊기 | the 8-sign access code staff enter once per phone (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`). Secret: never in docs, commits or chat logs. |
-| `ACCESS_KEY` | `secret_` (first use), 모든 폰 접근 끊기 | HMAC key of the device keys. Changing it disconnects every phone. |
-| `APP_ACCESS_OFF` | menu 안드로이드 앱 자동 접근 (켜기 / 끄기) | `1` = the Android app's built-in key no longer gets a device key (the app asks for the 접근 코드 like everyone else). |
-| `ACCESS_OFF` | by hand only | `1` = no access check (emergency, e.g. if the check itself breaks). Phones without a key still see the code screen; any phone with a key gets in. Delete it to turn the check back on. |
+| `ACCOUNTS` | `setAccount_`: sign-in (`gLogin`), mail link, menu 접근 계정 | JSON of Google accounts: `{email: {s: ok / wait / no, t, a, n}}` (see *Access*). |
+| `ACCESS_KEY` | `secret_` (first use), menu 모든 폰 다시 로그인하게 하기 | HMAC key of the device keys. Changing it makes every phone sign in again (accounts stay allowed). |
+| `ALLOW_KEY` | `secret_` (first request mail) | HMAC key of the 허용 links in request mails. Changing it voids links already sent. |
+| `ACCESS_OFF` | by hand only | `1` = no access check (emergency, e.g. if the check itself breaks). Phones without a key still see the sign-in screen; any phone with a key gets in. Delete it to turn the check back on. |
 | ● `BGF_SS` | `bgfSsFromLogin_` (not the first store) | JSON of the store's `SS_*` variables, taken from its last login answer |
 | ● `SHEETS` | `storeSheets_` (not the first store) | `1` = the store's sheets were made. Delete it (or run `setup()`) to have them checked again. |
 | ● `VER` | every write/import (`bumpVersion_`), hand edits (`onEdit`) | data version; the page polls `getMonth` with it, and the month cache is keyed by it |
@@ -233,42 +233,65 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 | `DEV_PW_HASH` | menu 개발자 비밀번호 설정 | hash of the developer bypass password |
 | `BAK_<slot>`, `BAK_AT_<slot>` | `backupTo_` | id of a backup spreadsheet file and the time of its last copy (`yyyy-MM-dd HH:mm`). Slots: `D0`–`D6` weekday (일–토), `M1`–`M12` month end, `H` 직접, `R` 되살리기 직전. Delete a pair to forget that file (the next backup of the slot makes a new one). |
 
-## Access (접근 코드, since 2026-11-25)
+## Access (Google 계정, since 2026-11-25)
 
-Why: the page (GitHub Pages) and the server address (in the public repo and inside the APK) are public, so before this
-anyone who found them could read every name, 취식 / 폐기 count and shift, and tag or add things. The owner (2026-11-25):
-"i was planning to give access through app, but in ios case it's not. solve it". The APK never hid anything either.
+Why: the page (GitHub Pages) and the server address (in the public repo and inside the APK) are public, so anyone who
+found them could read every name, 취식 / 폐기 count and shift. First a shared 접근 코드 (+ a key built into each APK)
+kept them out; the owner then replaced both (2026-11-25): "instead of 접근코드 or apk access, allow permission through
+google account. one the account is allowed, always allow the account".
 
-- **Every data call needs a device key.** `api(store, fn, args, dev)` and `doPost` (`{fn, args, store, dev}`) run
-  `checkAccess_(fn, dev)` first; without a good key they answer `[접근] 접근 코드를 넣어 주세요.` Open without a key:
-  `getPage` (the page source is public anyway, and old apps must be able to update to the page with the code screen)
-  and `redeem`.
+- **Every data call needs a device key of an allowed Google account.** `api(store, fn, args, dev)` and `doPost`
+  (`{fn, args, store, dev}`) run `checkAccess_(fn, dev)` first; without one they answer
+  `[접근] Google 계정으로 들어와 주세요.` Open without a key: `getPage` (the page source is public anyway, and old apps
+  must be able to update), `gLogin`, `gPoll`.
 - **Direct `google.script.run` calls are refused too.** Each public data function (`getBoot`, `getInit`, `getMonth`,
   `setTag`, `saveShift`, `deleteShift`, `addMember`, `login`, `setPassword`, `refreshNow`) starts with `access_()`,
   which passes only when this execution came through `api()` / `doPost()` with a good key (`ACCESS_`, false at the
   start of every execution). **A new public data function must start with `access_()`.**
-- **Device key** = `id.sig`: `id` 16 random signs, `sig` = HMAC-SHA256(`ACCESS_KEY`, `dev|id`), 32 signs. Nothing is
-  stored per phone, so there is no list to keep; the price is that one phone can't be cut off alone.
-- **Getting a key:** `redeem(code)` compares the code (case and dashes ignored) with `ACCESS_CODE` and returns
-  `{dev}`. 30 wrong codes in 10 min, all callers together, block `redeem` for 10 min (Apps Script can't see IP
-  addresses); 8 signs from 32 = 40 bits, so guessing is out of reach. Phones already in are not affected by the block.
-- **Owner's menu** (취식 관리):
-  - 접근 코드 보기 (직원 초대): the message to paste into the staff group chat: the link
-    `https://kiiwoom8.github.io/chwisik/#code=<code>` (opens straight in, the code never reaches GitHub: it's after
-    `#`) and the code as `XXXX-XXXX`.
-  - 접근 코드 바꾸기: new code; phones already in keep working (the old code stops letting new phones in).
-  - 모든 폰 접근 끊기 + 새 접근 코드: new `ACCESS_KEY` and new code; every phone (Android app, iPhone, browsers,
-    z's Chwisik tab) must enter the new code. **Use it when someone leaves**, then post the new code.
-- **Page** (`Index.html`): key in localStorage `chwisik.dev` (all stores). No key at start → the code screen
-  (`#gate`, over everything) before any data call. A call refused with `[접근]` (key from before 모든 폰 접근 끊기) →
-  the key and every `chwisik.cache*` are deleted and the code screen opens; `boot()` doesn't retry meanwhile.
-  `#code=…` in the address (API mode) fills the code in and sends it at once, then the address is cleaned.
-- **Android app: no code** (owner, 2026-11-25: "pass 접근코드 for apk users"). Each APK build gets its own random app key: `android.yml` writes it into `app/www/index.html` (`%%CHWISIK_APP_KEY%%`, only in that build's copy, never in git), then commits its SHA-256 to `apps-script/AppKeys.gs` (`APP_KEYS_`, commit by github-actions, `// android-1.<run>`) and starts the deploy (`gh workflow run deploy.yml`, since a token push starts no workflow). The loader passes it as `window.CHWISIK_APP_KEY` (only inside Capacitor); `gate()` first tries `redeemApp(key)` → device key, and shows the code screen only if that is refused. So 모든 폰 접근 끊기 doesn't keep the app out (it gets a new device key by itself).
-  - **Having the APK = in.** The APK is on the public Releases and its key can be read out of it. Kill switches: menu 안드로이드 앱 자동 접근 (all builds; then also 모든 폰 접근 끊기 to drop keys already handed out), or delete one build's line in AppKeys.gs (push = deploy).
-  - APKs from before this have no key: their users enter the code once, or install the new APK.
-  - The CI commit lands on `main`: pull before working (rule 3 already says so).
+- **Device key** = `g:<email>:<sig>`, `sig` = HMAC-SHA256(`ACCESS_KEY`, `g|<email>`), 32 signs. Every call checks the
+  sig **and** that the account is allowed now, so cutting an account stops all its phones at the next call. Same key
+  for the account on every phone; nothing stored per phone.
+- **Sign-in** (Sign in with Google = Google Identity Services, OAuth client `GOOGLE_CLIENT_ID`, the same value in
+  `Code.gs` and `app/www/login.html`; Web client, authorized JavaScript origin `https://kiiwoom8.github.io`, only the
+  basic email scope, so no Google review and no "unverified" screen):
+  Google Cloud project `chwisik` (owner's noerror96 account), Google Auth Platform: app name 취식, audience External,
+  **In production** (Testing would let only listed test users sign in), home page `https://kiiwoom8.github.io/chwisik/`,
+  privacy page `app/www/privacy.html`, authorized domain `kiiwoom8.github.io`; client "chwisik web" (its secret is not
+  used anywhere: GIS needs only the ID). Adding a logo would require Google's verification, so there is none.
+  1. The gate (`#gate`) shows one button, a link to `login.html?n=<nonce>` (`&app=1` in the Android app), opened in a
+     new tab; the Android app's WebView hands it to the phone's browser (Capacitor opens other hosts outside, and
+     Google refuses sign-in inside a WebView anyway). The nonce: 24 random signs, `chwisik.gn` in localStorage (kept
+     across reloads, new after 5 h).
+  2. `login.html` (GitHub Pages) shows Google's button; the ID token goes to `gLogin(nonce, token)`: Google's tokeninfo
+     endpoint checks it (`aud` = our client, issuer Google, `email_verified`, not expired) → email (lower case),
+     kept as `gl:<nonce>` in the script cache for 6 h. A new account is added as waiting and the owner gets a mail.
+     On GitHub Pages (not the app) it also stores the key in that browser once allowed (Safari → home screen).
+  3. The page asks `gPoll(nonce, oldKey)` every 2.5 s for 3 min after the button, then every 10 s, and at once when it
+     comes back to the front: `{s: 'none' | 'wait' | 'no'}` with the email, or `{s: 'ok', dev}` → key stored, page boots.
+- **Accounts** (Script Property `ACCOUNTS`, JSON `{email: {s: 'ok' | 'wait' | 'no', t: first seen, a: allowed at, n: note}}`,
+  changed only by `setAccount_` under the script lock). **Once allowed, always allowed** on any phone, also after
+  모든 폰 다시 로그인; only the owner cuts it. The owner's own account (the one the script runs as) is always allowed.
+  At most 40 waiting entries (oldest dropped), at most 20 request mails a day.
+- **Allowing**: the request mail (`notifyOwner_`) has a link `/exec?allow=<email>&s=<sig>` (sig = HMAC(`ALLOW_KEY`,
+  `allow|<email>`)): a page with one [허용] button (`allowPage_` → `allowAccount`), so a mail scanner opening the link
+  allows nothing. Or menu **접근 계정 (허용 · 끊기)**: the list; a number flips 허용 ↔ 끊기 (waiting → 허용); an email
+  address allows that account ahead of time.
+- **When someone leaves**: menu 접근 계정 → their number (끊김). Their phones are out at once; nobody else is touched.
+  **모든 폰 다시 로그인하게 하기** makes a new `ACCESS_KEY`: every phone must sign in again (allowed accounts get straight
+  back in).
+- **Moving over from the 접근 코드** (until `ACCESS_OLD_UNTIL` = 2026-12-09): a phone that had a key from the 접근 코드 or
+  the APK key (`id.sig`) keeps it as `chwisik.devOld` when the gate opens and sends it with `gPoll`; a waiting account
+  that comes with a good old key is allowed by itself (note `접근 코드 쓰던 폰`), since that phone was invited already.
+  Old keys alone open nothing. After that day this does nothing; it can be deleted.
+- **Page** (`Index.html`): key in localStorage `chwisik.dev` (all stores). No key at start → the gate before any data
+  call. A call refused with `[접근]` (account cut, or 모든 폰 다시 로그인) → the key and every `chwisik.cache*` are
+  deleted and the gate opens; `boot()` doesn't retry meanwhile. Old `#code=` invite links are only cleaned from the
+  address.
+- **Not verified until a real run**: the Google button and tokeninfo on the live site, the Android app opening
+  `login.html` in the phone's browser, iPhone home-screen app opening it in Safari and noticing when it comes back.
 - iPhone: the home-screen copy has its own storage; the Safari address carries the key into it (see App → iPhone without paying).
-- Old `/exec` link: `Move.html` doesn't carry the key (it has none); people enter the code on the new address.
+- History: until 2026-11-25 an 8-sign 접근 코드 (`ACCESS_CODE`, `redeem`, invite link `#code=`) and a per-build APK key
+  (`AppKeys.gs`, `redeemApp`, `APP_ACCESS_OFF`); all removed. Those Script Properties can be deleted.
 
 ## Passwords (optional, per name)
 
@@ -290,7 +313,7 @@ anyone who found them could read every name, 취식 / 폐기 count and shift, an
 - **지금 백업하기**: copies everything into the `직접` backup file now (`menuBackupNow`); the alert gives the file's link.
 - **백업에서 되살리기**: lists the backups (newest first), asks which one and which sheets (empty = all, or names with commas), confirms, then restores (`menuRestore` → `restoreFrom_`). See *Backups*.
 - **개발자 비밀번호 설정** (all stores), **직원 비밀번호 지우기** (asks which store): see *Passwords*.
-- **접근 코드 보기 (직원 초대)**, **접근 코드 바꾸기 (들어온 폰은 그대로)**, **모든 폰 접근 끊기 + 새 접근 코드**: see *Access (접근 코드)*.
+- **접근 계정 (허용 · 끊기)**, **모든 폰 다시 로그인하게 하기**: see *Access (Google 계정)*.
 
 ## Backups (since 2026-11-20)
 
@@ -434,12 +457,12 @@ Why: the `/exec` link is slow to open (Google's wrapper page, two iframes, then 
 - **iPhone app (TestFlight)** (owner, 2026-11-25: "manually setting them to add 홈화면 in ios sucks … app would be the most convenient"): the same Capacitor shell as Android, built by `.github/workflows/ios.yml` on a GitHub macOS runner (`macos-26`, free because the repo is public). App id `com.kiiwoom8.chwisik`, name 취식, iPhone only (`TARGETED_DEVICE_FAMILY=1`), version 1.0 (build = run number), `ITSAppUsesNonExemptEncryption = false`, icon + launch screen from `app/ios-res/` (`make-icons.py`).
   - **Needs the owner's Apple Developer Program membership** (₩129,000 / year in Korea, checked 2026-11-25; approval 24–48 h) and four repo secrets: `ASC_KEY_P8` (the App Store Connect API key file's text, role Admin, so CI can make the signing certificate and profile itself), `ASC_KEY_ID`, `ASC_ISSUER_ID`, `APPLE_TEAM_ID`. Plus an app record in App Store Connect for the bundle id.
   - With the secrets: archive with automatic signing (`-allowProvisioningUpdates` + API key) → export with `destination upload` → TestFlight → release `ios-1.<run>`. Without them: a simulator build only (a check that it compiles), with a warning; nothing uploaded or released.
-  - Staff install: the TestFlight app, then the public link (repo variable `TESTFLIGHT_URL`; `ios-latest` and `ios-1.<run>` show it). The first build needs Apple's Beta App Review (give the reviewer the 접근 코드 in the review notes); later builds usually don't. Builds stop opening 90 days after upload, so `ios.yml` also runs on the 1st of every month.
+  - Staff install: the TestFlight app, then the public link (repo variable `TESTFLIGHT_URL`; `ios-latest` and `ios-1.<run>` show it). The first build needs Apple's Beta App Review (give the reviewer a test Google account allowed ahead of time in menu 접근 계정); later builds usually don't. Builds stop opening 90 days after upload, so `ios.yml` also runs on the 1st of every month.
   - Inside the app the page runs edge to edge (Capacitor's `contentInset` never), so `.top` sticks at `env(safe-area-inset-top)` and `body::before` covers the status bar area (both 0 everywhere else).
   - Not verified until the first signed run: signing, upload, the WKWebView talking to the server (CORS from `capacitor://localhost`; the Android WebView works the same way). The unsigned build is checked on every push.
 - **iPhone without paying (the current way)** (owner, 2026-11-25: "find another way of not paying money"): there is no free real app (free sideloading needs a computer and expires every 7 days; a Web Clip profile is more taps with an "unverified" warning), so the home-screen page is made as short as possible:
-  - Staff tap the invite link in KakaoTalk → it opens in Safari (loader) → the code is taken from `#code=` → a step card (`iosHint`, `#iosBar`): 주소창 옆 ⋯ (iOS 27: ≡; iOS 18: the 공유 button below) → 공유 → 홈 화면에 추가 → 웹 앱으로 열기 on → 추가. (The Korean label of "Open as Web App" is my reading; check on a phone.)
-  - **No second code**: `manifest.webmanifest` has no `start_url`, so 홈 화면에 추가 saves the address on screen, and in iPhone Safari the page keeps that address at `?k=<device key>&store=<id>&me=<name>` (`installUrl()`: at start, after a code, after picking a name). The home-screen app's first start (`takeInstallUrl`) stores key, store and name if it has none, then cleans the address. Anywhere else (not iPhone Safari) these parameters are only read and removed. Anyone given that Safari address gets in like with the invite link; 모든 폰 접근 끊기 cuts it like every key.
+  - Staff tap the link in KakaoTalk → it opens in Safari (loader) → Google sign-in (*Access*) → a step card (`iosHint`, `#iosBar`): 주소창 옆 ⋯ (iOS 27: ≡; iOS 18: the 공유 button below) → 공유 → 홈 화면에 추가 → 웹 앱으로 열기 on → 추가. (The Korean label of "Open as Web App" is my reading; check on a phone.)
+  - **No second sign-in**: `manifest.webmanifest` has no `start_url`, so 홈 화면에 추가 saves the address on screen, and in iPhone Safari the page keeps that address at `?k=<device key>&store=<id>&me=<name>` (`installUrl()`: at start, after sign-in, after picking a name). The home-screen app's first start (`takeInstallUrl`) stores key, store and name if it has none, then cleans the address. Anywhere else (not iPhone Safari) these parameters are only read and removed. Anyone given that Safari address gets in as that account; cutting the account (or 모든 폰 다시 로그인) stops it like every key.
 - **iPhone without the app**: staff can also use the installable page `app/www` on the home screen: Safari → 공유 (iOS 26: ⋯ → 공유) → 홈 화면에 추가 gives a 취식 icon that opens full screen, without Google's banner, and updates itself like the Android app.
   - **Host**: GitHub Pages, `https://kiiwoom8.github.io/chwisik/`, built by `.github/workflows/pages.yml` on push to `app/www/**`, `app/build.mjs` or `apps-script/Index.html` (`node app/build.mjs` → upload `app/www` → deploy-pages). Live since 2026-11-25 (repo made public that day for this; free Pages needs a public repo; Settings → Pages → Source = *GitHub Actions*). If the repo ever goes private again the job is skipped and the site stops updating.
   - **Home-screen tags**: the loader `document.write`s the staff page over its own head, so `show()` writes the manifest, apple-touch-icon, `apple-mobile-web-app-*` and light/dark `theme-color` tags into the new head too; without them Safari's 홈 화면에 추가 saw none (screenshot icon, opened in Safari on iOS before 26).

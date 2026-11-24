@@ -8,7 +8,8 @@ Address options: ?delay=ms (server answer time, to see the loading screen), ?fai
 ?store=31949 (a link that names the store), ?gs=1 (adds a third store without 저회전 and without 전산),
 ?closed=1 (adds last month as a closed month: 월별 합계 shows its 월별 마감 numbers), ?savefail=1 (saveShift / deleteShift refuse).
 ?ios=1 = iPhone Safari, ?ios=2 = iPhone home-screen app; ?api=1 = the hosted copy's fetch mode.
-Access code for the stub: TEST-2345 (any other code is refused; calls without the key get [접근]).
+Google sign-in for the stub: after the gate's button, gPoll answers none, none, wait (staff@gmail.com), then ok
+(calls without a g:… key get [접근]); ?deny=1 answers no instead of ok.
 The page keeps its data in localStorage: run localStorage.clear() in the console to start as a new phone.
 """
 import io, sys, re
@@ -66,9 +67,12 @@ stub = r'''
     },
     getPage: function () { return null; },
     login: function () { return { token: "tok" }; },
-    redeem: function (st, code) {
-      if (String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "") !== "TEST2345") throw new Error("접근 코드가 맞지 않아요.");
-      return { dev: "stubdevice000000." + "s".repeat(32) };
+    gPoll: function (st, n, old) {
+      var k = (window.STUB_POLLS = (window.STUB_POLLS || 0) + 1);
+      if (k <= 2) return { s: "none" };
+      if (k <= 3) return { s: "wait", email: "staff@gmail.com" };
+      if (Q.get("deny")) return { s: "no", email: "staff@gmail.com" };
+      return { s: "ok", email: "staff@gmail.com", dev: "g:staff@gmail.com:" + "s".repeat(32) };
     }
   };
   var calls = window.STUB_CALLS = [];
@@ -79,7 +83,7 @@ stub = r'''
       api: function (st, fn, args, dev) {
         calls.push(st + ":" + fn);
         setTimeout(function () {
-          if (fn !== "getPage" && fn !== "redeem" && !/^stubdevice/.test(dev || "")) { bad(new Error("[접근] 접근 코드를 넣어 주세요.")); return; }
+          if (fn !== "getPage" && fn !== "gPoll" && !/^g:/.test(dev || "")) { bad(new Error("[접근] Google 계정으로 들어와 주세요.")); return; }
           if (FAIL > 0 && fn === "getBoot") { FAIL--; bad(new Error("stub fail")); return; }
           if (!DB[st]) { bad(new Error("없는 점포예요. 점포를 다시 골라 주세요.")); return; }
           try { ok(JSON.parse(JSON.stringify(F[fn].apply(null, [st].concat(args)) || null))); } catch (e) { bad(e); }
@@ -103,7 +107,7 @@ stub = r'''
         calls.push((b.store || "") + ":" + b.fn);
         setTimeout(function () {
           var out;
-          if (b.fn !== "getPage" && b.fn !== "redeem" && !/^stubdevice/.test(b.dev || "")) out = { ok: false, err: "[접근] 접근 코드를 넣어 주세요." };
+          if (b.fn !== "getPage" && b.fn !== "gPoll" && !/^g:/.test(b.dev || "")) out = { ok: false, err: "[접근] Google 계정으로 들어와 주세요." };
           else if (!DB[b.store || "25377"]) out = { ok: false, err: "없는 점포예요. 점포를 다시 골라 주세요." };
           else { try { out = { ok: true, r: JSON.parse(JSON.stringify(F[b.fn].apply(null, [b.store || "25377"].concat(b.args)) || null)) }; } catch (e) { out = { ok: false, err: e.message }; } }
           resolve({ ok: true, json: function () { return Promise.resolve(out); } });

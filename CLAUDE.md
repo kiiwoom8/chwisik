@@ -52,7 +52,7 @@ Start with `docs/DEVNOTES.md`, then `docs/CODEMAP.md` for the code you are about
 - 취식 records the **full name** (김성휘). 폐기 records the **first name only** (성휘).
 - 저회전 lines (폐기목록 column S = `저회전`) can be 취식 or 폐기 (폐기 = who handled it), and don't count as 미등록.
 - **Stores.** There are several stores (`STORES` in Code.gs; DEVNOTES → Stores). Server code always works for `store_()`: get sheets with `sheet_(SH_…)`, Script Properties with `pget_` / `pset_` (per store) or `gget_` / `gset_` (shared), cache keys with `ck_()`. Never write a sheet name, store code or property key directly. Page code keeps per-store things under `K(name)`. 근무 시간 is summed per person across stores; everything else is per store.
-- Code.gs functions without a trailing `_` are public (callable from the /exec link): check the caller in every new one, and list the ones the page uses in `apiFns_()`. Every public function that reads or writes data starts with `access_()` (접근 코드; DEVNOTES → Access).
+- Code.gs functions without a trailing `_` are public (callable from the /exec link): check the caller in every new one, and list the ones the page uses in `apiFns_()`. Every public function that reads or writes data starts with `access_()` (Google account access; DEVNOTES → Access).
 - Never type the BGF password anywhere; BGF's static form scripts (`/websrc/deploy/GJ/*.xfdl.js`) can be read without logging in.
 - Keep the staff page working on a phone at ~360px width, with no login, and never wider than the screen even with big phone text (use `minmax(0, 1fr)` grid columns; DEVNOTES → Page behavior).
 - Check JS syntax before pushing: `node --check` on Code.gs (copied to a `.js` file) and on the `<script>` block of Index.html. Run `node tests/server.test.js` after any Code.gs change.

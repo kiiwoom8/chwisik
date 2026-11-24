@@ -19,8 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write   # releases + the app key line in AppKeys.gs
-  actions: write    # starts the Apps Script deploy after that
+  contents: write   # releases
 
 jobs:
   build:
@@ -42,17 +41,6 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           node build.mjs
-
-      # Every build gets its own random app key: only inside this APK (never in git); its SHA-256 goes into
-      # apps-script/AppKeys.gs, so the app gets in without the 접근 코드 (Code.gs redeemApp).
-      - name: App key for this build
-        run: |
-          KEY=$(openssl rand -base64 33 | tr '+/' '-_' | tr -d '=\n')
-          echo "::add-mask::$KEY"
-          grep -q '%%CHWISIK_APP_KEY%%' app/www/index.html
-          sed -i "s|%%CHWISIK_APP_KEY%%|$KEY|" app/www/index.html
-          ! grep -q '%%CHWISIK_APP_KEY%%' app/www/index.html
-          echo "APP_KEY_HASH=$(printf '%s' "$KEY" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
       - name: Create the Android project
         working-directory: app
@@ -93,27 +81,6 @@ jobs:
             echo "SIGNED=debug" >> "$GITHUB_ENV"
           fi
           "$BT/apksigner" verify --print-certs "$GITHUB_WORKSPACE/chwisik.apk" | head -3
-
-      - name: Register the app key on the server (AppKeys.gs, then deploy)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -- app/www/index.html   # the key never goes into git
-          ok=0
-          for i in 1 2 3; do
-            git fetch -q origin main && git reset -q --hard origin/main
-            sed -i "/^\];/i \  '${APP_KEY_HASH}', // android-1.${GITHUB_RUN_NUMBER}" apps-script/AppKeys.gs
-            grep -q "${APP_KEY_HASH}" apps-script/AppKeys.gs
-            git add apps-script/AppKeys.gs
-            git commit -q -m "Android app key for android-1.${GITHUB_RUN_NUMBER}"
-            if git push -q origin HEAD:main; then ok=1; break; fi
-            sleep 5
-          done
-          test "$ok" = 1
-          # a push by this token starts no workflows, so start the deploy by hand
-          gh workflow run deploy.yml --ref main
 
       - uses: actions/upload-artifact@v4
         with:

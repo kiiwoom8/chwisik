@@ -215,7 +215,7 @@ ok('K not callable through api()', /알 수 없는/.test(threw), threw);
 threw = ''; try { exec('menuRestore()'); } catch (e) { threw = e.message; }
 ok('K menu needs the spreadsheet ui', /no ui/.test(threw), threw);
 
-// ----- L. access code + device keys (the check is on from here) -----
+// ----- L. Google account access (the check is on from here) -----
 delete props.ACCESS_OFF;
 const post = (body) => JSON.parse(exec('doPost({ postData: { contents: ' + JSON.stringify(JSON.stringify(body)) + ' } })').text);
 out = post({ fn: 'getMonth', args: [mon, ''], store: '25377' });
@@ -226,52 +226,96 @@ threw = ''; try { exec("getBoot('김성휘', '')"); } catch (e) { threw = e.mess
 ok('L direct call refused', /^\[접근\]/.test(threw), threw);
 out = post({ fn: 'getPage', args: [''] });
 ok('L getPage open without a key', out.ok === true && out.r && out.r.hash, out);
-out = post({ fn: 'redeem', args: ['WRONG123'] });
-ok('L wrong code refused', out.ok === false && /맞지 않아요/.test(out.err), out);
-const code = props.ACCESS_CODE;
-ok('L code made on first use: 8 signs, no I O 0 1', /^[A-HJ-NP-Z2-9]{8}$/.test(code), code);
-out = post({ fn: 'redeem', args: [code.slice(0, 4).toLowerCase() + '-' + code.slice(4)] });
-ok('L code as typed (small letters, dash) gives a key', out.ok === true && /^[\w-]{16}\.[\w-]{32}$/.test(out.r.dev), out);
+out = post({ fn: 'redeem', args: ['ABCDEFGH'] });
+ok('L the old 접근 코드 call is gone', out.ok === false && /알 수 없는/.test(out.err), out);
+const N1 = 'nonce-aaaaaaaaaaaaaaaaaaaa', N2 = 'nonce-bbbbbbbbbbbbbbbbbbbb', N3 = 'nonce-cccccccccccccccccccc';
+exec("GOOGLE_CLIENT_ID = ''");
+out = post({ fn: 'gLogin', args: [N1, 'aa.bb.cc'] });
+ok('L no client id yet: sign-in says so', out.ok === false && /설정되지 않았/.test(out.err), out);
+const CID = 'test-client.apps.googleusercontent.com';
+exec("GOOGLE_CLIENT_ID = '" + CID + "'");
+const exp = Math.floor(Date.now() / 1000) + 3600;
+S.__tokens = {
+  'h.staff.s': { aud: CID, iss: 'https://accounts.google.com', email: 'Staff@Gmail.com', email_verified: 'true', exp: String(exp) },
+  'h.other.s': { aud: 'someone-else.apps.googleusercontent.com', iss: 'accounts.google.com', email: 'x@gmail.com', email_verified: 'true', exp: String(exp) },
+  'h.old.s': { aud: CID, iss: 'accounts.google.com', email: 'old@gmail.com', email_verified: 'true', exp: String(Math.floor(Date.now() / 1000) - 10) },
+  'h.owner.s': { aud: CID, iss: 'accounts.google.com', email: 'o@x', email_verified: 'true', exp: String(exp) },
+  'h.legacy.s': { aud: CID, iss: 'accounts.google.com', email: 'legacy@gmail.com', email_verified: 'true', exp: String(exp) }
+};
+out = post({ fn: 'gPoll', args: [N1, ''] });
+ok('L poll before sign-in: none', out.ok === true && out.r.s === 'none', out);
+out = post({ fn: 'gLogin', args: [N1, 'h.other.s'] });
+ok('L token for another app refused', out.ok === false && /확인하지 못했/.test(out.err), out);
+out = post({ fn: 'gLogin', args: [N1, 'h.old.s'] });
+ok('L expired token refused', out.ok === false, out);
+out = post({ fn: 'gLogin', args: [N1, 'not-a-token'] });
+ok('L junk token refused', out.ok === false, out);
+out = post({ fn: 'gLogin', args: ['short', 'h.staff.s'] });
+ok('L bad nonce refused', out.ok === false, out);
+const mails = log.mail.length;
+out = post({ fn: 'gLogin', args: [N1, 'h.staff.s'] });
+ok('L new account: waits, email lower-cased', out.ok === true && out.r.s === 'wait' && out.r.email === 'staff@gmail.com', out);
+ok('L owner gets one mail with the request', log.mail.length === mails + 1 && /staff@gmail\.com/.test(log.mail[log.mail.length - 1]), log.mail.slice(-1));
+post({ fn: 'gLogin', args: [N2, 'h.staff.s'] });
+ok('L same account again: no second mail', log.mail.length === mails + 1);
+out = post({ fn: 'gPoll', args: [N1, ''] });
+ok('L poll while waiting: wait, no key', out.ok === true && out.r.s === 'wait' && !out.r.dev, out);
+ok('L ACCOUNTS has it waiting', JSON.parse(props.ACCOUNTS)['staff@gmail.com'].s === 'wait');
+// the owner's mail link
+let page = exec("doGet({ parameter: { allow: 'staff@gmail.com', s: 'wrong' } })").html;
+ok('L allow link with a bad sig: no button', /맞지 않아요/.test(page) && !/allowAccount/.test(page));
+const sig = exec("allowSig_('staff@gmail.com')");
+page = exec("doGet({ parameter: { allow: 'staff@gmail.com', s: '" + sig + "' } })").html;
+ok('L allow link: button page', /allowAccount\("staff@gmail.com"/.test(page), page.slice(0, 200));
+threw = ''; try { exec("allowAccount('staff@gmail.com', 'nope')"); } catch (e) { threw = e.message; }
+ok('L allowAccount needs the sig', /맞지 않아요/.test(threw), threw);
+exec("allowAccount('staff@gmail.com', '" + sig + "')");
+out = post({ fn: 'gPoll', args: [N1, ''] });
+ok('L allowed: poll gives a device key', out.ok === true && out.r.s === 'ok' && /^g:staff@gmail\.com:[\w-]{32}$/.test(out.r.dev), out);
 const dev = out.r.dev;
 out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev });
 ok('L key opens data (doPost)', out.ok === true && out.r && out.r.rows, out.err);
 ok('L key opens data (api)', exec("api('25377', 'getInit', ['김성휘', ''], '" + dev + "')").members.length >= 1);
-out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev.slice(0, 17) + 'x'.repeat(32) });
+out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: 'g:boss@gmail.com:' + dev.slice(-32) });
+ok('L key with another email refused', out.ok === false && /^\[접근\]/.test(out.err), out);
+out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev.slice(0, -32) + 'x'.repeat(32) });
 ok('L forged key refused', out.ok === false && /^\[접근\]/.test(out.err), out);
 threw = ''; try { exec("getBoot('김성휘', '')"); } catch (e) { threw = e.message; }
 ok('L direct call still refused after a good api call', /^\[접근\]/.test(threw), threw);
-props.ACCESS_CODE = 'NEWCODE2';
+out = post({ fn: 'gPoll', args: [N3, ''] });
+ok('L another phone, same account: signs in, gets in (always allowed)', out.r.s === 'none' && post({ fn: 'gLogin', args: [N3, 'h.staff.s'] }).r.s === 'ok' && post({ fn: 'gPoll', args: [N3, ''] }).r.dev === dev);
+// cut the account: its key stops at once; allowing again brings it back
+exec("setAccount_('staff@gmail.com', 'no')");
 out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev });
-ok('L new code: phones already in keep working', out.ok === true, out.err);
-out = post({ fn: 'redeem', args: [code] });
-ok('L old code no longer works', out.ok === false, out);
+ok('L cut account: key refused at once', out.ok === false && /^\[접근\]/.test(out.err), out);
+ok('L cut account: poll says no', post({ fn: 'gPoll', args: [N1, ''] }).r.s === 'no');
+exec("setAccount_('staff@gmail.com', 'ok')");
+ok('L allowed again: same key works', post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev }).ok === true);
+// the owner is always in
+out = post({ fn: 'gLogin', args: ['nonce-owner-aaaaaaaaaaaaaaa', 'h.owner.s'] });
+ok('L owner: ok at once', out.r.s === 'ok' && post({ fn: 'gPoll', args: ['nonce-owner-aaaaaaaaaaaaaaa', ''] }).r.s === 'ok', out);
+// a phone with a key from the 접근 코드 days: its account is allowed by itself (until ACCESS_OLD_UNTIL)
+const oldId = 'abcdefghijklmnop', oldDev = oldId + '.' + exec("b64_(Utilities.computeHmacSha256Signature('dev|" + oldId + "', secret_('ACCESS_KEY'))).slice(0, 32)");
+out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: oldDev });
+ok('L old 접근 코드 key alone no longer opens data', out.ok === false && /^\[접근\]/.test(out.err), out);
+post({ fn: 'gLogin', args: ['nonce-legacy-aaaaaaaaaaaaaa', 'h.legacy.s'] });
+ok('L waiting account + a forged old key: still waits', post({ fn: 'gPoll', args: ['nonce-legacy-aaaaaaaaaaaaaa', oldId + '.' + 'y'.repeat(32)] }).r.s === 'wait');
+out = post({ fn: 'gPoll', args: ['nonce-legacy-aaaaaaaaaaaaaa', oldDev] });
+ok('L waiting account + a good old key: allowed by itself', out.r.s === 'ok' && /^g:legacy@gmail\.com:/.test(out.r.dev) && /접근 코드/.test(JSON.parse(props.ACCOUNTS)['legacy@gmail.com'].n), out);
+exec("ACCESS_OLD_UNTIL = '2000-01-01'");
+exec("setAccount_('legacy@gmail.com', 'wait')");
+ok('L after ACCESS_OLD_UNTIL: an old key no longer allows', post({ fn: 'gPoll', args: ['nonce-legacy-aaaaaaaaaaaaaa', oldDev] }).r.s === 'wait');
 props.ACCESS_KEY = 'rotated-key';
 out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev });
-ok('L new ACCESS_KEY: every old key stops', out.ok === false && /^\[접근\]/.test(out.err), out);
-for (let i = 0; i < 30; i++) post({ fn: 'redeem', args: ['BAD' + i] });
-out = post({ fn: 'redeem', args: ['NEWCODE2'] });
-ok('L 30 wrong codes: redeem waits (even the right code)', out.ok === false && /10분/.test(out.err), out);
+ok('L new ACCESS_KEY: every key stops (accounts stay allowed)', out.ok === false && JSON.parse(props.ACCOUNTS)['staff@gmail.com'].s === 'ok', out);
+ok('L ... and signing in again gives the new key', post({ fn: 'gPoll', args: [N1, ''] }).r.dev !== dev);
+for (let i = 0; i < 45; i++) exec("setAccount_('spam" + i + "@gmail.com', 'wait')");
+const acc = JSON.parse(props.ACCOUNTS);
+ok('L at most 40 waiting requests, allowed ones kept', Object.keys(acc).filter(k => acc[k].s === 'wait').length === 40 && acc['staff@gmail.com'].s === 'ok' && !acc['spam0@gmail.com'], Object.keys(acc).length);
 props.ACCESS_OFF = '1';
 out = post({ fn: 'getMonth', args: [mon, ''], store: '25377' });
 ok('L ACCESS_OFF = 1 opens it (emergency switch)', out.ok === true, out.err);
-threw = ''; try { exec('menuAccessShow()'); } catch (e) { threw = e.message; }
+threw = ''; try { exec('menuAccounts()'); } catch (e) { threw = e.message; }
 ok('L access menu needs the spreadsheet ui', /no ui/.test(threw), threw);
-
-// ----- M. Android app key (AppKeys.gs) -----
-delete props.ACCESS_OFF;
-const appKey = 'test-app-key-1234567890';
-exec("APP_KEYS_.push('" + require('crypto').createHash('sha256').update(appKey).digest('hex') + "')");
-delete cache.accessFail;   // forget section L's 30 wrong codes
-let mo = post({ fn: 'redeemApp', args: [appKey] });
-ok('M listed app key gives a device key', mo.ok === true && /^[\w-]{16}\.[\w-]{32}$/.test(mo.r.dev), mo);
-ok('M that key opens data', post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: mo.r.dev }).ok === true);
-mo = post({ fn: 'redeemApp', args: ['not-a-built-key'] });
-ok('M unknown app key refused', mo.ok === false && /^\[접근\]/.test(mo.err), mo);
-props.APP_ACCESS_OFF = '1';
-mo = post({ fn: 'redeemApp', args: [appKey] });
-ok('M APP_ACCESS_OFF: app key refused', mo.ok === false && /^\[접근\]/.test(mo.err), mo);
-delete props.APP_ACCESS_OFF;
-threw = ''; try { exec('menuAppAccess()'); } catch (e) { threw = e.message; }
-ok('M app access menu needs the spreadsheet ui', /no ui/.test(threw), threw);
 
 console.log(process.exitCode ? 'SOME FAILED' : 'ALL ' + n + ' PASSED');

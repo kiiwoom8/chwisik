@@ -98,7 +98,8 @@ const sandbox = {
     newTrigger(fn) { const b = { timeBased: () => b, everyMinutes: () => b, atHour: () => b, nearMinute: () => b, everyDays: () => b, inTimezone: () => b, create() { log.triggers.push(fn); } }; return b; } },
   Session: { getActiveUser: () => ({ getEmail: () => sandbox.__admin ? 'o@x' : '' }), getEffectiveUser: () => ({ getEmail: () => 'o@x' }) },
   MailApp: { sendEmail(to, subj) { log.mail.push(subj); } },
-  HtmlService: { createHtmlOutputFromFile: () => ({ getContent: () => '<html>page</html>', setTitle() { return this; }, addMetaTag() { return this; } }) },
+  HtmlService: { createHtmlOutputFromFile: () => ({ getContent: () => '<html>page</html>', setTitle() { return this; }, addMetaTag() { return this; } }),
+    createHtmlOutput: h => ({ html: h, getContent: () => h, setTitle() { return this; }, addMetaTag() { return this; } }) },
   ContentService: { MimeType: { JSON: 'json' }, createTextOutput: s => ({ setMimeType() { return this; }, text: s }) },
   Utilities: {
     formatDate: fmt, getUuid: () => crypto.randomUUID(),
@@ -111,6 +112,11 @@ const sandbox = {
     newBlob: s => ({ getBytes: () => Array.from(Buffer.from(String(s), 'utf8')), getDataAsString: () => Buffer.from(s).toString('utf8') })
   },
   UrlFetchApp: { fetch(url, opt) {
+    // Google's tokeninfo (Sign in with Google): tests put the token's claims in sandbox.__tokens[token]
+    if (url.indexOf('https://oauth2.googleapis.com/tokeninfo?id_token=') === 0) {
+      const t = (sandbox.__tokens || {})[decodeURIComponent(url.split('id_token=')[1])];
+      return { getAllHeaders: () => ({}), getResponseCode: () => (t ? 200 : 400), getContentText: () => JSON.stringify(t || { error: 'invalid_token' }) };
+    }
     const u = url.replace('https://store.bgfretail.com', ''); let body = '', headers = {};
     const cookie = (opt.headers && opt.headers.Cookie) || '';
     if (opt.method === 'get') { body = 'ok'; }
@@ -141,7 +147,7 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
-for (const f of ['Code.gs', 'Oct2026.gs', 'AppKeys.gs']) vm.runInContext(fs.readFileSync(path.join(root, 'apps-script', f), 'utf8'), sandbox, { filename: f });
+for (const f of ['Code.gs', 'Oct2026.gs']) vm.runInContext(fs.readFileSync(path.join(root, 'apps-script', f), 'utf8'), sandbox, { filename: f });
 // every "execution" starts with fresh globals, like Apps Script: reset the per-execution caches
 function exec(src) { vm.runInContext('CUR_ = null; SS_DOC_ = null; PS_ = null; PSNAP_ = null; MEM_ = {}; ACCESS_ = false;', sandbox); return vm.runInContext(src, sandbox); }
 module.exports = { exec, sandbox, sheets, doc, docs, props, cache, log, BGF, Sheet, fmt };

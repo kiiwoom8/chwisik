@@ -303,15 +303,18 @@ button.srow { cursor: pointer; }
 /* Where the page runs under the status bar (iPhone app: Capacitor draws edge to edge; inset 0 elsewhere), keep the
    status bar area covered, so the sticky tab bar (top: inset) never shows rows scrolling under the clock. */
 body::before { content: ""; position: fixed; left: 0; right: 0; top: 0; height: env(safe-area-inset-top, 0px); background: var(--sheet); z-index: 6; pointer-events: none; }
-/* 접근 코드 screen (gate): over everything until this phone has a device key */
+/* Google sign-in screen (gate): over everything until this phone has a device key */
 .gate { position: fixed; inset: 0; z-index: 200; background: var(--paper); display: grid; place-items: center; overflow-y: auto;
   padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
 .gcard { width: min(380px, 100%); display: grid; gap: 12px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 16px; padding: 20px; }
 .gcard h2 { margin: 0; font-size: 18px; color: var(--ink); }
 .gcard p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.5; }
-.gcard .gerr { color: var(--void); min-height: 1.5em; font-size: 13px; }
-.gcard input { font-family: var(--font-num); letter-spacing: .08em; text-transform: uppercase; }
+.gcard .gmsg { min-height: 1.5em; font-size: 13px; overflow-wrap: anywhere; }
+.gcard .gmsg.bad { color: var(--void); }
+.gcard .gmsg b { color: var(--ink); }
 .gcard .primary { min-height: 44px; font-size: 15px; }
+.gcard a.gbtn { display: grid; place-items: center; text-decoration: none; box-sizing: border-box; }
+.gcard a.gbtn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 body.gated { overflow: hidden; }
 /* iPhone: how to put the page on the home screen (iosHint) */
 .iosbar { background: var(--accent-soft); color: var(--ink); font-size: 13px; }
@@ -329,13 +332,12 @@ body.gated { overflow: hidden; }
 </head>
 <body>
 <div class="pbar" id="pbar" aria-hidden="true"><i></i></div>
-<div class="gate" id="gate" hidden><form class="gcard" id="gateForm" novalidate role="dialog" aria-modal="true" aria-labelledby="gateTitle">
-  <h2 id="gateTitle">접근 코드</h2>
-  <p>가게 단톡방에서 받은 접근 코드를 넣어 주세요. 이 폰에서는 한 번만 넣으면 돼요.</p>
-  <label class="fld">접근 코드<input id="gateCode" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="20" placeholder="ABCD-EFGH"></label>
-  <p class="gerr" id="gateErr" role="alert"></p>
-  <button type="submit" class="primary" id="gateOk">확인</button>
-</form></div>
+<div class="gate" id="gate" hidden><div class="gcard" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+  <h2 id="gateTitle">Google 계정으로 들어가기</h2>
+  <p>가게에서 허용한 Google 계정만 들어올 수 있어요. 한 번 허용되면 계속 들어와요.</p>
+  <a class="primary gbtn" id="gateGo" href="#" target="_blank" rel="noopener">Google 계정으로 들어가기</a>
+  <p class="gmsg" id="gateMsg" role="status"></p>
+</div></div>
 <div class="iosbar" id="iosBar" hidden><div class="wrap"><span class="t" id="iosText"></span><button type="button" class="x" id="iosX" aria-label="닫기">×</button></div></div>
 <header class="hdr"><div class="wrap">
   <div class="titlebar">
@@ -525,51 +527,91 @@ body.gated { overflow: hidden; }
     bar.hidden = false;
     $("iosX").onclick = function () { bar.hidden = true; lsSet(K_IOS, "off"); };
   })();
-  /* 접근 코드 (server: section 접근 in Code.gs). The page and the server address are public, so every data call carries
-     this phone's device key (chwisik.dev, all stores). No key, or a call refused with [접근] (key from before
-     모든 폰 접근 끊기) -> the gate screen; redeem(code) gives a key. The invite link …/#code=XXXXXXXX fills it in. */
-  var K_DEV = "chwisik.dev";
+  /* Google account access (server: section 접근 in Code.gs). The page and the server address are public, so every data
+     call carries this phone's device key (chwisik.dev, all stores). No key, or a call refused with [접근] (account cut,
+     or a key from before 모든 폰 다시 로그인) -> the gate screen. Its button opens login.html?n=<nonce> (Sign in with
+     Google; a new tab, or the phone's browser for the Android app: Google refuses sign-in inside a WebView) and the
+     page asks gPoll(nonce) until the account is allowed. The nonce (chwisik.gn) survives a reload or the phone
+     putting this page to sleep while the browser is in front. */
+  var K_DEV = "chwisik.dev", K_GN = "chwisik.gn", K_OLD = "chwisik.devOld";
+  var LOGIN = WEB_APP + "login.html";
   function isAccessErr(e) { return String((e && e.message) || "").indexOf("[접근]") >= 0; }
-  var gateOn = false, appTried = false;
-  function gate(code) {
+  var gateOn = false, gTimer = 0;
+  function gNonce(fresh) {
+    var g = null;
+    try { g = JSON.parse(lsGet(K_GN) || "null"); } catch (e) {}
+    if (fresh || !g || !g.n || Date.now() - g.t > 5 * 3600000) {
+      var b = new Uint8Array(24);   // 24 signs of 64 = 144 bits (server: NONCE_RE_, 22-64 signs)
+      (window.crypto || window.msCrypto).getRandomValues(b);
+      var n = "";
+      for (var i = 0; i < b.length; i++) n += "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".charAt(b[i] % 64);
+      g = { n: n, t: Date.now(), go: 0 };
+      lsSet(K_GN, JSON.stringify(g));
+    }
+    return g;
+  }
+  function gateMsg(text, email, bad) {
+    var m = $("gateMsg");
+    m.className = "gmsg" + (bad ? " bad" : "");
+    m.textContent = "";
+    if (email) { var b = document.createElement("b"); b.textContent = email; m.appendChild(b); m.appendChild(document.createTextNode(" ")); }
+    m.appendChild(document.createTextNode(text));
+  }
+  function gate() {
     if (gateOn) return;
     gateOn = true;
+    var old = lsGet(K_DEV);
+    if (old && /^[\w-]{16}\.[\w-]{32}$/.test(old)) lsSet(K_OLD, old);   // 접근 코드 key: lets this phone's account in by itself (server: ACCESS_OLD_UNTIL)
     lsDel(K_DEV);
     try {   // nothing kept from before stays on this phone's screen
       for (var i = localStorage.length - 1; i >= 0; i--) { var k = localStorage.key(i); if (/^chwisik\.cache(\.|$)/.test(k)) localStorage.removeItem(k); }
     } catch (e) {}
-    // Android app: its build's app key gets a device key without the code (once per page start; refused -> the screen)
-    if (!code && window.CHWISIK_APP_KEY && !appTried) {
-      appTried = true;
-      run("redeemApp", window.CHWISIK_APP_KEY).then(gotKey, function () { gateOn = false; gate(); });
-      return;
-    }
     document.body.classList.add("gated");
     $("gate").hidden = false;
-    $("gateErr").textContent = "";
-    if (code) { $("gateCode").value = code; gateSubmit(); }
-    else setTimeout(function () { try { $("gateCode").focus(); } catch (e) {} }, 60);
+    var g = gNonce(false);
+    $("gateGo").href = LOGIN + "?n=" + g.n + (window.Capacitor ? "&app=1" : "");
+    gateMsg("");
+    if (g.go) gPoll(0);   // signed in (or waiting for the owner) before this page reloaded
+    setTimeout(function () { try { $("gateGo").focus(); } catch (e) {} }, 60);
   }
-  function gateSubmit() {
-    var c = $("gateCode").value;
-    if (!c.trim()) { $("gateErr").textContent = "코드를 적어 주세요."; return; }
-    $("gateOk").disabled = true; $("gateErr").textContent = "확인 중…";
-    run("redeem", c).then(gotKey, function (e) {
-      $("gateOk").disabled = false;
-      $("gateErr").textContent = errMsg(e, "연결을 확인해 주세요.");
-    });
+  $("gateGo").addEventListener("click", function () {
+    var g = gNonce(false);
+    g.go = Date.now(); lsSet(K_GN, JSON.stringify(g));
+    gateMsg("열린 창에서 Google 계정을 고르면 여기로 돌아와요.");
+    gPoll(2500);
+  });
+  /** Ask the server who signed in with this phone's nonce: fast for 3 minutes after the button, then every 10 s. */
+  function gPoll(wait) {
+    clearTimeout(gTimer);
+    gTimer = setTimeout(function () {
+      if (!gateOn) return;
+      var g = gNonce(false);
+      run("gPoll", g.n, lsGet(K_OLD) || "").then(function (r) {
+        if (!gateOn) return;
+        if (r.s === "ok" && r.dev) { lsDel(K_GN); lsDel(K_OLD); gotKey(r); return; }
+        if (r.s === "wait") gateMsg("계정의 허용을 기다리고 있어요. 사장님께 말해 주세요. 허용되면 바로 들어가져요.", r.email);
+        else if (r.s === "no") gateMsg("계정은 허용되지 않았어요. 다른 계정이면 버튼을 눌러 다시 로그인해 주세요.", r.email, true);
+        if (document.hidden && Date.now() - g.go > 3 * 60000) return;   // asleep: the visibility handler picks it up again
+        gPoll(Date.now() - g.go < 3 * 60000 ? 2500 : 10000);
+      }, function () { if (gateOn) gPoll(10000); });
+    }, wait);
   }
+  document.addEventListener("visibilitychange", function () {
+    var g = null;
+    try { g = JSON.parse(lsGet(K_GN) || "null"); } catch (e) {}
+    if (!document.hidden && gateOn && g && g.go) gPoll(0);   // back from the sign-in tab / browser
+  });
   function gotKey(r) {
     lsSet(K_DEV, r.dev);
     installUrl();
+    clearTimeout(gTimer);
     gateOn = false; $("gate").hidden = true; document.body.classList.remove("gated");
-    $("gateOk").disabled = false; $("gateCode").value = ""; $("gateErr").textContent = "";
+    gateMsg("");
     bootTries = 0; boot(); refreshLive();
   }
-  $("gateForm").addEventListener("submit", function (ev) { ev.preventDefault(); gateSubmit(); });
   /* iPhone: 홈 화면에 추가 saves the address on screen (the manifest has no start_url), and the home-screen app gets
      storage of its own. So in Safari the address carries this phone's key, store and name (?k=…&store=…&me=…), and
-     the home-screen app takes them on its first start: no second 접근 코드, no picking again. Elsewhere the
+     the home-screen app takes them on its first start: no second Google sign-in, no picking again. Elsewhere the
      parameters are only read, then removed from the address. */
   function installUrl() {
     if (!API || window.Capacitor || !IOS || STANDALONE) return;
@@ -583,7 +625,7 @@ body.gated { overflow: hidden; }
     try { p = new URLSearchParams(location.search); } catch (e) { return; }
     var k = p.get("k") || "";
     if (!k) return;
-    if (/^[\w-]{16}\.[\w-]{32}$/.test(k) && !lsGet(K_DEV)) {
+    if (/^g:[^:\s]{3,254}:[\w-]{32}$/.test(k) && !lsGet(K_DEV)) {
       lsSet(K_DEV, k);
       var st = p.get("store") || "", me = p.get("me") || "";
       if (/^[\w-]{1,24}$/.test(st) && !lsGet(K_STORE)) { lsSet(K_STORE, st); S.store = st; }
@@ -1949,7 +1991,7 @@ body.gated { overflow: hidden; }
     }, function (e) {
       pend(-1);
       if (seq !== bootSeq) return;
-      if (isAccessErr(e)) return;   // the gate is open; it boots again after the code
+      if (isAccessErr(e)) return;   // the gate is open; it boots again after the sign-in
       // a store this phone remembers but the server no longer has: back to the first store
       if (sid() !== LEGACY_STORE && /없는 점포/.test(errMsg(e, ""))) { lsDel(K_STORE); S.store = ""; loadIdentity(); boot(); return; }
       bootTries++;
@@ -2010,9 +2052,8 @@ body.gated { overflow: hidden; }
       start(new URLSearchParams(location.search).get("store"));
     } catch (e) { start(""); }
   })(function () {
-    var m = API ? /[#&]code=([A-Za-z0-9-]{4,20})/.exec(location.hash || "") : null;
-    if (m) { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} }
-    if (!lsGet(K_DEV)) { gate(m ? m[1] : ""); return; }
+    if (API && /[#&]code=/.test(location.hash || "")) { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} }   // old invite links
+    if (!lsGet(K_DEV)) { gate(); return; }
     installUrl();
     boot(); refreshLive();
   });

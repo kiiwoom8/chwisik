@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>취식 로그인</title>
+<link rel="icon" href="icon-192.png">
+<style>
+  :root { color-scheme: light dark; --ink: #19201c; --muted: #646f69; --paper: #f2f4f1; --sheet: #fff; --rule: #dfe4e0; --accent: #1f7a4d; --bad: #b3261e; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #e8ece9; --muted: #a3ada7; --paper: #19201c; --sheet: #222b26; --rule: #34403a; --accent: #5cc08b; --bad: #f2b8b5; } }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  main { min-height: 100vh; display: grid; place-items: center; padding: 16px; box-sizing: border-box; }
+  .card { width: min(380px, 100%); background: var(--sheet); border: 1px solid var(--rule); border-radius: 16px; padding: 20px; display: grid; gap: 12px; box-sizing: border-box; }
+  h1 { margin: 0; font-size: 18px; }
+  p { margin: 0; color: var(--muted); font-size: 14px; }
+  #gbtn { min-height: 44px; display: flex; justify-content: center; }
+  #msg { min-height: 1.5em; }
+  #msg.ok { color: var(--accent); font-weight: 700; }
+  #msg.bad { color: var(--bad); }
+  b { color: var(--ink); word-break: break-all; }
+  .go { display: grid; place-items: center; min-height: 44px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 700; text-decoration: none; }
+  .go:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main><div class="card">
+  <h1>취식 로그인</h1>
+  <p id="lead">가게에서 허용한 Google 계정만 들어갈 수 있어요. 한 번 허용된 계정은 계속 들어가져요.</p>
+  <div id="gbtn"></div>
+  <p id="msg" role="status"></p>
+  <a class="go" id="go" hidden></a>
+</div></main>
+<script>
+/* Sign in with Google for the staff page (docs/DEVNOTES.md, Access). Opened by the page's gate as
+   login.html?n=<nonce>[&app=1]: Google's button gives an ID token; it goes to the server with the nonce (gLogin), and
+   the phone that opened this (polling gPoll) gets in once the account is allowed. Google sign-in doesn't work inside
+   the Android app's WebView, so the app opens this in the phone's browser (app=1: a button back to the app).
+   GOOGLE_CLIENT_ID must match Code.gs. */
+(function () {
+  var GOOGLE_CLIENT_ID = "274035594907-i92r76rlpp0c9h1dt79bm6fcheb77b44.apps.googleusercontent.com";
+  var API = "https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec";
+  var $ = function (id) { return document.getElementById(id); };
+  var q = new URLSearchParams(location.search), n = q.get("n") || "", fromApp = q.get("app") === "1";
+  function say(t, cls) { $("msg").className = cls || ""; $("msg").textContent = t; }
+  function sayWho(email, rest, cls) {
+    $("msg").className = cls || ""; $("msg").textContent = "";
+    var b = document.createElement("b"); b.textContent = email;
+    $("msg").appendChild(b); $("msg").appendChild(document.createTextNode(" " + rest));
+  }
+  function back(label) {
+    var a = $("go");
+    // Android app: Chrome opens the installed app (launcher intent); elsewhere: the staff page in this browser
+    a.href = fromApp ? "intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.kiiwoom8.chwisik;end" : "./";
+    a.textContent = label;
+    a.hidden = false;
+  }
+  function call(fn, args) {
+    return fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn: fn, args: args }) })
+      .then(function (r) { if (!r.ok) throw new Error("서버 응답 " + r.status); return r.json(); })
+      .then(function (j) { if (!j || !j.ok) throw new Error((j && j.err) || "서버 오류"); return j.r; });
+  }
+  if (!/^[A-Za-z0-9_-]{22,64}$/.test(n)) { say("이 화면은 취식 앱의 [Google 계정으로 들어가기] 버튼으로 열어 주세요.", "bad"); back("취식 열기"); return; }
+  if (GOOGLE_CLIENT_ID.indexOf("%%") === 0) { say("Google 로그인이 아직 설정되지 않았어요. 사장님께 알려 주세요.", "bad"); return; }
+  function onCredential(resp) {
+    say("확인 중…");
+    call("gLogin", [n, resp.credential]).then(function (r) {
+      if (r.s === "ok") {
+        sayWho(r.email, "계정으로 확인했어요. 취식 앱으로 돌아가세요.", "ok");
+        // same address as the staff page: this browser gets in too (Safari -> the page on the home screen)
+        if (!fromApp) call("gPoll", [n, ""]).then(function (p) { try { if (p && p.dev) localStorage.setItem("chwisik.dev", p.dev); } catch (e) {} }, function () {});
+        back(fromApp ? "취식 앱으로 돌아가기" : "취식 열기");
+      } else if (r.s === "no") {
+        sayWho(r.email, "계정은 허용되지 않았어요. 다른 계정이면 위 버튼으로 다시 로그인해 주세요.", "bad");
+      } else {
+        sayWho(r.email, "계정의 허용을 사장님께 요청했어요. 허용되면 취식 앱이 바로 열려요. 이 창은 닫아도 돼요.");
+        if (fromApp) back("취식 앱으로 돌아가기");
+      }
+    }, function (e) {
+      say(String((e && e.message) || "연결을 확인해 주세요.").replace(/^(Error:\s*)?\[접근\]\s*/, ""), "bad");
+    });
+  }
+  window.onGoogleLibraryLoad = function () {
+    google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onCredential, ux_mode: "popup", auto_select: false, itp_support: true, context: "signin" });
+    google.accounts.id.renderButton($("gbtn"), { type: "standard", theme: "outline", size: "large", text: "signin_with", shape: "pill", locale: "ko", width: 280 });
+  };
+  var s = document.createElement("script");
+  s.src = "https://accounts.google.com/gsi/client?hl=ko";
+  s.async = true;
+  s.onerror = function () { say("Google 로그인을 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.", "bad"); };
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>
