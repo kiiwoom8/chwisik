@@ -170,7 +170,7 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 ## app/ (Android app and installable page)
 
 - `www/index.html` — loader: picks `chwisik.page` from localStorage (unless `chwisik.pageTry` says it broke) or fetches `page.html`, injects `CHWISIK_API` / `CHWISIK_PAGE_HASH` + viewport, `document.write`s it. Registers `sw.js` on real HTTPS hosts only (not inside the app, where the origin is `https://localhost`). **The `/exec` URL is hard-coded here**; change it if the deployment ever changes.
-- `www/sw.js` — cache-first for the loader files (installable page only). Bump `CACHE` when the file list or the loader changes (now `chwisik-v2`).
+- `www/sw.js` — installable page only. Opening the page: network first (`cache: "no-cache"`, past GitHub Pages' 10-min browser cache), stored copy under the scope key when offline / error / over 4 s. Icons, manifest, `page.html`: stored copy, refreshed in the background. Bump `CACHE` when the file list changes (now `chwisik-v3`).
 - Loader: `#move=<json>` from `Move.html` → copies `chwisik.store` / `chwisik.me[.<id>]` it doesn't have yet, then strips the hash.
 - Loader extras for iPhone: KakaoTalk in-app browser → `kakaotalk://web/openExternal`; `show()` also writes the home-screen tags (manifest, apple-touch-icon, `apple-mobile-web-app-*`, theme-color) into the page's head.
 - `.github/workflows/pages.yml` — publishes `app/www` + `page.html` to GitHub Pages (the staff link, `https://kiiwoom8.github.io/chwisik/`) and remakes the `ios-latest` release (steps + QR code); skipped if the repo is private.
