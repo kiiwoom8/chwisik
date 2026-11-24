@@ -971,10 +971,24 @@ function ymd_(d) { return Utilities.formatDate(d, TZ, 'yyyyMMdd'); }
 
 /* ======================= 웹앱 ======================= */
 
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('직원 취식 목록')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+/*
+ * One staff address (owner, 2026-11-25: "combine 2 urls into one"): the GitHub Pages copy (WEB_APP_URL, app/www).
+ * GET /exec = Move.html, which sends the browser there with this phone's store and names (#move=…);
+ * GET /exec?stay=1 = the staff page here, as before (fallback if GitHub Pages is down).
+ * The apps (Android, iPhone page, z's Chwisik tab) use doPost / getPage, not this.
+ */
+var WEB_APP_URL = 'https://kiiwoom8.github.io/chwisik/';
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  if (p.stay === '1') {
+    return HtmlService.createHtmlOutputFromFile('Index')
+      .setTitle('직원 취식 목록')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
+  var t = HtmlService.createTemplateFromFile('Move');
+  t.url = WEB_APP_URL;
+  t.store = /^[\w-]{1,24}$/.test(String(p.store || '')) ? String(p.store) : '';
+  return t.evaluate().setTitle('취식 주소가 바뀌었어요').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 /* ---------- 앱 API (JSON) ----------

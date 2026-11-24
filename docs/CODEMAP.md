@@ -94,7 +94,8 @@ liveTick(e) ── one store ──┘                                          
 
 ### Web app — section `웹앱`
 
-- `doGet()` — serves `Index.html` with the viewport meta (`width=device-width, initial-scale=1`; no `viewport-fit=cover`, see DEVNOTES gotchas).
+- `doGet(e)` — the old staff link: `Move.html` (template: `url` = `WEB_APP_URL`, `store` = a checked `?store=`) that sends the browser to the GitHub Pages copy with the phone's store and names; `?stay=1` serves `Index.html` with the viewport meta (`width=device-width, initial-scale=1`; no `viewport-fit=cover`, see DEVNOTES gotchas).
+- `apps-script/Move.html` — that 주소 이동 page: reads `chwisik.store` / `chwisik.me[.<id>]` from localStorage, builds `WEB_APP_URL?store=…#move=…`, tries `window.top.location.replace`, else the [새 주소로 열기] button.
 - `doPost(e)` — JSON API for the app: body `{fn, args, store}`, `useStore_(store)`, runs only names in `apiFns_()`, answers `{ok, r}` / `{ok:false, err}`.
 - `api(store, fn, args)` (public) — the same for the `/exec` page (`google.script.run.api`). **A new public function the page should use must be added to `apiFns_()`** (both entries read it).
 - `getBoot(me, token)` (public) — `getInit` + `getMonth(newest, '')` in one call; the page's first call.
@@ -170,8 +171,9 @@ Row shape (from `getMonth`): `[sheetRow, key, time, name, qty, wprice, wamt, mam
 
 - `www/index.html` — loader: picks `chwisik.page` from localStorage (unless `chwisik.pageTry` says it broke) or fetches `page.html`, injects `CHWISIK_API` / `CHWISIK_PAGE_HASH` + viewport, `document.write`s it. Registers `sw.js` on real HTTPS hosts only (not inside the app, where the origin is `https://localhost`). **The `/exec` URL is hard-coded here**; change it if the deployment ever changes.
 - `www/sw.js` — cache-first for the loader files (installable page only). Bump `CACHE` when the file list or the loader changes (now `chwisik-v2`).
+- Loader: `#move=<json>` from `Move.html` → copies `chwisik.store` / `chwisik.me[.<id>]` it doesn't have yet, then strips the hash.
 - Loader extras for iPhone: KakaoTalk in-app browser → `kakaotalk://web/openExternal`; `show()` also writes the home-screen tags (manifest, apple-touch-icon, `apple-mobile-web-app-*`, theme-color) into the page's head.
-- `.github/workflows/pages.yml` — publishes `app/www` + `page.html` to GitHub Pages (iPhone host, `https://kiiwoom8.github.io/chwisik/`); skipped if the repo is private.
+- `.github/workflows/pages.yml` — publishes `app/www` + `page.html` to GitHub Pages (the staff link, `https://kiiwoom8.github.io/chwisik/`) and remakes the `ios-latest` release (steps + QR code); skipped if the repo is private.
 - `www/manifest.webmanifest`, `www/icon-192.png`, `icon-512.png`, `apple-touch-icon.png`; `android-res/mipmap-*/ic_launcher*.png`, `android-res/drawable/splash.xml`; `make-icons.py` makes all icons from `app/icon-source.png` (the owner's character drawing): white background removed by edge flood fill, only the biggest shape kept (drops the speech bubble), square crop from the top of the head; Android icons transparent, web/iPhone icons on the page background. Needs Pillow, numpy, scipy. Writes `icon-preview.png` to look at.
 - `build.mjs` — `apps-script/Index.html` → `www/page.html` (generated, git-ignored).
 - `capacitor.config.json` — app id `com.kiiwoom8.chwisik`, name 취식, `webDir: www`. `package.json` / `package-lock.json` — Capacitor 7. `android/` is generated in CI (git-ignored).

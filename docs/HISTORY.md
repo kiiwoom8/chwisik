@@ -316,3 +316,7 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
   - `WEB_APP` in Index.html set to that address: iPhone users of the `/exec` link now see `아이폰에서는 앱처럼 쓸 수 있어요. 설치하기` (× hides it).
   - The APK release link now works for anyone (DEVNOTES → App → Installing).
   - Not checked on a real iPhone (홈 화면에 추가, icon, standalone).
+- **One staff address + iPhone release.** The owner: "combine 2 urls into one (i can see google script and githubio). also i can't find ios app in releases tab".
+  - The one address is `https://kiiwoom8.github.io/chwisik/` (works in every browser, installs on iPhone, no Google banner). The old `/exec` link now serves `Move.html`: "취식 주소가 바뀌었어요" + [새 주소로 열기]; it takes the phone's chosen store and names (`chwisik.store`, `chwisik.me[.<id>]`) along in `#move=…`, which the loader copies into the new address's storage, so nobody picks them again. Sign-in tokens are not carried (they'd sit in the address/history); password holders enter it once. `/exec?stay=1` = the old page on Google, kept as a fallback. The API (`doPost`, `getPage`) is unchanged, so the Android app and z's Chwisik tab are not affected.
+  - Releases: a new moving release **ios-latest** made by `pages.yml` after each Pages deploy: no file (an iPhone app file would need a paid Apple account), the address, the 3 steps and a QR code (`chwisik-iphone-qr.png`, `npx qrcode@1.5.4`) for the iPhone camera. Not marked Latest, so android-latest stays on top.
+

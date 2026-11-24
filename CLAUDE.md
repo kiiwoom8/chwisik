@@ -37,6 +37,7 @@ The live copy runs in Google Apps Script, bound to the spreadsheet **직원 취�
 Start with `docs/DEVNOTES.md`, then `docs/CODEMAP.md` for the code you are about to touch.
 
 - `apps-script/Code.gs`: server. The stores (`STORES`, `CHAINS`), BGF login + nightly and live import (폐기 and 저회전상품철수), 출근일지, passwords, sheet setup, web app API.
+- `apps-script/Move.html`: what the old `/exec` link shows now: sends people to the one staff link (GitHub Pages) with their store and names (`?stay=1` = the old page).
 - `apps-script/Index.html`: the staff page (one-tap 취식 / 폐기, 저회전, 취소, 출근일지, monthly totals). The same file runs inside the Android app (it fetches it from the server), so keep it working in both modes: calls only through `run()`, new server functions listed in `apiFns_()`.
 - `app/`: Android app shell (Capacitor) + installable page. `.github/workflows/android.yml` builds the APK on push to `app/**`. The signing key is never committed.
 - `tests/`: `node tests/server.test.js` runs the server code against a mock of Apps Script (no Google, no BGF); `page-stub.py` makes a browser copy of the page with a fake server.

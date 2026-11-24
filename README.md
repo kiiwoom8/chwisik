@@ -10,7 +10,7 @@ Staff meal (취식) and waste (폐기) tracker for one owner's convenience store
 
 **Android app:** GitHub → Releases → `android-latest` → `chwisik.apk` (send it to staff; the app updates its page by itself).
 
-**Staff link:** https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec
+**Staff link (one address for everyone, phones and PC):** https://kiiwoom8.github.io/chwisik/ — iPhone: Safari → 공유 → 홈 화면에 추가 (Releases → `ios-latest` has the steps and a QR code). The old Google link (`…/exec`) now sends people there; `…/exec?stay=1` still opens the page on Google if GitHub Pages is ever down.
 
 | Folder | Contents |
 |---|---|

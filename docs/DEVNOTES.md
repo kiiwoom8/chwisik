@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-25 (repo public; iPhone page live on GitHub Pages)
+Last updated: 2026-11-25 (one staff address: GitHub Pages; /exec hands over; ios-latest release)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -37,8 +37,10 @@ Everything runs on Google's servers. The owner's computer can be off.
 |---|---|
 | Spreadsheet | Google Drive → **직원 취식 목록** (`1OFt4d-qxrv8EnsK3PK060Llv33fw2UnZ09rp00It338`) |
 | Apps Script project | Bound to the sheet; script id `1ypg7065GCWVnqAQFi1mu3vFyg_vSEti7RdtbzXKITl4ogeFpoqfqYjzQ` (also in `.clasp.json`) |
-| Staff web app (versioned deployment) | https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec (GET = the page, POST = the JSON API the app uses) |
+| **Staff link** (the one address) | https://kiiwoom8.github.io/chwisik/ (GitHub Pages: `app/www` + `page.html`, `.github/workflows/pages.yml`). Phones, PCs, iPhone home screen. |
+| Staff web app (versioned deployment) | https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec (GET = `Move.html`, a page that sends people to the staff link with their store and names; `?stay=1` = the page here as before; POST = the JSON API the app uses) |
 | Android app (APK) | GitHub → Releases → **android-latest** → `chwisik.apk` (built by `.github/workflows/android.yml`) |
+| iPhone app | GitHub → Releases → **ios-latest**: no file (home-screen web app); the address, steps and `chwisik-iphone-qr.png`. Remade by `pages.yml` on every Pages deploy. |
 | App signing key | `C:\Users\kiiwo\chwisik-android-key\` on the owner's PC (never in the repo); also as repo secrets `ANDROID_KEYSTORE_B64` / `ANDROID_KEYSTORE_PW` |
 | GitHub repo | source of truth; push to `main` deploys (see *Auto-deploy*) |
 | Google account | noerror96@gmail.com (the script runs as this account) |
@@ -392,6 +394,7 @@ Why: the `/exec` link is slow to open (Google's wrapper page, two iframes, then 
   - **Home-screen tags**: the loader `document.write`s the staff page over its own head, so `show()` writes the manifest, apple-touch-icon, `apple-mobile-web-app-*` and light/dark `theme-color` tags into the new head too; without them Safari's 홈 화면에 추가 saw none (screenshot icon, opened in Safari on iOS before 26).
   - **KakaoTalk**: its in-app browser can't add to the home screen; the loader sends the same address to the phone's browser (`kakaotalk://web/openExternal?url=…`). Staff get the link in KakaoTalk, so this is the usual path.
   - **Install bar** (`iosHint` in Index.html, `#iosBar`): on an iPhone/iPad, not standalone, not the Android app: the hosted copy shows `앱으로 쓰기: 공유 → 홈 화면에 추가 (공유가 안 보이면 ⋯ 안에)`; the `/exec` page shows `아이폰에서는 앱처럼 쓸 수 있어요. 설치하기` linking to `WEB_APP?store=<this store>` (`WEB_APP` = `https://kiiwoom8.github.io/chwisik/`; empty would hide the bar). × hides it on that phone for good (`chwisik.iosHint` = `off`).
+  - **One address** (owner, 2026-11-25: "combine 2 urls into one"): `doGet` without `?stay=1` serves `Move.html` (주소가 바뀌었어요 + [새 주소로 열기]). It reads the old address's localStorage (`chwisik.store`, `chwisik.me[.<id>]`; not sign-in tokens, so a password holder enters it once more), and sends the top window to `WEB_APP_URL?store=…#move=<json>`; Google's sandboxed frame may need the tap. The loader copies `#move` keys it doesn't have yet into its own storage and removes the hash.
   - The home-screen copy has its own storage (not Safari's): staff pick the store and their name once more there. Home-screen apps keep their localStorage (no 7-day Safari limit).
 - **Testing without a phone**: copy `app/www` (after `node app/build.mjs`) to a scratch folder, point `API` in its `index.html` at a small local server that answers POST with fake `{ok, r}` JSON, open it at 375 px. Done 2026-11-09: boot, name picker, tabs, cache-first start all worked.
 

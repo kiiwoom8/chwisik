@@ -48,6 +48,15 @@
     x.onerror = function () { document.body.textContent = "앱 파일을 읽지 못했어요. 앱을 다시 설치해 주세요."; };
     x.send();
   }
+  // Came from the old /exec link (Move.html): it passes that address's store and names in #move=… (the two
+  // addresses keep separate storage). Fill only what this copy doesn't have yet, then drop it from the address.
+  if (/^#move=/.test(location.hash)) {
+    try {
+      var mv = JSON.parse(decodeURIComponent(location.hash.slice(6)));
+      for (var mk in mv) if (/^chwisik\.(store|me(\.[\w-]{1,24})?)$/.test(mk) && typeof mv[mk] === "string" && ls(mk) == null) ls(mk, mv[mk]);
+    } catch (e) {}
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  }
   var c = null;
   try { c = JSON.parse(ls("chwisik.page") || "null"); } catch (e) {}
   if (c && c.html && c.hash && ls("chwisik.pageTry") === c.hash) { ls("chwisik.page", null); c = null; }  // it broke last time

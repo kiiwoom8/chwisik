@@ -3,6 +3,8 @@ name: iPhone page (GitHub Pages)
 # Publishes the installable page (app/www + the staff page as page.html) to GitHub Pages:
 # https://kiiwoom8.github.io/chwisik/  ->  iPhone staff: Safari, 공유 -> 홈 화면에 추가.
 # The page updates itself from the server (getPage), so this only matters for the loader, icons and first open.
+# Also (re)makes the release "ios-latest": no file to install (a store app needs a paid Apple account), so it holds
+# the address, the steps and a QR code (chwisik-iphone-qr.png) for the iPhone camera.
 # GitHub Pages on the free plan needs a public repo (public since 2026-11-25); if it goes private the job is skipped (not red).
 on:
   push:
@@ -19,7 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write   # the ios-latest release
   pages: write
   id-token: write
 
@@ -43,3 +45,26 @@ jobs:
           path: app/www
       - id: deploy
         uses: actions/deploy-pages@v4
+
+      - name: Release ios-latest (address, steps, QR code)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.deploy.outputs.page_url }}
+        run: |
+          npx --yes qrcode@1.5.4 -w 600 -o chwisik-iphone-qr.png "$URL"
+          cat > notes.md <<EOF
+          아이폰은 앱스토어 앱 대신 **홈 화면 앱**으로 써요. 받을 파일은 없어요.
+
+          1. 아이폰 카메라로 아래 QR을 찍거나, Safari에서 열기: $URL
+          2. 공유 버튼 → **홈 화면에 추가** (iOS 26: ⋯ → 공유 → 홈 화면에 추가)
+          3. 홈 화면의 **취식** 아이콘으로 열어요. 화면은 서버에서 알아서 최신으로 바뀌어요.
+
+          카카오톡에서 링크를 누르면 Safari로 넘어가요. 안드로이드는 같은 주소를 쓰거나 android-latest 의 chwisik.apk 를 설치해요.
+
+          ![QR](https://github.com/${GITHUB_REPOSITORY}/releases/download/ios-latest/chwisik-iphone-qr.png)
+
+          커밋 ${GITHUB_SHA::7} ($(git log -1 --pretty=%s | cut -c1-80))
+          EOF
+          sed -i 's/^          //' notes.md
+          gh release delete ios-latest --yes --cleanup-tag || true
+          gh release create ios-latest chwisik-iphone-qr.png --latest=false             --title "취식 아이폰 앱 — 설치 방법 (홈 화면)" --notes-file notes.md --target "$GITHUB_SHA"

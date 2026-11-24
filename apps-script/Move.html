@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+/* /exec 주소 이동 page (doGet): one staff address = the GitHub Pages copy. Same colors as Index.html. */
+:root { --paper: #f2f4f1; --sheet: #ffffff; --ink: #17201b; --muted: #646f69; --rule: #dce2de; --accent: #0e6b52; --accent-ink: #ffffff; --focus: #2a62d6; color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #111614; --sheet: #19201c; --ink: #e6ebe8; --muted: #98a49e; --rule: #2a3330; --accent: #4fc49d; --accent-ink: #0a1913; --focus: #7aa4ff; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif; }
+.box { max-width: 420px; margin: 0 auto; padding: 18vh 16px 24px; display: grid; gap: 14px; }
+h1 { margin: 0; font-size: 20px; }
+p { margin: 0; color: var(--muted); }
+.addr { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; word-break: break-all; }
+.go { display: block; text-align: center; text-decoration: none; background: var(--accent); color: var(--accent-ink); font-weight: 700; border-radius: 12px; padding: 14px; font-size: 16px; }
+.go:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mu { font-size: 13px; }
+</style>
+</head>
+<body>
+<main class="box">
+  <h1>취식 주소가 바뀌었어요</h1>
+  <p>이제 이 주소 하나만 써요. 고른 점포와 이름은 그대로 옮겨져요.</p>
+  <div class="addr" id="addr"></div>
+  <a class="go" id="go" href="#" target="_top">새 주소로 열기</a>
+  <p class="mu">즐겨찾기나 홈 화면에 이 옛 주소를 넣어 두었다면, 새 주소에서 다시 추가해 주세요. 비밀번호를 정해 둔 사람은 한 번 더 입력해요.</p>
+</main>
+<script>
+(function () {
+  var TARGET = <?!= JSON.stringify(url) ?>, STORE = <?!= JSON.stringify(store) ?>;
+  // This page shares localStorage with the old /exec page: hand its store and names over (not sign-in tokens).
+  var data = {}, n = 0;
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (/^chwisik\.(store|me(\.[\w-]{1,24})?)$/.test(k)) { data[k] = localStorage.getItem(k); n++; }
+    }
+  } catch (e) {}
+  var store = STORE || data["chwisik.store"] || "";
+  var url = TARGET + (store ? "?store=" + encodeURIComponent(store) : "") + (n ? "#move=" + encodeURIComponent(JSON.stringify(data)) : "");
+  document.getElementById("addr").textContent = TARGET.replace(/^https:\/\//, "");
+  document.getElementById("go").href = url;
+  try { window.top.location.replace(url); } catch (e) {}   // Google's frame may refuse without a tap; the button is there for that
+})();
+</script>
+</body>
+</html>
