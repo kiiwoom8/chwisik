@@ -541,7 +541,7 @@ body.gated { overflow: hidden; }
     run("redeem", c).then(function (r) {
       lsSet(K_DEV, r.dev);
       gateOn = false; $("gate").hidden = true; document.body.classList.remove("gated");
-      $("gateOk").disabled = false; $("gateCode").value = "";
+      $("gateOk").disabled = false; $("gateCode").value = ""; $("gateErr").textContent = "";
       bootTries = 0; boot(); refreshLive();
     }, function (e) {
       $("gateOk").disabled = false;
