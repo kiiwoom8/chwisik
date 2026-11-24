@@ -8,6 +8,9 @@ Times are KST.
 
 The owner's settled choices, and the mistakes already made and corrected. Don't undo these or repeat them. When the owner corrects or reverses something, add it here (what was wrong → what is right) in the same commit as the fix, and add the usual dated entry below.
 
+**Repo and hosting**
+- **The repo is public** (owner, 2026-11-25: "make chwisik public", after being told staff full names, shift habits, store codes and the BGF protocol are in the docs and history). It hosts the iPhone page on free GitHub Pages; the owner chose this repo over a separate public repo or GitHub Pro. Never commit secrets (still true, now more so); no new personal data beyond what the app needs.
+
 **Stores (점포)**
 - **CU 울산두왕점 is a separate store** (owner, 2026-11-16: "add separate CU 울산두왕점 … current store is CU 울산둘리점"): its own 폐기목록 / 직원 / 출근일지 / 월별 합계 sheets, its own BGF login. Don't mix its lines or staff into 둘리점's sheets. One page and one app for all stores; the worker picks the store.
 - **근무 시간 per month is one total per person over all stores** (owner, 2026-11-16: "combine work time per month as same person can work in 2 or 3 stores"). Same full name = same person. Don't show it per store only. (취식 / 폐기 totals stay per store; my reading, the owner only spoke of work time.)
@@ -309,3 +312,7 @@ The owner's settled choices, and the mistakes already made and corrected. Don't 
   - `.github/workflows/pages.yml`: publishes `app/www` + `page.html` to `https://kiiwoom8.github.io/chwisik/`; skipped while the repo is private.
   - **Not live yet**: the owner said to host it from this repo, which means making it public. Before that: no secrets in all 128 commits (scanned for keys, tokens, passwords; `pw-a` is a test value), but staff full names appear in docs, tests and history (전병훈 382×, 박경현 285×, 이국환 114×, 주현정 8×) with their shift habits, plus store codes and the BGF protocol. Waiting on the owner's choice before switching visibility.
   - Checked: `node --check` on both scripts; `node tests/server.test.js` (64 passed); stub page at 360 px with the bar forced on (2 lines, no sideways scroll, dark mode); the built loader served from a non-Google origin (localhost) loaded the live server's data over the JSON API and kept all home-screen tags after `document.write`. Not checked on a real iPhone.
+- **Repo public, iPhone page live.** The owner chose "Make chwisik public". Done in GitHub settings (owner confirmed with their passkey); Settings → Pages → Source = GitHub Actions; `pages.yml` run by hand → `https://kiiwoom8.github.io/chwisik/` answers 200 for the loader, `page.html`, manifest, `sw.js`, icons. Opened in Chrome from github.io it loaded the live server's data (CU 울산둘리점, staff list), so the JSON API works from that origin.
+  - `WEB_APP` in Index.html set to that address: iPhone users of the `/exec` link now see `아이폰에서는 앱처럼 쓸 수 있어요. 설치하기` (× hides it).
+  - The APK release link now works for anyone (DEVNOTES → App → Installing).
+  - Not checked on a real iPhone (홈 화면에 추가, icon, standalone).

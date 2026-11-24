@@ -15,7 +15,7 @@ Staff meal (취식) and waste (폐기) tracker for one owner's convenience store
 | Folder | Contents |
 |---|---|
 | `apps-script/` | `Code.gs` (server, BGF import, API) and `Index.html` (staff page) |
-| `app/` | Android app (Capacitor shell) and installable page (iPhone: GitHub Pages, `.github/workflows/pages.yml`); APK built by `.github/workflows/android.yml` |
+| `app/` | Android app (Capacitor shell) and installable page (iPhone: `https://kiiwoom8.github.io/chwisik/`, `.github/workflows/pages.yml`); APK built by `.github/workflows/android.yml` |
 | `tests/` | run the server code in Node (`node tests/server.test.js`), a browser copy of the page with a fake server |
 | `docs/DEVNOTES.md` | how it works, BGF protocol, sheets, Script Properties, API, operations, troubleshooting |
 | `docs/CODEMAP.md` | where each function is and what it does, data flows, how to make common changes |
