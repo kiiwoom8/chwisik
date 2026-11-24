@@ -242,21 +242,25 @@ S.__tokens = {
   'h.owner.s': { aud: CID, iss: 'accounts.google.com', email: 'o@x', email_verified: 'true', exp: String(exp) },
   'h.legacy.s': { aud: CID, iss: 'accounts.google.com', email: 'legacy@gmail.com', email_verified: 'true', exp: String(exp) }
 };
+// tok(kind, nonce): a token whose claims are kind's, carrying that nonce (as Google puts the request's nonce in it)
+const tok = (kind, n) => { const t = 'h.' + kind + n + '.s'; S.__tokens[t] = Object.assign({}, S.__tokens['h.' + kind + '.s'], { nonce: n }); return t; };
 out = post({ fn: 'gPoll', args: [N1, ''] });
 ok('L poll before sign-in: none', out.ok === true && out.r.s === 'none', out);
-out = post({ fn: 'gLogin', args: [N1, 'h.other.s'] });
+out = post({ fn: 'gLogin', args: [N1, tok('other', N1)] });
 ok('L token for another app refused', out.ok === false && /확인하지 못했/.test(out.err), out);
-out = post({ fn: 'gLogin', args: [N1, 'h.old.s'] });
+out = post({ fn: 'gLogin', args: [N1, tok('old', N1)] });
 ok('L expired token refused', out.ok === false, out);
+out = post({ fn: 'gLogin', args: [N2, tok('staff', N1)] });
+ok('L token made for another nonce refused', out.ok === false && /확인하지 못했/.test(out.err), out);
 out = post({ fn: 'gLogin', args: [N1, 'not-a-token'] });
 ok('L junk token refused', out.ok === false, out);
-out = post({ fn: 'gLogin', args: ['short', 'h.staff.s'] });
+out = post({ fn: 'gLogin', args: ['short', tok('staff', 'short')] });
 ok('L bad nonce refused', out.ok === false, out);
 const mails = log.mail.length;
-out = post({ fn: 'gLogin', args: [N1, 'h.staff.s'] });
+out = post({ fn: 'gLogin', args: [N1, tok('staff', N1)] });
 ok('L new account: waits, email lower-cased', out.ok === true && out.r.s === 'wait' && out.r.email === 'staff@gmail.com', out);
 ok('L owner gets one mail with the request', log.mail.length === mails + 1 && /staff@gmail\.com/.test(log.mail[log.mail.length - 1]), log.mail.slice(-1));
-post({ fn: 'gLogin', args: [N2, 'h.staff.s'] });
+post({ fn: 'gLogin', args: [N2, tok('staff', N2)] });
 ok('L same account again: no second mail', log.mail.length === mails + 1);
 out = post({ fn: 'gPoll', args: [N1, ''] });
 ok('L poll while waiting: wait, no key', out.ok === true && out.r.s === 'wait' && !out.r.dev, out);
@@ -283,7 +287,7 @@ ok('L forged key refused', out.ok === false && /^\[접근\]/.test(out.err), out)
 threw = ''; try { exec("getBoot('김성휘', '')"); } catch (e) { threw = e.message; }
 ok('L direct call still refused after a good api call', /^\[접근\]/.test(threw), threw);
 out = post({ fn: 'gPoll', args: [N3, ''] });
-ok('L another phone, same account: signs in, gets in (always allowed)', out.r.s === 'none' && post({ fn: 'gLogin', args: [N3, 'h.staff.s'] }).r.s === 'ok' && post({ fn: 'gPoll', args: [N3, ''] }).r.dev === dev);
+ok('L another phone, same account: signs in, gets in (always allowed)', out.r.s === 'none' && post({ fn: 'gLogin', args: [N3, tok('staff', N3)] }).r.s === 'ok' && post({ fn: 'gPoll', args: [N3, ''] }).r.dev === dev);
 // cut the account: its key stops at once; allowing again brings it back
 exec("setAccount_('staff@gmail.com', 'no')");
 out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev });
@@ -292,13 +296,13 @@ ok('L cut account: poll says no', post({ fn: 'gPoll', args: [N1, ''] }).r.s === 
 exec("setAccount_('staff@gmail.com', 'ok')");
 ok('L allowed again: same key works', post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev }).ok === true);
 // the owner is always in
-out = post({ fn: 'gLogin', args: ['nonce-owner-aaaaaaaaaaaaaaa', 'h.owner.s'] });
+out = post({ fn: 'gLogin', args: ['nonce-owner-aaaaaaaaaaaaaaa', tok('owner', 'nonce-owner-aaaaaaaaaaaaaaa')] });
 ok('L owner: ok at once', out.r.s === 'ok' && post({ fn: 'gPoll', args: ['nonce-owner-aaaaaaaaaaaaaaa', ''] }).r.s === 'ok', out);
 // a phone with a key from the 접근 코드 days: its account is allowed by itself (until ACCESS_OLD_UNTIL)
 const oldId = 'abcdefghijklmnop', oldDev = oldId + '.' + exec("b64_(Utilities.computeHmacSha256Signature('dev|" + oldId + "', secret_('ACCESS_KEY'))).slice(0, 32)");
 out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: oldDev });
 ok('L old 접근 코드 key alone no longer opens data', out.ok === false && /^\[접근\]/.test(out.err), out);
-post({ fn: 'gLogin', args: ['nonce-legacy-aaaaaaaaaaaaaa', 'h.legacy.s'] });
+post({ fn: 'gLogin', args: ['nonce-legacy-aaaaaaaaaaaaaa', tok('legacy', 'nonce-legacy-aaaaaaaaaaaaaa')] });
 ok('L waiting account + a forged old key: still waits', post({ fn: 'gPoll', args: ['nonce-legacy-aaaaaaaaaaaaaa', oldId + '.' + 'y'.repeat(32)] }).r.s === 'wait');
 out = post({ fn: 'gPoll', args: ['nonce-legacy-aaaaaaaaaaaaaa', oldDev] });
 ok('L waiting account + a good old key: allowed by itself', out.r.s === 'ok' && /^g:legacy@gmail\.com:/.test(out.r.dev) && /접근 코드/.test(JSON.parse(props.ACCOUNTS)['legacy@gmail.com'].n), out);

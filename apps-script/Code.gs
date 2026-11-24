@@ -1003,9 +1003,10 @@ function doGet(e) {
  * account"). docs/DEVNOTES.md, Access.
  *
  * Sign-in: the page makes a random nonce, opens LOGIN_PAGE?n=<nonce> (GitHub Pages, app/www/login.html; in a new tab,
- * or the phone's browser for the Android app, since Google sign-in doesn't work inside an app's WebView). There Sign
- * in with Google (Google Identity Services, client GOOGLE_CLIENT_ID) gives an ID token, posted here with the nonce
- * (gLogin): Google's tokeninfo checks it, and nonce -> email is kept 6 h. The page asks gPoll(nonce) until the
+ * or the phone's browser for the Android app, since Google sign-in doesn't work inside an app's WebView). That page
+ * sends the tab to Google's account chooser (OpenID Connect, client GOOGLE_CLIENT_ID, nonce = n; no popup) and gets an
+ * ID token back, posted here with the nonce (gLogin): Google's tokeninfo checks it (and its nonce), and nonce -> email
+ * is kept 6 h. The page asks gPoll(nonce) until the
  * account is allowed and then gets its device key.
  * Accounts: Script Property ACCOUNTS = {email: {s: 'ok' | 'wait' | 'no', t: first seen, a: allowed at, n: note}}.
  * The owner (the account this script runs as) is always allowed. A new account is 'wait' and the owner gets a mail
@@ -1082,8 +1083,9 @@ function checkAccess_(fn, dev) {
 function access_() {
   if (!ACCESS_ && !accessOff_()) throw new Error(ACCESS_TAG + ' Google 계정으로 들어와 주세요.');
 }
-/** Google's ID token (Sign in with Google on LOGIN_PAGE) -> the account's email, checked by Google's tokeninfo. */
-function idTokenEmail_(cred) {
+/** Google's ID token (LOGIN_PAGE, OpenID Connect with nonce = the phone's nonce) -> the account's email, checked by
+ * Google's tokeninfo; the token must carry this nonce, so a token can't be replayed for another phone. */
+function idTokenEmail_(cred, nonce) {
   if (!/\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID)) throw new Error('Google 로그인이 아직 설정되지 않았어요. 사장님께 알려 주세요.');
   cred = String(cred || '');
   if (!/^[\w-]+\.[\w-]+\.[\w-]+$/.test(cred) || cred.length > 4096) throw new Error('Google 로그인을 확인하지 못했어요. 다시 해 주세요.');
@@ -1091,7 +1093,7 @@ function idTokenEmail_(cred) {
   var t = {};
   try { t = JSON.parse(res.getContentText()) || {}; } catch (e) {}
   if (res.getResponseCode() !== 200 || t.aud !== GOOGLE_CLIENT_ID || !/^(https:\/\/)?accounts\.google\.com$/.test(String(t.iss)) ||
-      String(t.email_verified) !== 'true' || !t.email || Number(t.exp) * 1000 < Date.now()) {
+      String(t.email_verified) !== 'true' || !t.email || Number(t.exp) * 1000 < Date.now() || t.nonce !== nonce) {
     throw new Error('Google 로그인을 확인하지 못했어요. 다시 해 주세요.');
   }
   return String(t.email).trim().toLowerCase();
@@ -1099,7 +1101,7 @@ function idTokenEmail_(cred) {
 /** LOGIN_PAGE: nonce + ID token -> remember who signed in for that nonce; a new account asks the owner. */
 function gLogin(n, cred) {
   if (!NONCE_RE_.test(String(n || ''))) throw new Error('이 화면은 취식 앱의 [Google 계정으로 들어가기] 버튼으로 열어 주세요.');
-  var email = idTokenEmail_(cred);
+  var email = idTokenEmail_(cred, String(n));
   CacheService.getScriptCache().put('gl:' + n, email, 21600);
   var s = accountState_(email);
   if (!s) { setAccount_(email, 'wait'); s = 'wait'; notifyOwner_(email); }

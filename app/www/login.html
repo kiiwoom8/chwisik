@@ -14,42 +14,48 @@
   .card { width: min(380px, 100%); background: var(--sheet); border: 1px solid var(--rule); border-radius: 16px; padding: 20px; display: grid; gap: 12px; box-sizing: border-box; }
   h1 { margin: 0; font-size: 18px; }
   p { margin: 0; color: var(--muted); font-size: 14px; }
-  #gbtn { min-height: 44px; display: flex; justify-content: center; }
   #msg { min-height: 1.5em; }
   #msg.ok { color: var(--accent); font-weight: 700; }
   #msg.bad { color: var(--bad); }
   b { color: var(--ink); word-break: break-all; }
-  .go { display: grid; place-items: center; min-height: 44px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 700; text-decoration: none; }
-  .go[hidden] { display: none; }
-  .go:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; border-radius: 22px; text-decoration: none; font-weight: 700; box-sizing: border-box; }
+  .btn[hidden] { display: none; }
+  .gbtn { background: #fff; color: #1f1f1f; border: 1px solid #747775; }
+  .go { background: var(--accent); color: #fff; border-radius: 10px; }
+  .btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 </style>
 </head>
 <body>
 <main><div class="card">
   <h1>취식 로그인</h1>
   <p id="lead">가게에서 허용한 Google 계정만 들어갈 수 있어요. 한 번 허용된 계정은 계속 들어가져요.</p>
-  <div id="gbtn"></div>
+  <a class="btn gbtn" id="gbtn" hidden><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-17.1z"/><path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg><span id="gtext">Google 계정으로 로그인</span></a>
   <p id="msg" role="status"></p>
-  <a class="go" id="go" hidden></a>
+  <a class="btn go" id="go" hidden></a>
 </div></main>
 <script>
 /* Sign in with Google for the staff page (docs/DEVNOTES.md, Access). Opened by the page's gate as
-   login.html?n=<nonce>[&app=1]: Google's button gives an ID token; it goes to the server with the nonce (gLogin), and
-   the phone that opened this (polling gPoll) gets in once the account is allowed. Google sign-in doesn't work inside
-   the Android app's WebView, so the app opens this in the phone's browser (app=1: a button back to the app).
-   GOOGLE_CLIENT_ID must match Code.gs. */
+   login.html?n=<nonce>[&app=1]. No popup: this page sends the whole tab to Google's account chooser (OpenID Connect,
+   response_type id_token, nonce = n) and Google sends it back here with #id_token=…&state=…. The token goes to the
+   server with the nonce (gLogin; the server checks the token's nonce too), and the phone that opened this (polling
+   gPoll) gets in once the account is allowed. Google sign-in doesn't work inside the Android app's WebView, so the
+   app opens this in the phone's browser (app=1: a button back to the app).
+   GOOGLE_CLIENT_ID must match Code.gs; this page's address is the client's authorized redirect URI.
+   (The first version used Google's GIS button in popup mode: in the owner's Chrome the popup opened and nothing
+   came back.) */
 (function () {
   var GOOGLE_CLIENT_ID = "274035594907-i92r76rlpp0c9h1dt79bm6fcheb77b44.apps.googleusercontent.com";
   var API = "https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80yJqv-n3H4fZMItLZPISuM39M6RVyr3qOtqtz864YwlRKpw/exec";
+  var HERE = location.origin + location.pathname;   // https://kiiwoom8.github.io/chwisik/login.html
   var $ = function (id) { return document.getElementById(id); };
-  var q = new URLSearchParams(location.search), n = q.get("n") || "", fromApp = q.get("app") === "1";
+  var NONCE = /^[A-Za-z0-9_-]{22,64}$/;
   function say(t, cls) { $("msg").className = cls || ""; $("msg").textContent = t; }
   function sayWho(email, rest, cls) {
     $("msg").className = cls || ""; $("msg").textContent = "";
     var b = document.createElement("b"); b.textContent = email;
     $("msg").appendChild(b); $("msg").appendChild(document.createTextNode(" " + rest));
   }
-  function back(label) {
+  function back(label, fromApp) {
     var a = $("go");
     // Android app: Chrome opens the installed app (launcher intent); elsewhere: the staff page in this browser
     a.href = fromApp ? "intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.kiiwoom8.chwisik;end" : "./";
@@ -61,35 +67,62 @@
       .then(function (r) { if (!r.ok) throw new Error("서버 응답 " + r.status); return r.json(); })
       .then(function (j) { if (!j || !j.ok) throw new Error((j && j.err) || "서버 오류"); return j.r; });
   }
-  if (!/^[A-Za-z0-9_-]{22,64}$/.test(n)) { say("이 화면은 취식 앱의 [Google 계정으로 들어가기] 버튼으로 열어 주세요.", "bad"); back("취식 열기"); return; }
-  if (GOOGLE_CLIENT_ID.indexOf("%%") === 0) { say("Google 로그인이 아직 설정되지 않았어요. 사장님께 알려 주세요.", "bad"); return; }
-  function onCredential(resp) {
+  function googleUrl(n, fromApp) {
+    return "https://accounts.google.com/o/oauth2/v2/auth?" + [
+      "client_id=" + encodeURIComponent(GOOGLE_CLIENT_ID),
+      "redirect_uri=" + encodeURIComponent(HERE),
+      "response_type=id_token",
+      "scope=" + encodeURIComponent("openid email"),
+      "nonce=" + n,
+      "state=" + n + (fromApp ? ".app" : ""),
+      "prompt=select_account"
+    ].join("&");
+  }
+  function offer(n, fromApp, label) {   // the button: Google's account chooser again
+    $("gbtn").href = googleUrl(n, fromApp);
+    $("gtext").textContent = label || "Google 계정으로 로그인";
+    $("gbtn").hidden = false;
+  }
+
+  // 1. Back from Google: #id_token=…&state=… (or #error=…)
+  var h = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+  if (h.get("id_token") || h.get("error")) {
+    try { history.replaceState(null, "", HERE); } catch (e) {}
+    var st = String(h.get("state") || ""), fromApp = /\.app$/.test(st), n = st.replace(/\.app$/, "");
+    if (!NONCE.test(n)) { say("이 화면은 취식 앱의 [Google 계정으로 들어가기] 버튼으로 열어 주세요.", "bad"); back("취식 열기", false); return; }
+    if (h.get("error")) {
+      say(h.get("error") === "access_denied" ? "로그인을 취소했어요. 다시 하려면 아래 버튼을 눌러 주세요." : "Google 로그인 오류: " + h.get("error"), "bad");
+      offer(n, fromApp);
+      return;
+    }
     say("확인 중…");
-    call("gLogin", [n, resp.credential]).then(function (r) {
+    call("gLogin", [n, h.get("id_token")]).then(function (r) {
       if (r.s === "ok") {
         sayWho(r.email, "계정으로 확인했어요. 취식 앱으로 돌아가세요.", "ok");
         // same address as the staff page: this browser gets in too (Safari -> the page on the home screen)
         if (!fromApp) call("gPoll", [n, ""]).then(function (p) { try { if (p && p.dev) localStorage.setItem("chwisik.dev", p.dev); } catch (e) {} }, function () {});
-        back(fromApp ? "취식 앱으로 돌아가기" : "취식 열기");
+        back(fromApp ? "취식 앱으로 돌아가기" : "취식 열기", fromApp);
       } else if (r.s === "no") {
-        sayWho(r.email, "계정은 허용되지 않았어요. 다른 계정이면 위 버튼으로 다시 로그인해 주세요.", "bad");
+        sayWho(r.email, "계정은 허용되지 않았어요. 다른 계정이면 아래 버튼으로 다시 로그인해 주세요.", "bad");
+        offer(n, fromApp, "다른 계정으로 로그인");
       } else {
         sayWho(r.email, "계정의 허용을 사장님께 요청했어요. 허용되면 취식 앱이 바로 열려요. 이 창은 닫아도 돼요.");
-        if (fromApp) back("취식 앱으로 돌아가기");
+        if (fromApp) back("취식 앱으로 돌아가기", true);
+        offer(n, fromApp, "다른 계정으로 로그인");
       }
     }, function (e) {
       say(String((e && e.message) || "연결을 확인해 주세요.").replace(/^(Error:\s*)?\[접근\]\s*/, ""), "bad");
+      offer(n, fromApp, "다시 로그인");
     });
+    return;
   }
-  window.onGoogleLibraryLoad = function () {
-    google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onCredential, ux_mode: "popup", auto_select: false, itp_support: true, context: "signin" });
-    google.accounts.id.renderButton($("gbtn"), { type: "standard", theme: "outline", size: "large", text: "signin_with", shape: "pill", locale: "ko", width: 280 });
-  };
-  var s = document.createElement("script");
-  s.src = "https://accounts.google.com/gsi/client?hl=ko";
-  s.async = true;
-  s.onerror = function () { say("Google 로그인을 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.", "bad"); };
-  document.head.appendChild(s);
+
+  // 2. Opened by the gate: straight on to Google's account chooser
+  var q = new URLSearchParams(location.search), n0 = q.get("n") || "", app0 = q.get("app") === "1";
+  if (!NONCE.test(n0)) { say("이 화면은 취식 앱의 [Google 계정으로 들어가기] 버튼으로 열어 주세요.", "bad"); back("취식 열기", false); return; }
+  say("Google 로그인으로 넘어가는 중…");
+  offer(n0, app0);
+  location.replace(googleUrl(n0, app0));
 })();
 </script>
 </body>

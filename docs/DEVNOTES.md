@@ -251,9 +251,10 @@ google account. one the account is allowed, always allow the account".
 - **Device key** = `g:<email>:<sig>`, `sig` = HMAC-SHA256(`ACCESS_KEY`, `g|<email>`), 32 signs. Every call checks the
   sig **and** that the account is allowed now, so cutting an account stops all its phones at the next call. Same key
   for the account on every phone; nothing stored per phone.
-- **Sign-in** (Sign in with Google = Google Identity Services, OAuth client `GOOGLE_CLIENT_ID`, the same value in
-  `Code.gs` and `app/www/login.html`; Web client, authorized JavaScript origin `https://kiiwoom8.github.io`, only the
-  basic email scope, so no Google review and no "unverified" screen):
+- **Sign-in** (Google sign-in by OpenID Connect redirect, OAuth client `GOOGLE_CLIENT_ID`, the same value in
+  `Code.gs` and `app/www/login.html`; Web client, authorized JavaScript origin `https://kiiwoom8.github.io`, authorized
+  redirect URI `https://kiiwoom8.github.io/chwisik/login.html`, only the basic email scope, so no Google review and no
+  "unverified" screen):
   Google Cloud project `chwisik` (owner's noerror96 account), Google Auth Platform: app name 취식, audience External,
   **In production** (Testing would let only listed test users sign in), home page `https://kiiwoom8.github.io/chwisik/`,
   privacy page `app/www/privacy.html`, authorized domain `kiiwoom8.github.io`; client "chwisik web" (its secret is not
@@ -262,8 +263,12 @@ google account. one the account is allowed, always allow the account".
      new tab; the Android app's WebView hands it to the phone's browser (Capacitor opens other hosts outside, and
      Google refuses sign-in inside a WebView anyway). The nonce: 24 random signs, `chwisik.gn` in localStorage (kept
      across reloads, new after 5 h).
-  2. `login.html` (GitHub Pages) shows Google's button; the ID token goes to `gLogin(nonce, token)`: Google's tokeninfo
-     endpoint checks it (`aud` = our client, issuer Google, `email_verified`, not expired) → email (lower case),
+  2. `login.html` (GitHub Pages) at once sends the tab to Google's account chooser (`accounts.google.com/o/oauth2/v2/auth`,
+     `response_type=id_token`, `scope=openid email`, `nonce` = the nonce, `state` = nonce + `.app` from the app,
+     `prompt=select_account`); Google comes back to `login.html#id_token=…&state=…`. No popup and no Google script
+     (the GIS popup button opened a window in the owner's Chrome and never came back). The ID token goes to
+     `gLogin(nonce, token)`: Google's tokeninfo endpoint checks it (`aud` = our client, issuer Google,
+     `email_verified`, not expired, `nonce` = this nonce, so a token can't be used for another phone) → email (lower case),
      kept as `gl:<nonce>` in the script cache for 6 h. A new account is added as waiting and the owner gets a mail.
      On GitHub Pages (not the app) it also stores the key in that browser once allowed (Safari → home screen).
   3. The page asks `gPoll(nonce, oldKey)` every 2.5 s for 3 min after the button, then every 10 s, and at once when it
