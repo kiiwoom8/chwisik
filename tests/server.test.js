@@ -17,7 +17,7 @@ items.data.push(['900-1', day(1), day(1) + ' 10:00:00', '삼각김밥', 'c1', '�
 const mem = doc.insertSheet('직원'); mem.data.push(['이름(전체)', '폐기용 이름', '메모', '비밀번호(암호)'], ['김성휘', '성휘', '', ''], ['전병훈', '병훈', '', '']);
 const sh = doc.insertSheet('출근일지'); sh.data.push(S.SHIFT_HEADERS.slice());
 doc.insertSheet('월별 합계'); const lg = doc.insertSheet('가져오기 기록'); lg.data.push(['실행시각', '대상 기간', '전표 수', '새 품목', '결과']);
-Object.assign(props, { BGF_PW: 'pw-a', VER: '100', LIVE_TRIGGER: '5', OCT_IMPORT: '1', OCT_APPLY: '1', OCT_APPLY2: '1', JEO_BACKFILL: '1', JEO_DIV: '31' });
+Object.assign(props, { ACCESS_OFF: '1', BGF_PW: 'pw-a', VER: '100', LIVE_TRIGGER: '5', OCT_IMPORT: '1', OCT_APPLY: '1', OCT_APPLY2: '1', JEO_BACKFILL: '1', JEO_DIV: '31' });
 log.triggers.push('liveTick', 'nightly');
 
 // ----- A. a page from before stores existed calls the functions directly -----
@@ -214,5 +214,47 @@ threw = ''; try { exec("api('25377', 'restoreFrom_', ['" + dSlot + "', null])");
 ok('K not callable through api()', /알 수 없는/.test(threw), threw);
 threw = ''; try { exec('menuRestore()'); } catch (e) { threw = e.message; }
 ok('K menu needs the spreadsheet ui', /no ui/.test(threw), threw);
+
+// ----- L. access code + device keys (the check is on from here) -----
+delete props.ACCESS_OFF;
+const post = (body) => JSON.parse(exec('doPost({ postData: { contents: ' + JSON.stringify(JSON.stringify(body)) + ' } })').text);
+out = post({ fn: 'getMonth', args: [mon, ''], store: '25377' });
+ok('L no key: data refused', out.ok === false && /^\[접근\]/.test(out.err), out);
+threw = ''; try { exec("api('25377', 'getBoot', ['', ''])"); } catch (e) { threw = e.message; }
+ok('L no key: api() refused', /^\[접근\]/.test(threw), threw);
+threw = ''; try { exec("getBoot('김성휘', '')"); } catch (e) { threw = e.message; }
+ok('L direct call refused', /^\[접근\]/.test(threw), threw);
+out = post({ fn: 'getPage', args: [''] });
+ok('L getPage open without a key', out.ok === true && out.r && out.r.hash, out);
+out = post({ fn: 'redeem', args: ['WRONG123'] });
+ok('L wrong code refused', out.ok === false && /맞지 않아요/.test(out.err), out);
+const code = props.ACCESS_CODE;
+ok('L code made on first use: 8 signs, no I O 0 1', /^[A-HJ-NP-Z2-9]{8}$/.test(code), code);
+out = post({ fn: 'redeem', args: [code.slice(0, 4).toLowerCase() + '-' + code.slice(4)] });
+ok('L code as typed (small letters, dash) gives a key', out.ok === true && /^[\w-]{16}\.[\w-]{32}$/.test(out.r.dev), out);
+const dev = out.r.dev;
+out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev });
+ok('L key opens data (doPost)', out.ok === true && out.r && out.r.rows, out.err);
+ok('L key opens data (api)', exec("api('25377', 'getInit', ['김성휘', ''], '" + dev + "')").members.length >= 1);
+out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev.slice(0, 17) + 'x'.repeat(32) });
+ok('L forged key refused', out.ok === false && /^\[접근\]/.test(out.err), out);
+threw = ''; try { exec("getBoot('김성휘', '')"); } catch (e) { threw = e.message; }
+ok('L direct call still refused after a good api call', /^\[접근\]/.test(threw), threw);
+props.ACCESS_CODE = 'NEWCODE2';
+out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev });
+ok('L new code: phones already in keep working', out.ok === true, out.err);
+out = post({ fn: 'redeem', args: [code] });
+ok('L old code no longer works', out.ok === false, out);
+props.ACCESS_KEY = 'rotated-key';
+out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: dev });
+ok('L new ACCESS_KEY: every old key stops', out.ok === false && /^\[접근\]/.test(out.err), out);
+for (let i = 0; i < 30; i++) post({ fn: 'redeem', args: ['BAD' + i] });
+out = post({ fn: 'redeem', args: ['NEWCODE2'] });
+ok('L 30 wrong codes: redeem waits (even the right code)', out.ok === false && /10분/.test(out.err), out);
+props.ACCESS_OFF = '1';
+out = post({ fn: 'getMonth', args: [mon, ''], store: '25377' });
+ok('L ACCESS_OFF = 1 opens it (emergency switch)', out.ok === true, out.err);
+threw = ''; try { exec('menuAccessShow()'); } catch (e) { threw = e.message; }
+ok('L access menu needs the spreadsheet ui', /no ui/.test(threw), threw);
 
 console.log(process.exitCode ? 'SOME FAILED' : 'ALL ' + n + ' PASSED');

@@ -7,6 +7,7 @@ It puts a fake google.script.run (api(store, fn, args)) with two stores of made-
 Address options: ?delay=ms (server answer time, to see the loading screen), ?fail=N (the first N getBoot calls fail),
 ?store=31949 (a link that names the store), ?gs=1 (adds a third store without 저회전 and without 전산),
 ?closed=1 (adds last month as a closed month: 월별 합계 shows its 월별 마감 numbers), ?savefail=1 (saveShift / deleteShift refuse).
+Access code for the stub: TEST-2345 (any other code is refused; calls without the key get [접근]).
 The page keeps its data in localStorage: run localStorage.clear() in the console to start as a new phone.
 """
 import io, sys, re
@@ -63,16 +64,21 @@ stub = r'''
       var o = DB[st]; o.shifts = o.shifts.filter(function (s) { return s[1] !== key; }); o.ver++; return month(st, m);
     },
     getPage: function () { return null; },
-    login: function () { return { token: "tok" }; }
+    login: function () { return { token: "tok" }; },
+    redeem: function (st, code) {
+      if (String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "") !== "TEST2345") throw new Error("접근 코드가 맞지 않아요.");
+      return { dev: "stubdevice000000." + "s".repeat(32) };
+    }
   };
   var calls = window.STUB_CALLS = [];
   function runner() {
     var ok = function () {}, bad = function () {};
     var r = {
       withSuccessHandler: function (f) { ok = f; return r; }, withFailureHandler: function (f) { bad = f; return r; },
-      api: function (st, fn, args) {
+      api: function (st, fn, args, dev) {
         calls.push(st + ":" + fn);
         setTimeout(function () {
+          if (fn !== "getPage" && fn !== "redeem" && !/^stubdevice/.test(dev || "")) { bad(new Error("[접근] 접근 코드를 넣어 주세요.")); return; }
           if (FAIL > 0 && fn === "getBoot") { FAIL--; bad(new Error("stub fail")); return; }
           if (!DB[st]) { bad(new Error("없는 점포예요. 점포를 다시 골라 주세요.")); return; }
           try { ok(JSON.parse(JSON.stringify(F[fn].apply(null, [st].concat(args)) || null))); } catch (e) { bad(e); }

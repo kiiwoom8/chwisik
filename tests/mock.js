@@ -143,5 +143,5 @@ sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 for (const f of ['Code.gs', 'Oct2026.gs']) vm.runInContext(fs.readFileSync(path.join(root, 'apps-script', f), 'utf8'), sandbox, { filename: f });
 // every "execution" starts with fresh globals, like Apps Script: reset the per-execution caches
-function exec(src) { vm.runInContext('CUR_ = null; SS_DOC_ = null; PS_ = null; PSNAP_ = null; MEM_ = {};', sandbox); return vm.runInContext(src, sandbox); }
+function exec(src) { vm.runInContext('CUR_ = null; SS_DOC_ = null; PS_ = null; PSNAP_ = null; MEM_ = {}; ACCESS_ = false;', sandbox); return vm.runInContext(src, sandbox); }
 module.exports = { exec, sandbox, sheets, doc, docs, props, cache, log, BGF, Sheet, fmt };

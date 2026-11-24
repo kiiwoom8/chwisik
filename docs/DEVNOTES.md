@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-25 (one staff address: GitHub Pages; /exec hands over; ios-latest release)
+Last updated: 2026-11-25 (접근 코드: device keys on every data call)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -210,6 +210,9 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 | Key | Set by | Meaning |
 |---|---|---|
 | ● `BGF_PW` | menu BGF 점포시스템 비밀번호 입력 · <store> | BGF store password (only place it exists). A store without it is not imported. |
+| `ACCESS_CODE` | first `redeem` / menu 접근 코드 보기 (made if missing), 접근 코드 바꾸기, 모든 폰 접근 끊기 | the 8-sign access code staff enter once per phone (`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`). Secret: never in docs, commits or chat logs. |
+| `ACCESS_KEY` | `secret_` (first use), 모든 폰 접근 끊기 | HMAC key of the device keys. Changing it disconnects every phone. |
+| `ACCESS_OFF` | by hand only | `1` = no access check (emergency, e.g. if the check itself breaks). Phones without a key still see the code screen; any phone with a key gets in. Delete it to turn the check back on. |
 | ● `BGF_SS` | `bgfSsFromLogin_` (not the first store) | JSON of the store's `SS_*` variables, taken from its last login answer |
 | ● `SHEETS` | `storeSheets_` (not the first store) | `1` = the store's sheets were made. Delete it (or run `setup()`) to have them checked again. |
 | ● `VER` | every write/import (`bumpVersion_`), hand edits (`onEdit`) | data version; the page polls `getMonth` with it, and the month cache is keyed by it |
@@ -228,6 +231,39 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 | `PW_SALT`, `TOKEN_KEY` | first use | password hashing salt / token HMAC key. Deleting `TOKEN_KEY` logs every phone out; deleting `PW_SALT` invalidates every stored password |
 | `DEV_PW_HASH` | menu 개발자 비밀번호 설정 | hash of the developer bypass password |
 | `BAK_<slot>`, `BAK_AT_<slot>` | `backupTo_` | id of a backup spreadsheet file and the time of its last copy (`yyyy-MM-dd HH:mm`). Slots: `D0`–`D6` weekday (일–토), `M1`–`M12` month end, `H` 직접, `R` 되살리기 직전. Delete a pair to forget that file (the next backup of the slot makes a new one). |
+
+## Access (접근 코드, since 2026-11-25)
+
+Why: the page (GitHub Pages) and the server address (in the public repo and inside the APK) are public, so before this
+anyone who found them could read every name, 취식 / 폐기 count and shift, and tag or add things. The owner (2026-11-25):
+"i was planning to give access through app, but in ios case it's not. solve it". The APK never hid anything either.
+
+- **Every data call needs a device key.** `api(store, fn, args, dev)` and `doPost` (`{fn, args, store, dev}`) run
+  `checkAccess_(fn, dev)` first; without a good key they answer `[접근] 접근 코드를 넣어 주세요.` Open without a key:
+  `getPage` (the page source is public anyway, and old apps must be able to update to the page with the code screen)
+  and `redeem`.
+- **Direct `google.script.run` calls are refused too.** Each public data function (`getBoot`, `getInit`, `getMonth`,
+  `setTag`, `saveShift`, `deleteShift`, `addMember`, `login`, `setPassword`, `refreshNow`) starts with `access_()`,
+  which passes only when this execution came through `api()` / `doPost()` with a good key (`ACCESS_`, false at the
+  start of every execution). **A new public data function must start with `access_()`.**
+- **Device key** = `id.sig`: `id` 16 random signs, `sig` = HMAC-SHA256(`ACCESS_KEY`, `dev|id`), 32 signs. Nothing is
+  stored per phone, so there is no list to keep; the price is that one phone can't be cut off alone.
+- **Getting a key:** `redeem(code)` compares the code (case and dashes ignored) with `ACCESS_CODE` and returns
+  `{dev}`. 30 wrong codes in 10 min, all callers together, block `redeem` for 10 min (Apps Script can't see IP
+  addresses); 8 signs from 32 = 40 bits, so guessing is out of reach. Phones already in are not affected by the block.
+- **Owner's menu** (취식 관리):
+  - 접근 코드 보기 (직원 초대): the message to paste into the staff group chat: the link
+    `https://kiiwoom8.github.io/chwisik/#code=<code>` (opens straight in, the code never reaches GitHub: it's after
+    `#`) and the code as `XXXX-XXXX`.
+  - 접근 코드 바꾸기: new code; phones already in keep working (the old code stops letting new phones in).
+  - 모든 폰 접근 끊기 + 새 접근 코드: new `ACCESS_KEY` and new code; every phone (Android app, iPhone, browsers,
+    z's Chwisik tab) must enter the new code. **Use it when someone leaves**, then post the new code.
+- **Page** (`Index.html`): key in localStorage `chwisik.dev` (all stores). No key at start → the code screen
+  (`#gate`, over everything) before any data call. A call refused with `[접근]` (key from before 모든 폰 접근 끊기) →
+  the key and every `chwisik.cache*` are deleted and the code screen opens; `boot()` doesn't retry meanwhile.
+  `#code=…` in the address (API mode) fills the code in and sends it at once, then the address is cleaned.
+- iPhone: the home-screen copy has its own storage, so the code is entered once more there (the invite message says so).
+- Old `/exec` link: `Move.html` doesn't carry the key (it has none); people enter the code on the new address.
 
 ## Passwords (optional, per name)
 
@@ -249,6 +285,7 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 - **지금 백업하기**: copies everything into the `직접` backup file now (`menuBackupNow`); the alert gives the file's link.
 - **백업에서 되살리기**: lists the backups (newest first), asks which one and which sheets (empty = all, or names with commas), confirms, then restores (`menuRestore` → `restoreFrom_`). See *Backups*.
 - **개발자 비밀번호 설정** (all stores), **직원 비밀번호 지우기** (asks which store): see *Passwords*.
+- **접근 코드 보기 (직원 초대)**, **접근 코드 바꾸기 (들어온 폰은 그대로)**, **모든 폰 접근 끊기 + 새 접근 코드**: see *Access (접근 코드)*.
 
 ## Backups (since 2026-11-20)
 

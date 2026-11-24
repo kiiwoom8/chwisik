@@ -271,6 +271,10 @@ function onOpen() {
     .addSeparator()
     .addItem('개발자 비밀번호 설정', 'menuSetDevPw')
     .addItem('직원 비밀번호 지우기', 'menuClearMemberPw')
+    .addSeparator()
+    .addItem('접근 코드 보기 (직원 초대)', 'menuAccessShow')
+    .addItem('접근 코드 바꾸기 (들어온 폰은 그대로)', 'menuAccessNewCode')
+    .addItem('모든 폰 접근 끊기 + 새 접근 코드', 'menuAccessRevokeAll')
     .addToUi();
 }
 
@@ -531,6 +535,7 @@ function appendItems_(items) {
  * Hits BGF at most once per LIVE_MIN_GAP_S across all callers; otherwise returns at once.
  */
 function refreshNow() {
+  access_();
   if (store_().legacy) octOnce_();
   try { autoOutAll_(); } catch (e) {}
   return liveGate_();
@@ -991,6 +996,79 @@ function doGet(e) {
   return t.evaluate().setTitle('취식 주소가 바뀌었어요').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
+/* ---------- 접근 (기기 키) ----------
+ * The page and this server's address are public (GitHub Pages, public repo; the Android app carries the address
+ * too), so every data call needs a device key. A phone gets one by entering the access code (접근 코드,
+ * Script Property ACCESS_CODE, 8 characters) once: redeem(code) -> 'id.sig', sig = HMAC(ACCESS_KEY, id).
+ * Nothing is stored per phone. 모든 폰 접근 끊기 makes a new ACCESS_KEY (every key stops working) and a new code;
+ * 접근 코드 바꾸기 makes only a new code (phones already in keep working).
+ * Open without a key: getPage (the page source is public anyway) and redeem.
+ * Direct google.script.run calls to the data functions are refused too: they check ACCESS_ (set only by api()
+ * / doPost() after the key check; every execution starts with it false).
+ * Script Property ACCESS_OFF = '1' turns the check off (emergency switch; the tests use it). */
+var ACCESS_TAG = '[접근]';
+var ACCESS_ = false;
+var CODE_CHARS_ = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // 32 signs: no I, O, 0, 1
+function accessOff_() { return gget_('ACCESS_OFF') === '1'; }
+function newAccessCode_() {
+  var b = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + Utilities.getUuid(), Utilities.Charset.UTF_8);
+  var c = '';
+  for (var i = 0; i < 8; i++) c += CODE_CHARS_.charAt((b[i] + 256) % 32);
+  gset_('ACCESS_CODE', c);
+  return c;
+}
+function accessCode_() {
+  var c = gget_('ACCESS_CODE') || ps_().getProperty('ACCESS_CODE') || '';
+  return c || newAccessCode_();
+}
+function showCode_(c) { return c.slice(0, 4) + '-' + c.slice(4); }
+function devSig_(id) { return b64_(Utilities.computeHmacSha256Signature('dev|' + id, secret_('ACCESS_KEY'))).slice(0, 32); }
+function devOk_(dev) {
+  var m = /^([A-Za-z0-9_-]{16})\.([A-Za-z0-9_-]{32})$/.exec(String(dev || ''));
+  return !!m && m[2] === devSig_(m[1]);
+}
+/** api() / doPost(): a good device key opens the data functions for this execution. */
+function checkAccess_(fn, dev) {
+  ACCESS_ = accessOff_() || devOk_(dev);
+  if (!ACCESS_ && fn !== 'getPage' && fn !== 'redeem') throw new Error(ACCESS_TAG + ' 접근 코드를 넣어 주세요.');
+}
+/** First line of every data function anyone could call. */
+function access_() {
+  if (!ACCESS_ && !accessOff_()) throw new Error(ACCESS_TAG + ' 접근 코드를 넣어 주세요.');
+}
+/** Access code -> device key for this phone. 30 wrong codes in 10 min (all callers together) -> wait. */
+function redeem(code) {
+  var cache = CacheService.getScriptCache();
+  var fails = Number(cache.get('accessFail') || 0);
+  if (fails >= 30) throw new Error('접근 코드가 너무 여러 번 틀렸어요. 10분 뒤에 다시 해 주세요.');
+  if (String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '') !== accessCode_()) {
+    cache.put('accessFail', String(fails + 1), 600);
+    throw new Error('접근 코드가 맞지 않아요.');
+  }
+  var id = b64_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid(), Utilities.Charset.UTF_8)).slice(0, 16);
+  return { dev: id + '.' + devSig_(id) };
+}
+function accessMessage_(c) {
+  return '취식 앱: ' + WEB_APP_URL + '#code=' + c + '\n접근 코드: ' + showCode_(c) +
+    '\n(링크를 누르면 바로 들어가져요. 아이폰은 홈 화면에 추가한 뒤 그 앱에서 코드를 한 번 더 넣어요. 안드로이드 앱도 처음 한 번 넣어요.)';
+}
+function menuAccessShow() {
+  var ui = SpreadsheetApp.getUi();
+  ui.alert('접근 코드', '직원 단톡방에 아래를 그대로 보내 주세요.\n\n' + accessMessage_(accessCode_()) +
+    '\n\n그만둔 사람이 있으면: 모든 폰 접근 끊기 + 새 접근 코드.', ui.ButtonSet.OK);
+}
+function menuAccessNewCode() {
+  var ui = SpreadsheetApp.getUi();
+  if (ui.alert('접근 코드 바꾸기', '새 코드를 만들어요. 옛 코드로는 더 들어올 수 없고, 이미 들어온 폰은 그대로 써요.', ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+  ui.alert('새 접근 코드', accessMessage_(newAccessCode_()), ui.ButtonSet.OK);
+}
+function menuAccessRevokeAll() {
+  var ui = SpreadsheetApp.getUi();
+  if (ui.alert('모든 폰 접근 끊기', '모든 폰(안드로이드 앱, 아이폰, 브라우저, z)이 새 접근 코드를 넣어야 다시 들어올 수 있어요. 할까요?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  gset_('ACCESS_KEY', Utilities.getUuid() + Utilities.getUuid());
+  ui.alert('새 접근 코드', '직원 단톡방에 보내 주세요.\n\n' + accessMessage_(newAccessCode_()), ui.ButtonSet.OK);
+}
+
 /* ---------- 앱 API (JSON) ----------
  * The Android app / installable page (app/) calls the same functions as google.script.run, but through
  * POST /exec with a text/plain body {"fn": name, "args": [...]} (text/plain = no CORS preflight).
@@ -1000,7 +1078,7 @@ function apiFns_() {
   return {
     getBoot: getBoot, getInit: getInit, getMonth: getMonth, setTag: setTag, addMember: addMember,
     saveShift: saveShift, deleteShift: deleteShift,
-    login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage
+    login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage, redeem: redeem
   };
 }
 function doPost(e) {
@@ -1009,6 +1087,7 @@ function doPost(e) {
     var req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     var fns = apiFns_();
     if (!req || typeof req.fn !== 'string' || !Object.prototype.hasOwnProperty.call(fns, req.fn)) throw new Error('알 수 없는 요청이에요.');
+    checkAccess_(req.fn, req.dev);
     useStore_(req.store);   // no store = the first store (a page from before stores existed)
     var r = fns[req.fn].apply(null, Array.isArray(req.args) ? req.args : []);
     out = { ok: true, r: r === undefined ? null : r };
@@ -1022,15 +1101,17 @@ function doPost(e) {
  * The page's one entry on the /exec link (google.script.run.api): the same functions as doPost, for one store.
  * (A page from before stores existed calls the functions directly; they then work for the first store.)
  */
-function api(store, fn, args) {
+function api(store, fn, args, dev) {
   var fns = apiFns_();
   if (typeof fn !== 'string' || !Object.prototype.hasOwnProperty.call(fns, fn)) throw new Error('알 수 없는 요청이에요.');
+  checkAccess_(fn, dev);
   useStore_(store);
   return fns[fn].apply(null, Array.isArray(args) ? args : []);
 }
 
 /** One call for the page start: init + the newest month (saves a round trip). */
 function getBoot(me, token) {
+  access_();
   var init = getInit(me, token);
   return { init: init, month: getMonth(init.months[0], '') };
 }
@@ -1146,6 +1227,7 @@ function authMember_(full, token) {
 
 /** Password check. The developer password (Script Property DEV_PW_HASH) opens any name. */
 function login(full, pw) {
+  access_();
   var m = memberRow_(full);
   if (!m.pw) return { token: '' };
   pw = String(pw || '');
@@ -1166,6 +1248,7 @@ function login(full, pw) {
 
 /** Set, change or remove ('') your own password. Needs your current token when one is set. */
 function setPassword(full, token, newPw) {
+  access_();
   authMember_(full, token);
   newPw = String(newPw || '');
   if (newPw && (newPw.length < 4 || newPw.length > 30)) throw new Error('비밀번호는 4~30자로 해 주세요.');
@@ -1220,6 +1303,7 @@ function withLock_(fn) {
 
 /** me/token: the name this phone remembers; meOk = false means it must enter the password again. */
 function getInit(me, token) {
+  access_();
   var meOk = true;
   if (me) { try { authMember_(me, token); } catch (e) { meOk = String(e.message).indexOf(AUTH_TAG) < 0; } }
   var out = getInitData_();
@@ -1261,6 +1345,7 @@ var MONTH_CACHE_S = 3600;   // a month's answer stays in the cache this long (pe
  * sync button) reads the sheets anyway: for hand changes that don't move the version (a deleted row).
  */
 function getMonth(month, knownVersion, fresh) {
+  access_();
   var v = version_();
   if (knownVersion && knownVersion === v) return null;
   month = /^\d{4}-\d\d$/.test(String(month || '')) ? String(month) : '';
@@ -1469,6 +1554,7 @@ function cancelMatch_(vals, nums) {
  * changed or cleared from the page (the owner can still fix it in the sheet).
  */
 function setTag(rowHint, key, type, memberFull, month, note, me, token) {
+  access_();
   if (['취식', '폐기', ''].indexOf(type) < 0) throw new Error('bad type');
   var actor = authMember_(me || memberFull, token);
   if (type && memberFull && memberFull !== actor.full) throw new Error('다른 직원 이름으로는 등록할 수 없어요.');
@@ -1764,6 +1850,7 @@ function planTrim_(all, member, a, b, skipKey) {
 
 /** key '' = new. end '' = still working. */
 function saveShift(key, date, memberFull, start, end, memo, month, token) {
+  access_();
   var mem = authMember_(memberFull, token);
   date = String(date || ''); start = String(start || '').slice(0, 5); end = String(end || '').slice(0, 5);
   memo = String(memo || '').replace(/^[=+\-@]+/, '').trim().slice(0, 40);
@@ -1818,6 +1905,7 @@ function saveShift(key, date, memberFull, start, end, memo, month, token) {
 }
 
 function deleteShift(key, memberFull, month, token) {
+  access_();
   var mem = authMember_(memberFull, token);
   withLock_(function () {
     var sh = shiftSheet_();
@@ -1832,6 +1920,7 @@ function deleteShift(key, memberFull, month, token) {
 }
 
 function addMember(full) {
+  access_();
   full = String(full || '').replace(/[=+\-@'"<>]/g, '').trim().slice(0, 10);
   if (full.length < 2) throw new Error('이름을 두 글자 이상 적어 주세요.');
   var lock = LockService.getScriptLock();
