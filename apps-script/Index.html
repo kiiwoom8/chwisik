@@ -568,6 +568,9 @@ body.gated { overflow: hidden; }
     } catch (e) {}
     document.body.classList.add("gated");
     $("gate").hidden = false;
+    // a service worker from before v4 answers every navigation with the page, so it would open the page instead of
+    // login.html: have the browser fetch the new one now, before the button is tapped
+    try { if (navigator.serviceWorker && API) navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {}); } catch (e) {}
     var g = gNonce(false);
     $("gateGo").href = LOGIN + "?n=" + g.n + (window.Capacitor ? "&app=1" : "");
     gateMsg("");
