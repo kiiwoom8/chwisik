@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-25 (iPhone app: Capacitor iOS build + TestFlight pipeline)
+Last updated: 2026-11-25 (free iPhone path: step card, key carried into the home-screen app)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -432,6 +432,9 @@ Why: the `/exec` link is slow to open (Google's wrapper page, two iframes, then 
   - Staff install: the TestFlight app, then the public link (repo variable `TESTFLIGHT_URL`; `ios-latest` and `ios-1.<run>` show it). The first build needs Apple's Beta App Review (give the reviewer the 접근 코드 in the review notes); later builds usually don't. Builds stop opening 90 days after upload, so `ios.yml` also runs on the 1st of every month.
   - Inside the app the page runs edge to edge (Capacitor's `contentInset` never), so `.top` sticks at `env(safe-area-inset-top)` and `body::before` covers the status bar area (both 0 everywhere else).
   - Not verified until the first signed run: signing, upload, the WKWebView talking to the server (CORS from `capacitor://localhost`; the Android WebView works the same way). The unsigned build is checked on every push.
+- **iPhone without paying (the current way)** (owner, 2026-11-25: "find another way of not paying money"): there is no free real app (free sideloading needs a computer and expires every 7 days; a Web Clip profile is more taps with an "unverified" warning), so the home-screen page is made as short as possible:
+  - Staff tap the invite link in KakaoTalk → it opens in Safari (loader) → the code is taken from `#code=` → a step card (`iosHint`, `#iosBar`): 주소창 옆 ⋯ (iOS 27: ≡; iOS 18: the 공유 button below) → 공유 → 홈 화면에 추가 → 웹 앱으로 열기 on → 추가. (The Korean label of "Open as Web App" is my reading; check on a phone.)
+  - **No second code**: `manifest.webmanifest` has no `start_url`, so 홈 화면에 추가 saves the address on screen, and in iPhone Safari the page keeps that address at `?k=<device key>&store=<id>&me=<name>` (`installUrl()`: at start, after a code, after picking a name). The home-screen app's first start (`takeInstallUrl`) stores key, store and name if it has none, then cleans the address. Anywhere else (not iPhone Safari) these parameters are only read and removed. Anyone given that Safari address gets in like with the invite link; 모든 폰 접근 끊기 cuts it like every key.
 - **iPhone without the app**: staff can also use the installable page `app/www` on the home screen: Safari → 공유 (iOS 26: ⋯ → 공유) → 홈 화면에 추가 gives a 취식 icon that opens full screen, without Google's banner, and updates itself like the Android app.
   - **Host**: GitHub Pages, `https://kiiwoom8.github.io/chwisik/`, built by `.github/workflows/pages.yml` on push to `app/www/**`, `app/build.mjs` or `apps-script/Index.html` (`node app/build.mjs` → upload `app/www` → deploy-pages). Live since 2026-11-25 (repo made public that day for this; free Pages needs a public repo; Settings → Pages → Source = *GitHub Actions*). If the repo ever goes private again the job is skipped and the site stops updating.
   - **Home-screen tags**: the loader `document.write`s the staff page over its own head, so `show()` writes the manifest, apple-touch-icon, `apple-mobile-web-app-*` and light/dark `theme-color` tags into the new head too; without them Safari's 홈 화면에 추가 saw none (screenshot icon, opened in Safari on iOS before 26).

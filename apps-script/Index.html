@@ -318,7 +318,10 @@ body.gated { overflow: hidden; }
 .iosbar .wrap { display: flex; align-items: center; gap: 6px; padding-top: 6px; padding-bottom: 6px; }
 .iosbar .t { flex: 1; min-width: 0; line-height: 1.45; }
 .iosbar .t svg { vertical-align: -2px; }
-.iosbar .t .mu { color: var(--muted); white-space: nowrap; }
+.iosbar .t .mu { color: var(--muted); }
+.iosbar .t ol { margin: 4px 0 2px; padding-left: 20px; display: grid; gap: 3px; }
+.iosbar .t li::marker { color: var(--accent); font-weight: 700; }
+.iosbar .wrap { align-items: flex-start; }
 .iosbar .x { border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; width: 32px; height: 32px; flex: none; cursor: pointer; border-radius: 8px; }
 .iosbar .x:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 @media (max-width: 380px) { .stamp { min-width: 46px; font-size: 13px; } .tab { font-size: 11.5px; letter-spacing: -0.03em; } }
@@ -501,14 +504,18 @@ body.gated { overflow: hidden; }
      The /exec link on an iPhone -> a bar linking to that copy (WEB_APP; "" = not hosted yet, so no bar).
      Closing the bar hides it on this phone for good. Never in the Android app or the installed copy itself. */
   var WEB_APP = "https://kiiwoom8.github.io/chwisik/";
+  var IOS = /iPhone|iPad|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var STANDALONE = navigator.standalone === true || !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
   (function iosHint() {
     var K_IOS = "chwisik.iosHint";
-    var ios = /iPhone|iPad|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    var standalone = navigator.standalone === true || !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
-    if (!ios || standalone || window.Capacitor || lsGet(K_IOS) === "off") return;
+    if (!IOS || STANDALONE || window.Capacitor || lsGet(K_IOS) === "off") return;
     var bar = $("iosBar"), t = $("iosText");
     if (API) {
-      t.innerHTML = '<b>앱으로 쓰기</b>: 공유 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="공유 버튼"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1"/></svg> → <b>홈 화면에 추가</b> <span class="mu">(공유가 안 보이면 ⋯ 안에)</span>';
+      var share = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="공유 버튼"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1"/></svg>';
+      t.innerHTML = '<b>아이폰 앱처럼 쓰기</b> <span class="mu">(한 번만 하면 돼요. 코드는 다시 안 넣어요)</span>' +
+        '<ol><li>주소창 옆 <b>⋯</b> (iOS 27은 <b>≡</b>) → <b>공유</b> ' + share + ' <span class="mu">· 화면 아래에 공유 버튼이 있으면 그걸 눌러요</span></li>' +
+        '<li>아래로 내려서 <b>홈 화면에 추가</b></li>' +
+        '<li><b>웹 앱으로 열기</b>가 켜진 채로 <b>추가</b> → 홈 화면의 <b>취식</b> 아이콘으로 열어요</li></ol>';
     } else if (WEB_APP) {
       t.appendChild(document.createTextNode("아이폰에서는 앱처럼 쓸 수 있어요. "));
       var a = mk("a", "linkbtn", "설치하기");
@@ -543,6 +550,7 @@ body.gated { overflow: hidden; }
     $("gateOk").disabled = true; $("gateErr").textContent = "확인 중…";
     run("redeem", c).then(function (r) {
       lsSet(K_DEV, r.dev);
+      installUrl();
       gateOn = false; $("gate").hidden = true; document.body.classList.remove("gated");
       $("gateOk").disabled = false; $("gateCode").value = ""; $("gateErr").textContent = "";
       bootTries = 0; boot(); refreshLive();
@@ -552,6 +560,31 @@ body.gated { overflow: hidden; }
     });
   }
   $("gateForm").addEventListener("submit", function (ev) { ev.preventDefault(); gateSubmit(); });
+  /* iPhone: 홈 화면에 추가 saves the address on screen (the manifest has no start_url), and the home-screen app gets
+     storage of its own. So in Safari the address carries this phone's key, store and name (?k=…&store=…&me=…), and
+     the home-screen app takes them on its first start: no second 접근 코드, no picking again. Elsewhere the
+     parameters are only read, then removed from the address. */
+  function installUrl() {
+    if (!API || window.Capacitor || !IOS || STANDALONE) return;
+    var dev = lsGet(K_DEV);
+    if (!dev) return;
+    var q = "?k=" + encodeURIComponent(dev) + "&store=" + encodeURIComponent(sid()) + (S.me ? "&me=" + encodeURIComponent(S.me) : "");
+    try { if (location.search !== q) history.replaceState(null, "", location.pathname + q); } catch (e) {}
+  }
+  (function takeInstallUrl() {
+    var p = null;
+    try { p = new URLSearchParams(location.search); } catch (e) { return; }
+    var k = p.get("k") || "";
+    if (!k) return;
+    if (/^[\w-]{16}\.[\w-]{32}$/.test(k) && !lsGet(K_DEV)) {
+      lsSet(K_DEV, k);
+      var st = p.get("store") || "", me = p.get("me") || "";
+      if (/^[\w-]{1,24}$/.test(st) && !lsGet(K_STORE)) { lsSet(K_STORE, st); S.store = st; }
+      if (me && !lsGet(K("me"))) lsSet(K("me"), me.slice(0, 10));
+      loadIdentity();
+    }
+    if (!(API && IOS && !STANDALONE && !window.Capacitor)) { try { history.replaceState(null, "", location.pathname); } catch (e) {} }
+  })();
   var writesInFlight = 0;  // includes saves for a store the worker has since left
   function run(fn) {
     var args = Array.prototype.slice.call(arguments, 1), st = sid(), dev = lsGet(K_DEV) || "", p;
@@ -1580,7 +1613,7 @@ body.gated { overflow: hidden; }
   }
 
   /* ---------- name picker ---------- */
-  function choose(full) { S.me = full; lsSet(K("me"), S.me); $("picker").hidden = true; S.who = ""; render(); }
+  function choose(full) { S.me = full; lsSet(K("me"), S.me); $("picker").hidden = true; S.who = ""; render(); installUrl(); }
 
   /* ---------- 점포 고르기 ---------- */
   var carryMe = "";   // the name used in the store we came from: offered in the next store if it is on its list too
@@ -1973,6 +2006,7 @@ body.gated { overflow: hidden; }
     var m = API ? /[#&]code=([A-Za-z0-9-]{4,20})/.exec(location.hash || "") : null;
     if (m) { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} }
     if (!lsGet(K_DEV)) { gate(m ? m[1] : ""); return; }
+    installUrl();
     boot(); refreshLive();
   });
 })();

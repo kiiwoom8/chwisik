@@ -7,6 +7,7 @@ It puts a fake google.script.run (api(store, fn, args)) with two stores of made-
 Address options: ?delay=ms (server answer time, to see the loading screen), ?fail=N (the first N getBoot calls fail),
 ?store=31949 (a link that names the store), ?gs=1 (adds a third store without 저회전 and without 전산),
 ?closed=1 (adds last month as a closed month: 월별 합계 shows its 월별 마감 numbers), ?savefail=1 (saveShift / deleteShift refuse).
+?ios=1 = iPhone Safari, ?ios=2 = iPhone home-screen app; ?api=1 = the hosted copy's fetch mode.
 Access code for the stub: TEST-2345 (any other code is refused; calls without the key get [접근]).
 The page keeps its data in localStorage: run localStorage.clear() in the console to start as a new phone.
 """
@@ -86,6 +87,29 @@ stub = r'''
       }
     };
     return r;
+  }
+  /* ?ios=1: an iPhone in Safari (?ios=2: the home-screen app). ?api=1: the hosted copy's mode (CHWISIK_API + fetch). */
+  if (Q.get("ios")) {
+    Object.defineProperty(navigator, "userAgent", { get: function () { return "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1"; } });
+    if (Q.get("ios") === "2") Object.defineProperty(navigator, "standalone", { get: function () { return true; } });
+  }
+  if (Q.get("api")) {
+    window.CHWISIK_API = "https://stub.invalid/exec";
+    var realFetch = window.fetch;
+    window.fetch = function (url, opt) {
+      if (url !== window.CHWISIK_API) return realFetch.apply(this, arguments);
+      var b = JSON.parse(opt.body);
+      return new Promise(function (resolve) {
+        calls.push((b.store || "") + ":" + b.fn);
+        setTimeout(function () {
+          var out;
+          if (b.fn !== "getPage" && b.fn !== "redeem" && !/^stubdevice/.test(b.dev || "")) out = { ok: false, err: "[접근] 접근 코드를 넣어 주세요." };
+          else if (!DB[b.store || "25377"]) out = { ok: false, err: "없는 점포예요. 점포를 다시 골라 주세요." };
+          else { try { out = { ok: true, r: JSON.parse(JSON.stringify(F[b.fn].apply(null, [b.store || "25377"].concat(b.args)) || null)) }; } catch (e) { out = { ok: false, err: e.message }; } }
+          resolve({ ok: true, json: function () { return Promise.resolve(out); } });
+        }, DELAY);
+      });
+    };
   }
   window.google = { script: { url: { getLocation: function (cb) { setTimeout(function () { cb({ parameter: { store: Q.get("store") || "" } }); }, 30); } } } };
   Object.defineProperty(window.google.script, "run", { get: runner });
