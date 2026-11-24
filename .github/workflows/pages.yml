@@ -1,0 +1,45 @@
+name: iPhone page (GitHub Pages)
+
+# Publishes the installable page (app/www + the staff page as page.html) to GitHub Pages:
+# https://kiiwoom8.github.io/chwisik/  ->  iPhone staff: Safari, 공유 -> 홈 화면에 추가.
+# The page updates itself from the server (getPage), so this only matters for the loader, icons and first open.
+# GitHub Pages on the free plan needs a public repo; while the repo is private the job is skipped (not red).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/www/**"
+      - "app/build.mjs"
+      - "apps-script/Index.html"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Copy the staff page in (www/page.html)
+        run: node app/build.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/www
+      - id: deploy
+        uses: actions/deploy-pages@v4

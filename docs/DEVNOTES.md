@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-21 (filter menu focus ring)
+Last updated: 2026-11-25 (iPhone: installable page on GitHub Pages, install bar)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -387,7 +387,12 @@ Why: the `/exec` link is slow to open (Google's wrapper page, two iframes, then 
 - **Android build** (`.github/workflows/android.yml`, on push to `app/**` or by hand): `npm ci` → `build.mjs` → `npx cap add android` (project generated fresh each time, not committed) → our icons/splash from `app/android-res/` (Capacitor's logo files removed) → `versionCode` = run number → **targetSdk 34** (Android 15 forces edge-to-edge for target 35, which would put the page under the status bar) → `assembleRelease` + zipalign + apksigner with the key from secrets → GitHub Releases: a versioned release **android-1.<run>** (kept as history) and **android-latest** (always the newest; `chwisik.apk`), plus a workflow artifact. Owner's rule: every app build is published to Releases. Without the secrets it builds a **debug** APK and warns: a phone with the debug build must uninstall it before a release-signed one installs.
 - **Signing key**: PKCS12, alias `chwisik`, made 2026-11-09 with openssl, kept in `C:\Users\kiiwo\chwisik-android-key\` (README there). Lose it and phones must uninstall and reinstall to get a new build.
 - **Installing**: the repo is private, so staff can't download from GitHub. The owner downloads `chwisik.apk` from the release and sends it (e.g. KakaoTalk); staff allow "install unknown apps" once. App id `com.kiiwoom8.chwisik`, name 취식.
-- **iPhone**: a store app needs a Mac and a paid Apple developer account. Instead `app/www` is also an installable page (manifest, icons, `sw.js` caches the loader files, `apple-mobile-web-app-*` metas): host `app/www` + `page.html` on any HTTPS static host and staff use Safari → 공유 → 홈 화면에 추가. Not hosted yet (GitHub Pages needs a public repo or a paid plan).
+- **iPhone**: a store app needs a Mac and a paid Apple developer account (US$99/yr), so iPhone staff use the installable page `app/www` on the home screen: Safari → 공유 (iOS 26: ⋯ → 공유) → 홈 화면에 추가 gives a 취식 icon that opens full screen, without Google's banner, and updates itself like the Android app.
+  - **Host**: GitHub Pages, `https://kiiwoom8.github.io/chwisik/`, built by `.github/workflows/pages.yml` on push to `app/www/**`, `app/build.mjs` or `apps-script/Index.html` (`node app/build.mjs` → upload `app/www` → deploy-pages). Free Pages needs a **public** repo: while the repo is private the job is skipped. Settings → Pages → Source must be *GitHub Actions*.
+  - **Home-screen tags**: the loader `document.write`s the staff page over its own head, so `show()` writes the manifest, apple-touch-icon, `apple-mobile-web-app-*` and light/dark `theme-color` tags into the new head too; without them Safari's 홈 화면에 추가 saw none (screenshot icon, opened in Safari on iOS before 26).
+  - **KakaoTalk**: its in-app browser can't add to the home screen; the loader sends the same address to the phone's browser (`kakaotalk://web/openExternal?url=…`). Staff get the link in KakaoTalk, so this is the usual path.
+  - **Install bar** (`iosHint` in Index.html, `#iosBar`): on an iPhone/iPad, not standalone, not the Android app: the hosted copy shows `앱으로 쓰기: 공유 → 홈 화면에 추가 (공유가 안 보이면 ⋯ 안에)`; the `/exec` page shows `아이폰에서는 앱처럼 쓸 수 있어요. 설치하기` linking to `WEB_APP?store=<this store>` once `WEB_APP` is set (empty = not hosted yet = no bar). × hides it on that phone for good (`chwisik.iosHint` = `off`).
+  - The home-screen copy has its own storage (not Safari's): staff pick the store and their name once more there. Home-screen apps keep their localStorage (no 7-day Safari limit).
 - **Testing without a phone**: copy `app/www` (after `node app/build.mjs`) to a scratch folder, point `API` in its `index.html` at a small local server that answers POST with fake `{ok, r}` JSON, open it at 375 px. Done 2026-11-09: boot, name picker, tabs, cache-first start all worked.
 
 ## Live import (오늘 폐기·저회전)

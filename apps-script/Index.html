@@ -300,11 +300,20 @@ button.srow { cursor: pointer; }
 .snack { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(560px, calc(100% - 32px)); background: var(--ink); color: var(--paper); border-radius: 12px; padding: 10px 10px 10px 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.25); z-index: 40; font-size: 14px; }
 .snack span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snack button { border: 0; background: transparent; color: var(--accent); font-weight: 700; padding: 8px 10px; cursor: pointer; filter: brightness(1.3); }
+/* iPhone: how to put the page on the home screen (iosHint) */
+.iosbar { background: var(--accent-soft); color: var(--ink); font-size: 13px; }
+.iosbar .wrap { display: flex; align-items: center; gap: 6px; padding-top: 6px; padding-bottom: 6px; }
+.iosbar .t { flex: 1; min-width: 0; line-height: 1.45; }
+.iosbar .t svg { vertical-align: -2px; }
+.iosbar .t .mu { color: var(--muted); white-space: nowrap; }
+.iosbar .x { border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; width: 32px; height: 32px; flex: none; cursor: pointer; border-radius: 8px; }
+.iosbar .x:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 @media (max-width: 380px) { .stamp { min-width: 46px; font-size: 13px; } .tab { font-size: 11.5px; letter-spacing: -0.03em; } }
 </style>
 </head>
 <body>
 <div class="pbar" id="pbar" aria-hidden="true"><i></i></div>
+<div class="iosbar" id="iosBar" hidden><div class="wrap"><span class="t" id="iosText"></span><button type="button" class="x" id="iosX" aria-label="닫기">×</button></div></div>
 <header class="hdr"><div class="wrap">
   <div class="titlebar">
     <h1><button type="button" class="storebtn" id="storeBtn" disabled aria-haspopup="dialog"><span id="storeName">직원 취식 목록</span><i class="chev" aria-hidden="true"></i></button></h1>
@@ -466,6 +475,29 @@ button.srow { cursor: pointer; }
      Web mode (/exec link): google.script.run. Same server functions either way. */
   var API = window.CHWISIK_API || "";
   try { localStorage.removeItem("chwisik.pageTry"); } catch (e) {}  // tells the app loader this page started fine
+
+  /* iPhone: a store app needs a paid Apple account, so the installable page (app/www on GitHub Pages) goes on the
+     home screen instead. That copy opened in Safari (API set, not standalone) -> a bar saying how to add it.
+     The /exec link on an iPhone -> a bar linking to that copy (WEB_APP; "" = not hosted yet, so no bar).
+     Closing the bar hides it on this phone for good. Never in the Android app or the installed copy itself. */
+  var WEB_APP = "";
+  (function iosHint() {
+    var K_IOS = "chwisik.iosHint";
+    var ios = /iPhone|iPad|iPod/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    var standalone = navigator.standalone === true || !!(window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+    if (!ios || standalone || window.Capacitor || lsGet(K_IOS) === "off") return;
+    var bar = $("iosBar"), t = $("iosText");
+    if (API) {
+      t.innerHTML = '<b>앱으로 쓰기</b>: 공유 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="공유 버튼"><path d="M12 3v12M8 7l4-4 4 4M6 11H5v10h14V11h-1"/></svg> → <b>홈 화면에 추가</b> <span class="mu">(공유가 안 보이면 ⋯ 안에)</span>';
+    } else if (WEB_APP) {
+      t.appendChild(document.createTextNode("아이폰에서는 앱처럼 쓸 수 있어요. "));
+      var a = mk("a", "linkbtn", "설치하기");
+      a.href = WEB_APP + "?store=" + encodeURIComponent(sid()); a.target = "_top";
+      t.appendChild(a);
+    } else return;
+    bar.hidden = false;
+    $("iosX").onclick = function () { bar.hidden = true; lsSet(K_IOS, "off"); };
+  })();
   var writesInFlight = 0;  // includes saves for a store the worker has since left
   function run(fn) {
     var args = Array.prototype.slice.call(arguments, 1), st = sid(), p;

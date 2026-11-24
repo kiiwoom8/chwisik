@@ -1,6 +1,6 @@
 /* Installable page only (not used inside the Android app). Keeps the loader files on the phone so the
    app opens without waiting for the network; the data itself always comes from the API. */
-var CACHE = "chwisik-v1";
+var CACHE = "chwisik-v2";
 var FILES = ["./", "index.html", "page.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 self.addEventListener("install", function (e) { e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); })); self.skipWaiting(); });
 self.addEventListener("activate", function (e) {
