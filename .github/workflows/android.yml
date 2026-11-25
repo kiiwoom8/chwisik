@@ -1,7 +1,8 @@
 name: Android app
 
 # Builds the Android app (Capacitor shell in app/) and puts the APK on the release "android-latest".
-# The app updates its page by itself from the server, so a new APK is only needed when app/ changes.
+# The app updates its page by itself from the server, so a new APK is only needed when app/ changes; installed
+# APKs then update themselves from android-latest/version.json (app/android-java/Updater.java).
 on:
   push:
     branches: [main]
@@ -50,6 +51,21 @@ jobs:
           rm -rf android/app/src/main/res/mipmap-anydpi-v26
           rm -f android/app/src/main/res/drawable*/splash.png
           cp -r android-res/* android/app/src/main/res/
+          # self-update (app/android-java/Updater.java, docs/DEVNOTES.md → App → Updates): our MainActivity replaces the
+          # generated one; the manifest gets the install permissions and the installer's result receiver
+          J=android/app/src/main/java/com/kiiwoom8/chwisik
+          test -f "$J/MainActivity.java"
+          cp android-java/*.java "$J/"
+          python3 - <<'EOF'
+          p = "android/app/src/main/AndroidManifest.xml"
+          s = open(p, encoding="utf-8").read()
+          assert s.count("</application>") == 1 and s.count("</manifest>") == 1
+          s = s.replace("</application>", '    <receiver android:name=".Updater$Done" android:exported="false" />\n    </application>')
+          s = s.replace("</manifest>", '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n'
+                        '    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />\n</manifest>')
+          open(p, "w", encoding="utf-8").write(s)
+          EOF
+          grep -n "Updater\|INSTALL_PACKAGES" android/app/src/main/AndroidManifest.xml
           # version: build number, so a newer APK installs over an older one
           sed -i "s/versionCode 1$/versionCode ${GITHUB_RUN_NUMBER}/; s/versionName \"1.0\"/versionName \"1.${GITHUB_RUN_NUMBER}\"/" android/app/build.gradle
           # target Android 14: Android 15 forces edge-to-edge for apps targeting 35, which would put the page under the status bar
@@ -96,6 +112,10 @@ jobs:
           NOTES="커밋 ${GITHUB_SHA::7} ($(git log -1 --pretty=%s | cut -c1-80)). chwisik.apk 를 받아서 폰에 설치하세요. 앱 화면은 서버에서 알아서 최신으로 바뀌어요."
           gh release create "android-1.${GITHUB_RUN_NUMBER}" chwisik.apk \
             --title "취식 안드로이드 1.${GITHUB_RUN_NUMBER} (${SIGNED})" --notes "$NOTES" --target "$GITHUB_SHA"
+          # version.json tells installed apps there is a newer build (Updater.java); only release-signed builds,
+          # since a debug APK cannot install over a release-signed one
+          FILES="chwisik.apk"
+          if [ "$SIGNED" = release ]; then printf '{"versionCode":%s}\n' "$GITHUB_RUN_NUMBER" > version.json; FILES="chwisik.apk version.json"; fi
           gh release delete android-latest --yes --cleanup-tag || true
-          gh release create android-latest chwisik.apk --latest \
+          gh release create android-latest $FILES --latest \
             --title "취식 안드로이드 앱 — 최신 (1.${GITHUB_RUN_NUMBER}, ${SIGNED})" --notes "$NOTES" --target "$GITHUB_SHA"
