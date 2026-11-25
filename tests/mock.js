@@ -93,7 +93,7 @@ const sandbox = {
     get: k => (k in cache ? cache[k] : null), put(k, v) { if (String(v).length > 100000) throw new Error('cache too big'); cache[k] = String(v); }, remove(k) { delete cache[k]; },
     removeAll(ks) { ks.forEach(k => delete cache[k]); }, putAll(o) { Object.keys(o).forEach(k => { if (String(o[k]).length > 100000) throw new Error('cache too big'); cache[k] = String(o[k]); }); },
     getAll(ks) { const o = {}; ks.forEach(k => { if (k in cache) o[k] = cache[k]; }); return o; } }) },
-  LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+  LockService: { getScriptLock: () => ({ waitLock() {}, tryLock() { return true; }, releaseLock() {} }) },
   ScriptApp: { getProjectTriggers: () => log.triggers.map(t => ({ getHandlerFunction: () => t, getUniqueId: () => 'id-' + t })), deleteTrigger() {},
     newTrigger(fn) { const b = { timeBased: () => b, everyMinutes: () => b, atHour: () => b, nearMinute: () => b, everyDays: () => b, inTimezone: () => b, create() { log.triggers.push(fn); } }; return b; } },
   Session: { getActiveUser: () => ({ getEmail: () => sandbox.__admin ? 'o@x' : '' }), getEffectiveUser: () => ({ getEmail: () => 'o@x' }) },

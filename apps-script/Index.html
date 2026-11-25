@@ -134,8 +134,18 @@ h1 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.01em; flex
 .arow.wait .av { background: var(--eat-soft); color: var(--eat); }
 .arow.no .av { background: var(--band); color: var(--muted); }
 .arow .em { font-size: 14.5px; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
+.arow .em.sub { font-size: 12.5px; font-weight: 400; color: var(--muted); }
 .arow.no .em { color: var(--muted); }
-.arow .am { font-size: 12px; color: var(--muted); line-height: 1.35; }
+.anm { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-height: 26px; margin: -3px -6px -1px; padding: 0 6px; border: 0; border-radius: 7px; background: none; color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; line-height: 1.3; text-align: left; cursor: pointer; }
+.anm span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anm svg { flex: none; width: 13px; height: 13px; color: var(--muted); opacity: .75; }
+.anm.none { color: var(--muted); font-size: 13px; font-weight: 500; }
+.anm:active { background: var(--band); }
+.anm:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.arow.no .anm:not(.none) { color: var(--muted); }
+.anin { display: block; width: 100%; height: 30px; margin: -3px 0 1px; padding: 0 8px; border: 1px solid var(--accent); border-radius: 8px; background: var(--sheet); color: var(--ink); font: inherit; font-size: 16px; font-weight: 600; }
+.anin:focus { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.arow .am { font-size: 12px; color: var(--muted); line-height: 1.35; word-break: keep-all; }
 .arow .aacts { display: flex; gap: 6px; }
 .sbtn { min-height: 34px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 9px; background: var(--sheet); color: var(--ink); font-size: 13.5px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: transform .08s ease; }
 .sbtn.go { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -705,7 +715,7 @@ body.gated { overflow: hidden; }
       google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(st, fn, args, dev);
     });
     p = p.then(null, function (e) { if (isAccessErr(e)) gate(); throw e; });
-    var write = /^(setTag|saveShift|deleteShift|setPassword|login|addMember|setAccess)$/.test(fn);
+    var write = /^(setTag|saveShift|deleteShift|setPassword|login|addMember|setAccess|setAccName)$/.test(fn);
     if (write) writesInFlight++;
     // Page code is shared by all stores. Other replies for a store we left are dropped.
     return new Promise(function (resolve, reject) {
@@ -1656,8 +1666,11 @@ body.gated { overflow: hidden; }
   /* ---------- 접근 계정 (owner only) ----------
      Only the owner's phone gets init.admin (server: ownerCaller_), so nobody else sees the menu item, and the server
      refuses getAccounts / setAccess from any other account anyway. Lazy like every save: the list changes at once,
-     the calls run one after another behind it, a refusal says so and reloads the list from the server. */
-  var ACC = null, accSeq = 0, accQ = Promise.resolve(), accN = 0, accFail = "";
+     the calls run one after another behind it, a refusal says so and reloads the list from the server.
+     Names: each row shows the owner's name for the account (nm), else the staff name it saved with most (u, counted by
+     the server); tapping the name edits it in place, an empty name follows u again. */
+  var ACC = null, accSeq = 0, accQ = Promise.resolve(), accN = 0, accFail = "", accEd = "", accEnd = null;   // accEnd: finishes the name being typed
+  var PEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>';
   var ACC_RE = /^[^@\s:]{1,64}@[^@\s:]{1,190}\.[^@\s:]{2,}$/;
   function setAdmin(a) {
     S.admin = a || null;
@@ -1666,7 +1679,7 @@ body.gated { overflow: hidden; }
     $("c-acc").hidden = !w; $("c-acc").textContent = w ? String(w) : "";
     $("accItem").setAttribute("aria-label", "접근 계정" + (w ? ", 허용 기다림 " + w + "개" : ""));
     $("moreDot").hidden = !w;
-    if (!on) { ACC = null; $("accSheet").hidden = true; }
+    if (!on) { ACC = null; accEd = ""; accEnd = null; $("accSheet").hidden = true; }
   }
   function accWaitSync() {
     if (!S.admin || !ACC) return;
@@ -1680,11 +1693,14 @@ body.gated { overflow: hidden; }
     if (d === addDays(t, -1)) return "어제";
     return (d.slice(0, 4) === t.slice(0, 4) ? "" : d.slice(2, 4) + "년 ") + +d.slice(5, 7) + "/" + +d.slice(8, 10);
   }
-  function accMeta(a) {
-    if (a.s === "wait") return accDay(a.t) + " 들어오려고 했어요";
-    if (a.s === "no") return "들어올 수 없어요";
-    var n = String(a.n || "");
-    return accDay(a.a) + (/허용$/.test(n) ? " " + n : " 허용" + (n ? " · " + n : ""));
+  function accName(a) { return a.nm || a.u || ""; }
+  function accMeta(a, owner) {
+    var m;
+    if (owner) m = "이 폰의 계정 · 늘 들어와요";
+    else if (a.s === "wait") m = accDay(a.t) + " 들어오려고 했어요";
+    else if (a.s === "no") m = "들어올 수 없어요";
+    else { var n = String(a.n || ""); m = accDay(a.a) + (/허용$/.test(n) ? " " + n : " 허용" + (n ? " · " + n : "")); }
+    return m + (a.nm && a.u && a.u !== a.nm ? " · 주로\u00a0" + a.u : "");   // the owner's name differs from what they use
   }
   function accSort(L) {
     var rank = { wait: 0, ok: 1, no: 2 };
@@ -1696,14 +1712,15 @@ body.gated { overflow: hidden; }
     return b;
   }
   function accRow(a, owner) {
-    var r = mk("div", "arow " + (owner ? "ok" : a.s) + (a.p ? " pending" : ""));
-    r.appendChild(mk("span", "av", a.e.charAt(0))).setAttribute("aria-hidden", "true");
+    var r = mk("div", "arow " + (owner ? "ok" : a.s) + (a.p ? " pending" : "")), nm = accName(a);
+    r.appendChild(mk("span", "av", (nm || a.e).charAt(0))).setAttribute("aria-hidden", "true");
     var t = mk("div", "");
-    var em = mk("div", "em"), at = a.e.indexOf("@");   // a long address breaks before the @, not mid-word
+    if (nm || a.s !== "wait") t.appendChild(nameBtn(a, owner));   // a waiting account has saved nothing yet
+    var em = mk("div", "em" + (nm ? " sub" : "")), at = a.e.indexOf("@");   // a long address breaks before the @, not mid-word
     em.appendChild(document.createTextNode(at > 0 ? a.e.slice(0, at) : a.e));
     if (at > 0) { em.appendChild(document.createElement("wbr")); em.appendChild(document.createTextNode(a.e.slice(at))); }
     t.appendChild(em);
-    t.appendChild(mk("div", "am", owner ? "이 폰의 계정 · 늘 들어와요" : accMeta(a)));
+    t.appendChild(mk("div", "am", accMeta(a, owner)));
     r.appendChild(t);
     var acts = mk("div", "aacts");
     if (owner) acts.appendChild(mk("span", "ownertag", "사장님"));
@@ -1721,6 +1738,40 @@ body.gated { overflow: hidden; }
     r.appendChild(acts);
     return r;
   }
+  function nameBtn(a, owner) {
+    var nm = accName(a), b = mk("button", "anm" + (nm ? "" : " none"), "");
+    b.type = "button";
+    b.appendChild(mk("span", "", nm || "이름 붙이기"));
+    b.insertAdjacentHTML("beforeend", PEN);
+    b.setAttribute("aria-label", (nm ? nm + ", " : "") + "이름 고치기");
+    b.addEventListener("click", function () { editName(b, a, owner); });
+    return b;
+  }
+  /** The name becomes a text box: Enter or leaving it saves, Esc puts it back. */
+  function editName(b, a, owner) {
+    var inp = document.createElement("input"), done = false;
+    inp.className = "anin"; inp.maxLength = 20; inp.value = accName(a);
+    inp.placeholder = a.u || "이름"; inp.autocomplete = "off"; inp.enterKeyHint = "done";
+    inp.setAttribute("aria-label", a.e + " 이름");
+    accEd = a.e; accEnd = end;
+    b.replaceWith(inp);
+    inp.focus(); inp.select();
+    function end(save) {
+      if (done) return;
+      done = true; accEd = ""; accEnd = null;
+      var v = inp.value.replace(/\s+/g, " ").trim();
+      if (ACC) a = owner ? ACC.own || a : ACC.list.filter(function (x) { return x.e === a.e; })[0] || a;   // a list that came meanwhile
+      if (!save || v === accName(a)) { renderAcc(); return; }
+      a.nm = v === a.u ? "" : v;   // the most-used name typed back = follow it again
+      a.p = true; renderAcc();
+      accCall("setAccName", [a.e, a.nm]);
+    }
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); end(true); }
+      else if (e.key === "Escape") { e.stopPropagation(); end(false); }
+    });
+    inp.addEventListener("blur", function () { end(true); });
+  }
   function accSection(cls, title, rows) {
     var s = mk("section", "accsec " + cls), h = mk("h3", "", title + " ");
     h.appendChild(mk("span", "num", String(rows.length)));
@@ -1731,6 +1782,7 @@ body.gated { overflow: hidden; }
     return s;
   }
   function renderAcc() {
+    if (accEd) return;   // a name is being typed: the list shows again when it's done
     var box = $("accList"); box.textContent = "";
     if (!ACC) {
       if (accFail) {
@@ -1749,7 +1801,11 @@ body.gated { overflow: hidden; }
     ACC.list.forEach(function (a) { if (g[a.s]) g[a.s].push(accRow(a)); });
     if (g.wait.length) box.appendChild(accSection("wait", "허용 기다림", g.wait));
     var oks = g.ok.slice();
-    if (ACC.owner) oks.unshift(accRow({ e: ACC.owner, s: "ok" }, true));
+    if (ACC.owner) {
+      var o = ACC.own || (ACC.own = {});
+      o.e = ACC.owner; o.s = "ok";
+      oks.unshift(accRow(o, true));
+    }
     box.appendChild(accSection("ok", "허용됨", oks));
     if (g.no.length) box.appendChild(accSection("no", "끊김", g.no));
     if (!g.wait.length && !g.ok.length && !g.no.length) box.appendChild(mk("p", "accempty", "아직 들어오려는 계정이 없어요. 직원이 앱에서 Google 계정으로 들어오면 여기에 떠요."));
@@ -1778,9 +1834,13 @@ body.gated { overflow: hidden; }
     else L.push({ e: email, s: s, t: now, a: s === "ok" ? now : 0, n: s === "ok" ? "미리 허용" : "", p: true });
     accSort(L); accWaitSync(); renderAcc();
     if (msg) snack(msg, undo);
+    accCall("setAccess", [email, s]);
+  }
+  /** One change on the server, after the ones before it; the last answer is the new list. */
+  function accCall(fn, args) {
     accN++; accSeq++;   // a getAccounts already on its way is out of date now
     accQ = accQ.then(function () {
-      return run("setAccess", email, s).then(function (r) {
+      return run.apply(null, [fn].concat(args)).then(function (r) {
         if (--accN) return;
         ACC = r; accWaitSync();
         if (!$("accSheet").hidden) renderAcc();
@@ -1798,7 +1858,10 @@ body.gated { overflow: hidden; }
     fetchAcc();
     setTimeout(function () { $("accX").focus({ preventScroll: true }); }, 50);
   }
-  function closeAcc() { $("accSheet").hidden = true; }
+  function closeAcc() {
+    if (accEnd) accEnd(true);   // a name being typed is saved
+    $("accSheet").hidden = true;
+  }
   $("accItem").addEventListener("click", openAcc);
   $("accX").addEventListener("click", closeAcc);
   $("accSheet").addEventListener("click", function (e) { if (e.target === this) closeAcc(); });

@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-25 (접근 계정 screen in the page for the owner; access by Google account; 접근 코드 and APK key removed)
+Last updated: 2026-11-25 (접근 계정 shows and edits a name per account; 접근 계정 screen in the page for the owner; access by Google account; 접근 코드 and APK key removed)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -211,6 +211,7 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 |---|---|---|
 | ● `BGF_PW` | menu BGF 점포시스템 비밀번호 입력 · <store> | BGF store password (only place it exists). A store without it is not imported. |
 | `ACCOUNTS` | `setAccount_` / `delAccount_`: sign-in (`gLogin`), mail link, menu 접근 계정, the page's 접근 계정 screen (`setAccess`) | JSON of Google accounts: `{email: {s: ok / wait / no, t, a, n}}` (see *Access*). |
+| `ACCNAMES` | `noteActor_` (every 취식/폐기 tag, 출근 save / delete made with a device key), `setAccName`, `delAccount_` | JSON of the names shown on 접근 계정: `{email: {c: {전체 이름: [count, last ms]}, nm: the owner's name}}`; at most 8 names counted per account (see *Access*). |
 | `ACCESS_KEY` | `secret_` (first use), menu 모든 폰 다시 로그인하게 하기 | HMAC key of the device keys. Changing it makes every phone sign in again (accounts stay allowed). |
 | `ALLOW_KEY` | `secret_` (first request mail) | HMAC key of the 허용 links in request mails. Changing it voids links already sent. |
 | `ACCESS_OFF` | by hand only | `1` = no access check (emergency, e.g. if the check itself breaks). Phones without a key still see the sign-in screen; any phone with a key gets in. Delete it to turn the check back on. |
@@ -293,6 +294,19 @@ google account. one the account is allowed, always allow the account".
   (지우기 with 되돌리기 / 허용). Lazy like every save: the row changes at once (faded until the server answers), calls run
   one at a time in order, the last answer replaces the list; a refusal shows the error and reloads the list. The list
   is fetched when the sheet opens and when the owner's page comes back to the front (so the count stays fresh).
+- **A name per account on 접근 계정 (since 2026-11-25).** The owner: "display the most frequently modifying name to the
+  email (the most used name with the google account). set the name also editable by me." Every save made with a
+  device key (`setTag`, `saveShift`, `deleteShift`; not reads, not `ACCESS_OFF` calls without a key) counts the
+  staff name it was made as for that account (`noteActor_`, Script Property `ACCNAMES`, after the save and outside
+  its lock; a busy lock skips the count rather than slow or fail the save). `getAccounts` sends `nm` (the owner's
+  name) and `u` (the most-used name; a tie goes to the latest) per account, and `own` for the owner's account.
+  Counting started 2026-11-25: older sheet rows don't record the account, so an account shows a name after its first
+  save. The page shows `nm`, else `u`, as the row title (pencil icon; the email goes under it, smaller) and its first
+  letter in the avatar; with `nm` set and a different `u`, the meta line adds "주로 <u>". Tapping the name edits it in
+  place (20 letters): Enter or leaving the box saves (lazy, like the rest), Esc puts it back; an empty name or the
+  most-used name typed back clears `nm`, so the row follows `u` again. `setAccName(email, name)` is owner-only,
+  allows the owner's own email, and refuses an email not in `ACCOUNTS`. 지우기 drops the account's names too. The
+  sheet menu 접근 계정 lists the name before each email.
 - **When someone leaves**: 더보기 → 접근 계정 → [끊기] on their account, or menu 접근 계정 → their number (끊김). Their phones are out at once; nobody else is touched.
   **모든 폰 다시 로그인하게 하기** makes a new `ACCESS_KEY`: every phone must sign in again (allowed accounts get straight
   back in).
@@ -403,8 +417,9 @@ The page calls the server with `run(fn, …args)`, always for its store. On the 
 | `login(full, pw)` | returns `{token}`; accepts the developer password too |
 | `setPassword(full, token, newPw)` | `newPw=''` removes it; returns `{token, members}` |
 | `refreshNow()` | live import if the last one was ≥ 50 s ago; returns `{label, error, off, added}` |
-| `getAccounts()` | owner key only: `{owner, list: [{e, s: 'wait' / 'ok' / 'no', t, a, n}]}`, waiting first, then allowed (newest allowed first), then cut; the owner is not in `list` |
+| `getAccounts()` | owner key only: `{owner, own: {nm, u}, list: [{e, s: 'wait' / 'ok' / 'no', t, a, n, nm, u}]}`, waiting first, then allowed (newest allowed first), then cut; the owner is not in `list`; `nm` = the owner's name for the account, `u` = the name it saved with most |
 | `setAccess(email, s)` | owner key only: `s` = `'ok'` (allow; an unknown email = allowed ahead of time, note `미리 허용`; a waiting one gets `앱에서 허용`), `'no'` (cut), `'del'` (remove from the list); refuses the owner's own email and a bad address; returns `getAccounts()` |
+| `setAccName(email, name)` | owner key only: the name shown for an account (the owner's own too), up to 20 letters; `''` = follow the most-used name again; returns `getAccounts()` |
 
 Shapes sent to the page:
 - Row: `[sheetRow, key, time, name, qty, wprice, wamt, mamt, type, memberFull, who, date, note, src]` — `src` (index 13) is `''` for 폐기, `'저회전'` for 저회전. `wprice` / `wamt` (원가) are rounded to whole won per line (BGF sends decimals; new rows are also stored rounded by the import), so every 원가 total on the page is whole won too. The page's `fmt` also rounds.

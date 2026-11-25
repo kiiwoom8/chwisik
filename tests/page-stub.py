@@ -10,7 +10,7 @@ Address options: ?delay=ms (server answer time, to see the loading screen), ?fai
 ?ios=1 = iPhone Safari, ?ios=2 = iPhone home-screen app; ?api=1 = the hosted copy's fetch mode.
 Google sign-in for the stub: after the gate's button, gPoll answers none, none, wait (staff@gmail.com), then ok
 (calls without a g:… key get [접근]); ?deny=1 answers no instead of ok.
-?admin=1 = this phone is the owner's: 더보기 > 접근 계정 with 2 waiting, 3 allowed, 1 cut (?accfail=1: setAccess refuses).
+?admin=1 = this phone is the owner's: 더보기 > 접근 계정 with 2 waiting, 3 allowed, 1 cut (names: owner-set / most-used; ?accfail=1: setAccess / setAccName refuse).
 The page keeps its data in localStorage: run localStorage.clear() in the console to start as a new phone.
 """
 import io, sys, re
@@ -38,11 +38,12 @@ stub = r'''
   var ACC = [
     { e: "newstaff.kim@gmail.com", s: "wait", t: T0 - 20 * 60000, a: 0, n: "" },
     { e: "staff.two@naver.com", s: "wait", t: T0 - 30 * H, a: 0, n: "" },
-    { e: "staff.one@gmail.com", s: "ok", t: T0 - 50 * H, a: T0 - 2 * H, n: "메일 링크로 허용" },
-    { e: "staff.three@gmail.com", s: "ok", t: T0 - 90 * H, a: T0 - 80 * H, n: "접근 코드 쓰던 폰" },
+    { e: "staff.one@gmail.com", s: "ok", t: T0 - 50 * H, a: T0 - 2 * H, n: "메일 링크로 허용", nm: "", u: "이민지" },
+    { e: "staff.three@gmail.com", s: "ok", t: T0 - 90 * H, a: T0 - 80 * H, n: "접근 코드 쓰던 폰", nm: "서준 (주말)", u: "박서준" },
     { e: "a.very.long.address.for.testing.wrap@googlemail.com", s: "ok", t: T0 - 400 * H, a: T0 - 400 * H, n: "미리 허용" },
-    { e: "stranger123@gmail.com", s: "no", t: T0 - 200 * H, a: 0, n: "" }
+    { e: "stranger123@gmail.com", s: "no", t: T0 - 200 * H, a: 0, n: "", nm: "", u: "최지훈" }
   ];
+  var OWN = { nm: "", u: "김성휘" };
   var names = ["삼각김밥 참치마요", "도시락 제육볶음", "샌드위치 햄치즈", "핫바 매콤", "우유 500ml", "김밥 불고기", "샐러드 닭가슴살", "햄버거 불고기"];
   for (var i = 0; i < 60; i++) {
     var dd = d(i % 6), t = dd + " " + ("0" + (8 + i % 12)).slice(-2) + ":" + ("0" + (i * 7 % 60)).slice(-2) + ":00";
@@ -60,7 +61,7 @@ stub = r'''
   }
   var F = {
     getBoot: function (st, me, tok) { return { init: { members: DB[st].members, months: Q.get("closed") ? [mon, prevMon] : [mon], version: String(DB[st].ver), live: { label: st === "25377" ? "21:31" : "", off: false, error: false, added: 0, wait: st === "25377" ? "" : st === "31949" ? "pw" : "adapter" }, store: st, stores: STORES, meOk: true, admin: Q.get("admin") ? { wait: ACC.filter(function (a) { return a.s === "wait"; }).length } : undefined }, month: month(st, mon) }; },
-    getAccounts: function () { if (!Q.get("admin")) throw new Error("[관리자] 사장님 Google 계정으로 들어온 폰에서만 할 수 있어요."); return { owner: "owner@gmail.com", list: ACC }; },
+    getAccounts: function () { if (!Q.get("admin")) throw new Error("[관리자] 사장님 Google 계정으로 들어온 폰에서만 할 수 있어요."); return { owner: "owner@gmail.com", own: OWN, list: ACC }; },
     setAccess: function (st, e, s) {
       if (Q.get("accfail")) throw new Error("저장하지 못했어요 (stub)");
       var a = ACC.filter(function (x) { return x.e === e; })[0];
@@ -69,7 +70,14 @@ stub = r'''
       else ACC.push({ e: e, s: s, t: Date.now(), a: Date.now(), n: "미리 허용" });
       var rank = { wait: 0, ok: 1, no: 2 };
       ACC.sort(function (x, y) { return rank[x.s] - rank[y.s] || (y.s === "ok" ? y.a - x.a : y.t - x.t); });
-      return { owner: "owner@gmail.com", list: ACC };
+      return { owner: "owner@gmail.com", own: OWN, list: ACC };
+    },
+    setAccName: function (st, e, nm) {
+      if (Q.get("accfail")) throw new Error("저장하지 못했어요 (stub)");
+      var a = e === "owner@gmail.com" ? OWN : ACC.filter(function (x) { return x.e === e; })[0];
+      if (!a) throw new Error("목록에 없는 계정이에요. 새로고침해 주세요.");
+      a.nm = nm;
+      return { owner: "owner@gmail.com", own: OWN, list: ACC };
     },
     getMonth: function (st, m, known, fresh) { return known === String(DB[st].ver) ? null : month(st, m); },
     refreshNow: function (st) { return { label: st === "25377" ? "21:32" : "", off: false, error: false, added: 0, wait: st === "25377" ? "" : "pw" }; },

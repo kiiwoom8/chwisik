@@ -1008,7 +1008,8 @@ function doGet(e) {
  * ID token back, posted here with the nonce (gLogin): Google's tokeninfo checks it (and its nonce), and nonce -> email
  * is kept 6 h. The page asks gPoll(nonce) until the
  * account is allowed and then gets its device key.
- * Accounts: Script Property ACCOUNTS = {email: {s: 'ok' | 'wait' | 'no', t: first seen, a: allowed at, n: note}}.
+ * Accounts: Script Property ACCOUNTS = {email: {s: 'ok' | 'wait' | 'no', t: first seen, a: allowed at, n: note}};
+ * the names shown with them: ACCNAMES (see setAccName).
  * The owner (the account this script runs as) is always allowed. A new account is 'wait' and the owner gets a mail
  * with a 허용 link (/exec?allow=…&s=…, signed with ALLOW_KEY). Once 'ok' it stays allowed on every phone until the
  * owner cuts it (menu 접근 계정).
@@ -1165,16 +1166,18 @@ function allowAccount(email, sig) {
 /* The page's 접근 계정 screen (더보기 > 접근 계정): only on a phone signed in with the owner's account (ownerOnly_);
  * getInit tells the page (admin) so nobody else ever sees the menu item. Same ACCOUNTS as the menu and the mail link. */
 var EMAIL_RE_ = /^[^@\s:]{1,64}@[^@\s:]{1,190}\.[^@\s:]{2,}$/;
-/** {owner, list: [{e, s, t (first seen), a (allowed at), n (note)}]}: waiting first, then allowed, then cut; newest first. */
+/** {owner, own: {nm, u}, list: [{e, s, t (first seen), a (allowed at), n (note), nm (the owner's name for it), u (the name it
+ * used most, accName_)}]}: waiting first, then allowed, then cut; newest first. The page shows nm, else u. */
 function getAccounts() {
   ownerOnly_();
-  var acc = accounts_(), rank = { wait: 0, ok: 1, no: 2 }, own = ownerEmail_();
+  var acc = accounts_(), names = accNames_(), rank = { wait: 0, ok: 1, no: 2 }, own = ownerEmail_();
+  var nm = function (e) { var o = names[e] || {}; return { nm: o.nm || '', u: accName_(o) }; };
   var list = Object.keys(acc).filter(function (e) { return e !== own && rank[acc[e].s] !== undefined; }).map(function (e) {
-    var a = acc[e];
-    return { e: e, s: a.s, t: a.t || 0, a: a.a || 0, n: a.n || '' };
+    var a = acc[e], n = nm(e);
+    return { e: e, s: a.s, t: a.t || 0, a: a.a || 0, n: a.n || '', nm: n.nm, u: n.u };
   });
   list.sort(function (x, y) { return rank[x.s] - rank[y.s] || (y.s === 'ok' ? y.a - x.a : y.t - x.t) || (x.e < y.e ? -1 : 1); });
-  return { owner: own, list: list };
+  return { owner: own, own: nm(own), list: list };
 }
 /** s: 'ok' (허용; a new email = allowed ahead of time), 'no' (끊기: its phones stop at once), 'del' (지우기 from the list). */
 function setAccess(email, s) {
@@ -1190,6 +1193,64 @@ function setAccess(email, s) {
   } else throw new Error('알 수 없는 요청이에요.');
   return getAccounts();
 }
+/** The owner's name for an account (the owner's own too); '' = back to the most-used name. */
+function setAccName(email, name) {
+  ownerOnly_();
+  email = String(email || '').trim().toLowerCase();
+  name = String(name || '').replace(/\s+/g, ' ').replace(/^[=+\-@]+/, '').trim();
+  if (name.length > 20) throw new Error('이름은 20자까지 적어 주세요.');
+  if (email !== ownerEmail_() && !accounts_()[email]) throw new Error('목록에 없는 계정이에요. 새로고침해 주세요.');
+  editNames_(function (all) {
+    var o = all[email] || {};
+    if (name) o.nm = name; else delete o.nm;
+    if (Object.keys(o).length) all[email] = o; else delete all[email];
+  });
+  return getAccounts();
+}
+/* Names on the 접근 계정 screen: Script Property ACCNAMES = {email: {c: {전체 이름: [count, last ms]}, nm: owner's name}}.
+ * Every 취식/폐기 tag and 출근 save or delete counts the name it was made with for the caller's account; the screen
+ * shows the owner's name for the account, else the name it used most (accName_). */
+var ACC_NAMES_MAX_ = 8;   // names kept per account (the least used goes)
+function accNames_() {
+  try { return JSON.parse(gget_('ACCNAMES') || '{}') || {}; } catch (e) { return {}; }
+}
+/** The most-used name of one ACCNAMES entry (a tie: the latest); '' = none yet. */
+function accName_(o) {
+  var c = (o && o.c) || {}, best = '';
+  Object.keys(c).forEach(function (k) { if (!best || c[k][0] > c[best][0] || (c[k][0] === c[best][0] && c[k][1] > c[best][1])) best = k; });
+  return best;
+}
+/** Change ACCNAMES from the stored value (fresh read). Under the script lock unless the caller holds it. */
+function editNames_(fn, locked) {
+  var lock = locked ? null : LockService.getScriptLock();
+  if (lock) lock.waitLock(20000);
+  try {
+    var all;
+    try { all = JSON.parse(ps_().getProperty('ACCNAMES') || '{}') || {}; } catch (e) { all = {}; }
+    fn(all);
+    gset_('ACCNAMES', JSON.stringify(all));
+  } finally {
+    if (lock) lock.releaseLock();
+  }
+}
+/** After a save made as full: count it for this execution's account (none with ACCESS_OFF). Never fails the save. */
+function noteActor_(full) {
+  if (!CALLER_ || !full) return;
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return;   // a busy moment: one count less doesn't matter
+  try {
+    editNames_(function (all) {
+      var o = all[CALLER_] = all[CALLER_] || {}, c = o.c = o.c || {};
+      var x = c[full] = c[full] || [0, 0];
+      x[0]++; x[1] = Date.now();
+      var ks = Object.keys(c).sort(function (p, q) { return c[p][0] - c[q][0] || c[p][1] - c[q][1]; });
+      while (ks.length > ACC_NAMES_MAX_) delete c[ks.shift()];
+    }, true);
+  } catch (e) {
+  } finally {
+    lock.releaseLock();
+  }
+}
 function delAccount_(email) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -1197,6 +1258,7 @@ function delAccount_(email) {
     var acc;
     try { acc = JSON.parse(ps_().getProperty('ACCOUNTS') || '{}') || {}; } catch (e) { acc = {}; }
     if (acc[email]) { delete acc[email]; gset_('ACCOUNTS', JSON.stringify(acc)); }
+    editNames_(function (all) { delete all[email]; }, true);
   } finally {
     lock.releaseLock();
   }
@@ -1208,13 +1270,14 @@ function waitCount_() {
 }
 /** Menu 접근 계정: the list; a number flips 허용 <-> 끊기, an email allows that account ahead of time. */
 function menuAccounts() {
-  var ui = SpreadsheetApp.getUi(), acc = accounts_();
+  var ui = SpreadsheetApp.getUi(), acc = accounts_(), names = accNames_();
   var list = Object.keys(acc).sort(function (x, y) { return (acc[y].t || 0) - (acc[x].t || 0); });
   var L = { ok: '허용', wait: '허용 기다림', no: '끊김' };
   var day = function (ms) { return ms ? Utilities.formatDate(new Date(ms), 'Asia/Seoul', 'M/d') : ''; };
   var text = (list.length ? list.map(function (e, i) {
     var a = acc[e];
-    return (i + 1) + '. ' + e + ' - ' + L[a.s] + ' (' + day(a.s === 'ok' ? a.a : a.t) + (a.n ? ', ' + a.n : '') + ')';
+    var o = names[e] || {}, nm = o.nm || accName_(o);
+    return (i + 1) + '. ' + (nm ? nm + ' ' : '') + e + ' - ' + L[a.s] + ' (' + day(a.s === 'ok' ? a.a : a.t) + (a.n ? ', ' + a.n : '') + ')';
   }).join('\n') : '아직 들어온 계정이 없어요.') +
     '\n\n사장님 계정(' + ownerEmail_() + ')은 늘 들어와요.' +
     '\n\n번호를 적으면 허용 <-> 끊기가 바뀌어요 (기다림은 허용으로). 이메일을 적으면 그 계정을 미리 허용해요.';
@@ -1246,7 +1309,7 @@ function apiFns_() {
     getBoot: getBoot, getInit: getInit, getMonth: getMonth, setTag: setTag, addMember: addMember,
     saveShift: saveShift, deleteShift: deleteShift,
     login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage, gLogin: gLogin, gPoll: gPoll,
-    getAccounts: getAccounts, setAccess: setAccess
+    getAccounts: getAccounts, setAccess: setAccess, setAccName: setAccName
   };
 }
 function doPost(e) {
@@ -1752,6 +1815,7 @@ function setTag(rowHint, key, type, memberFull, month, note, me, token) {
     sh.getRange(row, C.NOTE).setValue(note);
     bumpVersion_();
   });
+  noteActor_(actor.full);
   return getMonth(month || '', '');
 }
 
@@ -2067,6 +2131,7 @@ function saveShift(key, date, memberFull, start, end, memo, month, token) {
     writeShift_(sh, cur ? cur.row : sh.getLastRow() + 1, s);
     bumpVersion_(true);
   });
+  noteActor_(mem.full);
   var res = getMonth(month || '', '');
   if (res && trimmed.length) res.trimmed = trimmed.map(function (t) { return [t.member, t.end]; });
   if (res && closed.length) res.closed = closed.map(function (t) { return [t.member, t.end]; });
@@ -2085,6 +2150,7 @@ function deleteShift(key, memberFull, month, token) {
     sh.deleteRow(cur.row);
     bumpVersion_(true);
   });
+  noteActor_(mem.full);
   return getMonth(month || '', '');
 }
 
