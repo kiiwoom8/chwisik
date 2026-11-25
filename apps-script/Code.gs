@@ -2096,7 +2096,7 @@ function saveShift(key, date, memberFull, start, end, memo, month, token) {
   if (end) end = minHm_(roundSlot_(toMin_(date, end), true));
   if (end && end === start) throw new Error('출근과 퇴근 시간이 같아요. (30분 단위로 맞추면 같은 시간이에요)');
   var nowM = nowMin_();
-  if (a > nowM + 60) throw new Error('아직 오지 않은 시간은 적을 수 없어요.');
+  if (a > nowM + 60) throw new Error('아직 오지 않은 시간이에요. 어젯밤 근무면 날짜를 어제로 골라 주세요.');
   var b = end ? shiftSpan_({ date: date, start: start, end: end })[1] : null;
   if (!end && nowM - a >= OPEN_SHIFT_MAX_H * 60) throw new Error('지난 근무는 퇴근 시간도 적어 주세요.');
   if (!end && a > nowM + SLOT_MIN / 2) throw new Error('퇴근을 비워 두려면 출근 시간이 지금보다 앞이어야 해요.');

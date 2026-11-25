@@ -1579,6 +1579,7 @@ body.gated { overflow: hidden; }
     $("sfMemo").value = s ? s[6] : preset.memo || "";
     $("sfDel").hidden = !s;
     $("sfSave").disabled = false;
+    edAuto = false; edHand = !!s;   // an existing record keeps its date
     edHint();
     $("shiftEd").hidden = false;
     setTimeout(function () { (s ? $("sfEnd") : $("sfStart")).focus(); }, 50);
@@ -1591,11 +1592,26 @@ body.gated { overflow: hidden; }
     m %= 1440;
     return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
   }
+  /* A 출근 still to come today (more than an hour ahead; the server refuses it) is last night's shift written at dawn:
+     the date moves to yesterday by itself, and back to today if the time is changed to one that has come. A date
+     picked by hand (or an existing record's) is left alone, with a warning. (owner, 2026-11-26: night workers got 아직 오지 않은 시간 at dawn.) */
+  var edAuto = false, edHand = false;
+  function edDate(a) {
+    var d = $("sfDate").value, today = todayStr(), yest = addDays(today, -1);
+    if (edHand || !a || !/^\d\d:\d\d$/.test(a)) return false;
+    var ahead = toMin(today, a) > nowMin() + 60;
+    if (d === today && ahead) { $("sfDate").value = yest; edAuto = true; }
+    else if (edAuto && d === yest && !ahead) { $("sfDate").value = today; edAuto = false; }
+    return edAuto && $("sfDate").value === yest;
+  }
   function edHint() {
+    var yest = edDate(slotHm($("sfStart").value, false));
     var d = $("sfDate").value, a = slotHm($("sfStart").value, false), b = slotHm($("sfEnd").value, true), h = $("sfHint");
     h.className = "hint";
-    var moved = ($("sfStart").value && a !== $("sfStart").value) || ($("sfEnd").value && b !== $("sfEnd").value)
-      ? "30분 단위로 " + a + (b ? " – " + b : "") + "로 적어요 · " : "";
+    if (d === todayStr() && a && toMin(d, a) > nowMin() + 60) { h.textContent = "아직 오지 않은 시간이에요. 어젯밤 근무면 날짜를 어제로 골라 주세요."; h.className = "hint bad"; return; }
+    var moved = (yest ? "아직 안 온 시간이라 어제 근무로 적어요: " + dayLabel(d) + " 출근 · " : "") +
+      (($("sfStart").value && a !== $("sfStart").value) || ($("sfEnd").value && b !== $("sfEnd").value)
+      ? "30분 단위로 " + a + (b ? " – " + b : "") + "로 적어요 · " : "");
     if (a && b && a === b) { h.textContent = "출근과 퇴근 시간이 같아요."; h.className = "hint bad"; return; }
     if (d && a && b) {
       var m = toMin(d, b) - toMin(d, a); if (m < 0) m += 1440;
@@ -1604,6 +1620,7 @@ body.gated { overflow: hidden; }
     }
     h.textContent = moved + "아직 근무 중이면 퇴근은 비워 두세요. 다음 사람이 출근을 적으면 자동 퇴근돼요. 퇴근이 출근보다 이르면 다음 날 퇴근으로 기록해요.";
   }
+  $("sfDate").addEventListener("input", function () { edAuto = false; edHand = true; });   // a date picked by hand stays (before edHint)
   ["sfDate", "sfStart", "sfEnd"].forEach(function (id) { $(id).addEventListener("input", edHint); $(id).addEventListener("change", edHint); });
   function closeEditor() { $("shiftEd").hidden = true; ED = null; }
   $("sfCancel").addEventListener("click", closeEditor);
