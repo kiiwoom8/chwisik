@@ -1026,6 +1026,7 @@ var EXEC_URL = 'https://script.google.com/macros/s/AKfycbzmsekRKq8HY5jqog-Dpb80y
 var ACCESS_OLD_UNTIL = '2026-12-09';
 var ACCESS_TAG = '[접근]';
 var ACCESS_ = false;
+var CALLER_ = '';   // the account of this execution's device key ('' = none / not a good key); set with ACCESS_
 var OPEN_FNS_ = ['getPage', 'gLogin', 'gPoll'];
 var NONCE_RE_ = /^[A-Za-z0-9_-]{22,64}$/;
 function accessOff_() { return gget_('ACCESS_OFF') === '1'; }
@@ -1076,8 +1077,17 @@ function oldDevOk_(dev) {
 }
 /** api() / doPost(): a good device key of an allowed account opens the data functions for this execution. */
 function checkAccess_(fn, dev) {
-  ACCESS_ = accessOff_() || accountState_(devEmail_(dev)) === 'ok';
+  CALLER_ = devEmail_(dev);
+  if (CALLER_ && accountState_(CALLER_) !== 'ok') CALLER_ = '';
+  ACCESS_ = accessOff_() || !!CALLER_;
   if (!ACCESS_ && OPEN_FNS_.indexOf(fn) < 0) throw new Error(ACCESS_TAG + ' Google 계정으로 들어와 주세요.');
+}
+/** The caller signed in with the owner's Google account (the account this script runs as). ACCESS_OFF doesn't
+ * count: the 접근 계정 screen always needs the owner's own device key. */
+function ownerCaller_() { return !!CALLER_ && CALLER_ === ownerEmail_(); }
+function ownerOnly_() {
+  access_();
+  if (!ownerCaller_()) throw new Error('[관리자] 사장님 Google 계정으로 들어온 폰에서만 할 수 있어요.');
 }
 /** First line of every data function anyone could call. */
 function access_() {
@@ -1128,7 +1138,7 @@ function notifyOwner_(email) {
   try {
     MailApp.sendEmail(ownerEmail_(), '[직원 취식 목록] 접근 요청: ' + email,
       email + ' 계정이 취식 앱에 들어오려고 해요.\n\n아는 사람이면 아래 링크에서 [허용]을 누르세요. 한 번 허용하면 그 계정은 어느 폰에서든 계속 들어와요.\n' +
-      link + '\n\n모르는 계정이면 그냥 두세요 (들어오지 못해요). 시트 메뉴 취식 관리 > 접근 계정 에서도 허용하고 끊을 수 있어요.');
+      link + '\n\n모르는 계정이면 그냥 두세요 (들어오지 못해요). 취식 앱의 더보기 > 접근 계정, 시트 메뉴 취식 관리 > 접근 계정 에서도 허용하고 끊을 수 있어요.');
   } catch (e) {}
 }
 /** The page behind the mail link: one button -> allowAccount. */
@@ -1151,6 +1161,50 @@ function allowAccount(email, sig) {
   if (!email || String(sig || '') !== allowSig_(email)) throw new Error('링크가 맞지 않아요.');
   if (accountState_(email) !== 'ok') setAccount_(email, 'ok', '메일 링크로 허용');
   return true;
+}
+/* The page's 접근 계정 screen (더보기 > 접근 계정): only on a phone signed in with the owner's account (ownerOnly_);
+ * getInit tells the page (admin) so nobody else ever sees the menu item. Same ACCOUNTS as the menu and the mail link. */
+var EMAIL_RE_ = /^[^@\s:]{1,64}@[^@\s:]{1,190}\.[^@\s:]{2,}$/;
+/** {owner, list: [{e, s, t (first seen), a (allowed at), n (note)}]}: waiting first, then allowed, then cut; newest first. */
+function getAccounts() {
+  ownerOnly_();
+  var acc = accounts_(), rank = { wait: 0, ok: 1, no: 2 }, own = ownerEmail_();
+  var list = Object.keys(acc).filter(function (e) { return e !== own && rank[acc[e].s] !== undefined; }).map(function (e) {
+    var a = acc[e];
+    return { e: e, s: a.s, t: a.t || 0, a: a.a || 0, n: a.n || '' };
+  });
+  list.sort(function (x, y) { return rank[x.s] - rank[y.s] || (y.s === 'ok' ? y.a - x.a : y.t - x.t) || (x.e < y.e ? -1 : 1); });
+  return { owner: own, list: list };
+}
+/** s: 'ok' (허용; a new email = allowed ahead of time), 'no' (끊기: its phones stop at once), 'del' (지우기 from the list). */
+function setAccess(email, s) {
+  ownerOnly_();
+  email = String(email || '').trim().toLowerCase();
+  s = String(s || '');
+  if (email === ownerEmail_()) throw new Error('사장님 계정은 늘 들어와요.');
+  if (!EMAIL_RE_.test(email)) throw new Error('Google 계정 이메일을 적어 주세요. 예: name@gmail.com');
+  if (s === 'del') delAccount_(email);
+  else if (s === 'ok' || s === 'no') {
+    var cur = accountState_(email);
+    if (cur !== s) setAccount_(email, s, s === 'ok' ? (cur ? '앱에서 허용' : '미리 허용') : '');
+  } else throw new Error('알 수 없는 요청이에요.');
+  return getAccounts();
+}
+function delAccount_(email) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var acc;
+    try { acc = JSON.parse(ps_().getProperty('ACCOUNTS') || '{}') || {}; } catch (e) { acc = {}; }
+    if (acc[email]) { delete acc[email]; gset_('ACCOUNTS', JSON.stringify(acc)); }
+  } finally {
+    lock.releaseLock();
+  }
+}
+/** Requests waiting for the owner (the page's badge on 더보기). */
+function waitCount_() {
+  var acc = accounts_();
+  return Object.keys(acc).filter(function (e) { return acc[e].s === 'wait'; }).length;
 }
 /** Menu 접근 계정: the list; a number flips 허용 <-> 끊기, an email allows that account ahead of time. */
 function menuAccounts() {
@@ -1191,7 +1245,8 @@ function apiFns_() {
   return {
     getBoot: getBoot, getInit: getInit, getMonth: getMonth, setTag: setTag, addMember: addMember,
     saveShift: saveShift, deleteShift: deleteShift,
-    login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage, gLogin: gLogin, gPoll: gPoll
+    login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage, gLogin: gLogin, gPoll: gPoll,
+    getAccounts: getAccounts, setAccess: setAccess
   };
 }
 function doPost(e) {
@@ -1421,6 +1476,7 @@ function getInit(me, token) {
   if (me) { try { authMember_(me, token); } catch (e) { meOk = String(e.message).indexOf(AUTH_TAG) < 0; } }
   var out = getInitData_();
   out.meOk = meOk;
+  if (ownerCaller_()) out.admin = { wait: waitCount_() };   // only the owner's phone hears of the 접근 계정 screen
   return out;
 }
 function getInitData_() {

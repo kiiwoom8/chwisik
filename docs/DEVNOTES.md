@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-25 (access by Google account; 접근 코드 and APK key removed)
+Last updated: 2026-11-25 (접근 계정 screen in the page for the owner; access by Google account; 접근 코드 and APK key removed)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -210,7 +210,7 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 | Key | Set by | Meaning |
 |---|---|---|
 | ● `BGF_PW` | menu BGF 점포시스템 비밀번호 입력 · <store> | BGF store password (only place it exists). A store without it is not imported. |
-| `ACCOUNTS` | `setAccount_`: sign-in (`gLogin`), mail link, menu 접근 계정 | JSON of Google accounts: `{email: {s: ok / wait / no, t, a, n}}` (see *Access*). |
+| `ACCOUNTS` | `setAccount_` / `delAccount_`: sign-in (`gLogin`), mail link, menu 접근 계정, the page's 접근 계정 screen (`setAccess`) | JSON of Google accounts: `{email: {s: ok / wait / no, t, a, n}}` (see *Access*). |
 | `ACCESS_KEY` | `secret_` (first use), menu 모든 폰 다시 로그인하게 하기 | HMAC key of the device keys. Changing it makes every phone sign in again (accounts stay allowed). |
 | `ALLOW_KEY` | `secret_` (first request mail) | HMAC key of the 허용 links in request mails. Changing it voids links already sent. |
 | `ACCESS_OFF` | by hand only | `1` = no access check (emergency, e.g. if the check itself breaks). Phones without a key still see the sign-in screen; any phone with a key gets in. Delete it to turn the check back on. |
@@ -280,8 +280,20 @@ google account. one the account is allowed, always allow the account".
 - **Allowing**: the request mail (`notifyOwner_`) has a link `/exec?allow=<email>&s=<sig>` (sig = HMAC(`ALLOW_KEY`,
   `allow|<email>`)): a page with one [허용] button (`allowPage_` → `allowAccount`), so a mail scanner opening the link
   allows nothing. Or menu **접근 계정 (허용 · 끊기)**: the list; a number flips 허용 ↔ 끊기 (waiting → 허용); an email
-  address allows that account ahead of time.
-- **When someone leaves**: menu 접근 계정 → their number (끊김). Their phones are out at once; nobody else is touched.
+  address allows that account ahead of time. Or **in the page: 더보기 → 접근 계정** (below).
+- **접근 계정 screen in the page (owner only, since 2026-11-25).** The owner: "implement allowing google account button or
+  tab. which is only visible by administrator". `checkAccess_` keeps the key's account in `CALLER_`; `ownerCaller_()`
+  = that account is the owner's (the account the script runs as). Only then `getInit` adds `admin: {wait: n}`, so on
+  every other phone the menu item, its divider and the dot simply don't exist. `getAccounts()` / `setAccess(email, s)`
+  start with `ownerOnly_()` (`access_()` + owner key, `[관리자] …` otherwise). `ACCESS_OFF` does **not** open them:
+  they always need the owner's own device key.
+  Page: 더보기 menu → divider → **접근 계정** (shield icon, red count of waiting requests; a red dot on the 더보기 tab
+  while any wait). It opens a bottom sheet: an email field + [허용] (allow ahead of time), then **허용 기다림** (거절 /
+  허용), **허용됨** (the owner's own account on top, `사장님`, no button; others [끊기] behind a confirm), **끊김**
+  (지우기 with 되돌리기 / 허용). Lazy like every save: the row changes at once (faded until the server answers), calls run
+  one at a time in order, the last answer replaces the list; a refusal shows the error and reloads the list. The list
+  is fetched when the sheet opens and when the owner's page comes back to the front (so the count stays fresh).
+- **When someone leaves**: 더보기 → 접근 계정 → [끊기] on their account, or menu 접근 계정 → their number (끊김). Their phones are out at once; nobody else is touched.
   **모든 폰 다시 로그인하게 하기** makes a new `ACCESS_KEY`: every phone must sign in again (allowed accounts get straight
   back in).
 - **Moving over from the 접근 코드** (until `ACCESS_OLD_UNTIL` = 2026-12-09): a phone that had a key from the 접근 코드 or
@@ -382,7 +394,7 @@ The page calls the server with `run(fn, …args)`, always for its store. On the 
 | `getBoot(me, token)` | `{init: getInit(…), month: getMonth(newest month, '')}`: the page's first call (one round trip instead of two) |
 | `getPage(knownHash)` | `{hash, html}` of `Index.html`, or `null` if the app already has that hash (app self-update) |
 | `api(store, fn, args)` | the `/exec` page's entry: sets the store, runs one of the functions below |
-| `getInit(me, token)` | members (`{full, short, hasPw}`), months (items + shifts), data version, live-import info (`{label, off, error, added, wait}`; `wait` = `'pw'` no 전산 password yet, `'adapter'` no import for this chain, else `''`), `meOk` (false = this phone must enter the password again), `store` (id), `stores` (`[{id, name, short, chain, jeo}]`, the stores that are on) |
+| `getInit(me, token)` | members (`{full, short, hasPw}`), months (items + shifts), data version, live-import info (`{label, off, error, added, wait}`; `wait` = `'pw'` no 전산 password yet, `'adapter'` no import for this chain, else `''`), `meOk` (false = this phone must enter the password again), `store` (id), `stores` (`[{id, name, short, chain, jeo}]`, the stores that are on), `admin` (`{wait}`, only when the caller's key is the owner's account) |
 | `getMonth(month, knownVersion, fresh)` | rows + cancels + shifts + `usual` + `others` + `closed` for `yyyy-MM`, with `store` and `version`; `null` if `knownVersion` is current (cheap polling). Kept in the cache per (store, month, version); `fresh = true` (pull to refresh, sync button) reads the sheets anyway. |
 | `setTag(rowHint, key, type, memberFull, month, note, me, token)` | type `취식` / `폐기` / `''` (clear). `note='근무외'` kept only for 폐기. Refuses rows another worker tagged. Returns the fresh month. |
 | `addMember(full)` | adds to 직원 |
@@ -391,6 +403,8 @@ The page calls the server with `run(fn, …args)`, always for its store. On the 
 | `login(full, pw)` | returns `{token}`; accepts the developer password too |
 | `setPassword(full, token, newPw)` | `newPw=''` removes it; returns `{token, members}` |
 | `refreshNow()` | live import if the last one was ≥ 50 s ago; returns `{label, error, off, added}` |
+| `getAccounts()` | owner key only: `{owner, list: [{e, s: 'wait' / 'ok' / 'no', t, a, n}]}`, waiting first, then allowed (newest allowed first), then cut; the owner is not in `list` |
+| `setAccess(email, s)` | owner key only: `s` = `'ok'` (allow; an unknown email = allowed ahead of time, note `미리 허용`; a waiting one gets `앱에서 허용`), `'no'` (cut), `'del'` (remove from the list); refuses the owner's own email and a bad address; returns `getAccounts()` |
 
 Shapes sent to the page:
 - Row: `[sheetRow, key, time, name, qty, wprice, wamt, mamt, type, memberFull, who, date, note, src]` — `src` (index 13) is `''` for 폐기, `'저회전'` for 저회전. `wprice` / `wamt` (원가) are rounded to whole won per line (BGF sends decimals; new rows are also stored rounded by the import), so every 원가 total on the page is whole won too. The page's `fmt` also rounds.

@@ -316,9 +316,43 @@ ok('L ... and signing in again gives the new key', post({ fn: 'gPoll', args: [N1
 for (let i = 0; i < 45; i++) exec("setAccount_('spam" + i + "@gmail.com', 'wait')");
 const acc = JSON.parse(props.ACCOUNTS);
 ok('L at most 40 waiting requests, allowed ones kept', Object.keys(acc).filter(k => acc[k].s === 'wait').length === 40 && acc['staff@gmail.com'].s === 'ok' && !acc['spam0@gmail.com'], Object.keys(acc).length);
+// N: the page's 접근 계정 screen, only for the owner's own key
+const ownDev = post({ fn: 'gPoll', args: ['nonce-owner-aaaaaaaaaaaaaaa', ''] }).r.dev, staffDev = post({ fn: 'gPoll', args: [N1, ''] }).r.dev;
+ok('N keys for owner and staff', /^g:o@x:/.test(ownDev) && /^g:staff@gmail\.com:/.test(staffDev));
+out = post({ fn: 'getInit', args: ['', ''], store: '25377', dev: staffDev });
+ok('N staff: getInit has no admin', out.ok === true && !('admin' in out.r), out.err);
+out = post({ fn: 'getAccounts', args: [], dev: staffDev });
+ok('N staff: getAccounts refused', out.ok === false && /^\[관리자\]/.test(out.err), out);
+out = post({ fn: 'setAccess', args: ['spam5@gmail.com', 'ok'], dev: staffDev });
+ok('N staff: setAccess refused, nothing changed', out.ok === false && JSON.parse(props.ACCOUNTS)['spam5@gmail.com'].s === 'wait', out);
+threw = ''; try { exec('getAccounts()'); } catch (e) { threw = e.message; }
+ok('N direct call refused', /^\[접근\]/.test(threw), threw);
+out = post({ fn: 'getInit', args: ['', ''], store: '25377', dev: ownDev });
+ok('N owner: getInit says admin with the waiting count', out.ok === true && out.r.admin && out.r.admin.wait === 40, out.r && out.r.admin);
+out = post({ fn: 'getAccounts', args: [], dev: ownDev });
+ok('N owner: list, waiting first, owner kept apart', out.ok === true && out.r.owner === 'o@x' && out.r.list[0].s === 'wait' && out.r.list.every(a => a.e !== 'o@x') && out.r.list.some(a => a.e === 'staff@gmail.com' && a.s === 'ok'), out.err);
+out = post({ fn: 'setAccess', args: ['spam5@gmail.com', 'ok'], dev: ownDev });
+ok('N allow a waiting account: answers the new list', out.ok === true && out.r.list.find(a => a.e === 'spam5@gmail.com').s === 'ok' && JSON.parse(props.ACCOUNTS)['spam5@gmail.com'].n === '앱에서 허용', out);
+out = post({ fn: 'setAccess', args: [' New@Gmail.com ', 'ok'], dev: ownDev });
+ok('N allow a new email ahead of time', out.ok === true && JSON.parse(props.ACCOUNTS)['new@gmail.com'].s === 'ok' && JSON.parse(props.ACCOUNTS)['new@gmail.com'].n === '미리 허용', out);
+post({ fn: 'setAccess', args: ['staff@gmail.com', 'no'], dev: ownDev });
+out = post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: staffDev });
+ok('N cut from the page: that key stops at once', out.ok === false && /^\[접근\]/.test(out.err), out);
+post({ fn: 'setAccess', args: ['staff@gmail.com', 'ok'], dev: ownDev });
+ok('N allowed again from the page: same key works', post({ fn: 'getMonth', args: [mon, ''], store: '25377', dev: staffDev }).ok === true);
+out = post({ fn: 'setAccess', args: ['spam6@gmail.com', 'del'], dev: ownDev });
+ok('N 지우기 removes it from the list', out.ok === true && !JSON.parse(props.ACCOUNTS)['spam6@gmail.com'] && out.r.list.every(a => a.e !== 'spam6@gmail.com'), out);
+out = post({ fn: 'setAccess', args: ['o@x', 'no'], dev: ownDev });
+ok('N the owner account cannot be cut', out.ok === false && /늘 들어와요/.test(out.err), out);
+out = post({ fn: 'setAccess', args: ['not-an-email', 'ok'], dev: ownDev });
+ok('N a bad email is refused', out.ok === false && /이메일/.test(out.err), out);
+out = post({ fn: 'setAccess', args: ['x@gmail.com', 'boss'], dev: ownDev });
+ok('N an unknown state is refused', out.ok === false && !JSON.parse(props.ACCOUNTS)['x@gmail.com'], out);
 props.ACCESS_OFF = '1';
 out = post({ fn: 'getMonth', args: [mon, ''], store: '25377' });
 ok('L ACCESS_OFF = 1 opens it (emergency switch)', out.ok === true, out.err);
+out = post({ fn: 'getAccounts', args: [] });
+ok('N ACCESS_OFF does not open the 접근 계정 screen without the owner key', out.ok === false && /^\[관리자\]/.test(out.err), out);
 threw = ''; try { exec('menuAccounts()'); } catch (e) { threw = e.message; }
 ok('L access menu needs the spreadsheet ui', /no ui/.test(threw), threw);
 
