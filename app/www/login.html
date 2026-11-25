@@ -38,8 +38,10 @@
    login.html?n=<nonce>[&app=1]. No popup: this page sends the whole tab to Google's account chooser (OpenID Connect,
    response_type id_token, nonce = n) and Google sends it back here with #id_token=…&state=…. The token goes to the
    server with the nonce (gLogin; the server checks the token's nonce too), and the phone that opened this (polling
-   gPoll) gets in once the account is allowed. Google sign-in doesn't work inside the Android app's WebView, so the
-   app opens this in the phone's browser (app=1: a button back to the app).
+   gPoll) gets in once the account is allowed. In a browser this tab then goes straight into the staff page ("./",
+   key stored; while the account waits, the page's gate waits) - no button to tap (owner, 2026-11-26). Google sign-in
+   doesn't work inside the Android app's WebView, so the app opens this in the phone's browser (app=1: the app is
+   opened at once, with a button back to it in case Chrome wants a tap).
    GOOGLE_CLIENT_ID must match Code.gs; this page's address is the client's authorized redirect URI.
    (The first version used Google's GIS button in popup mode: in the owner's Chrome the popup opened and nothing
    came back.) */
@@ -62,6 +64,15 @@
     a.textContent = label;
     a.hidden = false;
   }
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  /** This browser opened the sign-in (its gate holds the same nonce), so its gate can take over. */
+  function sameNonce(n) { try { return JSON.parse(lsGet("chwisik.gn") || "null").n === n; } catch (e) { return false; } }
+  /** Straight into the staff page in this tab (it boots with the stored key, or its gate keeps waiting). */
+  function enter() { say("취식으로 들어가는 중…"); location.replace("./"); }
+  /** Android app: try opening the app at once; the button stays in case Chrome wants a tap for it. */
+  function openApp() { setTimeout(function () { try { location.href = $("go").href; } catch (e) {} }, 300); }
   function call(fn, args) {
     return fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ fn: fn, args: args }) })
       .then(function (r) { if (!r.ok) throw new Error("서버 응답 " + r.status); return r.json(); })
@@ -89,7 +100,7 @@
   if (h.get("id_token") || h.get("error")) {
     try { history.replaceState(null, "", HERE); } catch (e) {}
     var st = String(h.get("state") || ""), fromApp = /\.app$/.test(st), n = st.replace(/\.app$/, "");
-    if (!NONCE.test(n)) { say("이 화면은 취식 앱의 [Google 계정으로 들어가기] 버튼으로 열어 주세요.", "bad"); back("취식 열기", false); return; }
+    if (!NONCE.test(n)) { enter(); return; }
     if (h.get("error")) {
       say(h.get("error") === "access_denied" ? "로그인을 취소했어요. 다시 하려면 아래 버튼을 눌러 주세요." : "Google 로그인 오류: " + h.get("error"), "bad");
       offer(n, fromApp);
@@ -98,16 +109,30 @@
     say("확인 중…");
     call("gLogin", [n, h.get("id_token")]).then(function (r) {
       if (r.s === "ok") {
-        sayWho(r.email, "계정으로 확인했어요. 취식 앱으로 돌아가세요.", "ok");
-        // same address as the staff page: this browser gets in too (Safari -> the page on the home screen)
-        if (!fromApp) call("gPoll", [n, ""]).then(function (p) { try { if (p && p.dev) localStorage.setItem("chwisik.dev", p.dev); } catch (e) {} }, function () {});
-        back(fromApp ? "취식 앱으로 돌아가기" : "취식 열기", fromApp);
+        if (fromApp) {
+          sayWho(r.email, "계정으로 확인했어요. 취식 앱을 여는 중…", "ok");
+          back("취식 앱으로 돌아가기", true);
+          openApp();
+          return;
+        }
+        // same address as the staff page: store this browser's key and go straight in (no extra button)
+        sayWho(r.email, "계정으로 확인했어요. 들어가는 중…", "ok");
+        call("gPoll", [n, lsGet("chwisik.devOld") || ""]).then(function (p) {
+          if (p && p.dev) {
+            lsSet("chwisik.dev", p.dev);
+            if (sameNonce(n)) lsDel("chwisik.gn");
+            lsDel("chwisik.devOld");
+          }
+          enter();
+        }, enter);   // the gate asks gPoll again itself
       } else if (r.s === "no") {
         sayWho(r.email, "계정은 허용되지 않았어요. 다른 계정이면 아래 버튼으로 다시 로그인해 주세요.", "bad");
         offer(n, fromApp, "다른 계정으로 로그인");
       } else {
         sayWho(r.email, "계정의 허용을 사장님께 요청했어요. 허용되면 취식 앱이 바로 열려요. 이 창은 닫아도 돼요.");
-        if (fromApp) back("취식 앱으로 돌아가기", true);
+        // the gate in this browser waits for the owner and opens by itself once allowed
+        if (!fromApp && sameNonce(n)) { enter(); return; }
+        if (fromApp) { back("취식 앱으로 돌아가기", true); openApp(); }
         offer(n, fromApp, "다른 계정으로 로그인");
       }
     }, function (e) {
@@ -119,7 +144,7 @@
 
   // 2. Opened by the gate: straight on to Google's account chooser
   var q = new URLSearchParams(location.search), n0 = q.get("n") || "", app0 = q.get("app") === "1";
-  if (!NONCE.test(n0)) { say("이 화면은 취식 앱의 [Google 계정으로 들어가기] 버튼으로 열어 주세요.", "bad"); back("취식 열기", false); return; }
+  if (!NONCE.test(n0)) { enter(); return; }   // opened by hand: the staff page has the sign-in button
   say("Google 로그인으로 넘어가는 중…");
   offer(n0, app0);
   location.replace(googleUrl(n0, app0));

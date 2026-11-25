@@ -641,6 +641,9 @@ body.gated { overflow: hidden; }
     try { if (navigator.serviceWorker && API) navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {}); } catch (e) {}
     var g = gNonce(false);
     $("gateGo").href = LOGIN + "?n=" + g.n + (window.Capacitor ? "&app=1" : "");
+    // the staff page on GitHub Pages in a browser tab: sign in in this same tab, login.html comes straight back here
+    // signed in. A new tab only where this tab can't share login.html's storage (app, home-screen app, /exec copy).
+    if (gSameTab()) $("gateGo").removeAttribute("target"); else $("gateGo").target = "_blank";
     gateMsg("");
     if (g.go) gPoll(0);   // signed in (or waiting for the owner) before this page reloaded
     setTimeout(function () { try { $("gateGo").focus(); } catch (e) {} }, 60);
@@ -648,9 +651,11 @@ body.gated { overflow: hidden; }
   $("gateGo").addEventListener("click", function () {
     var g = gNonce(false);
     g.go = Date.now(); lsSet(K_GN, JSON.stringify(g));
+    if (gSameTab()) { gateMsg("Google 로그인으로 넘어가는 중…"); return; }
     gateMsg("열린 창에서 Google 계정을 고르면 여기로 돌아와요.");
     gPoll(2500);
   });
+  function gSameTab() { return !!API && !window.Capacitor && !STANDALONE && location.href.indexOf(WEB_APP) === 0; }
   /** Ask the server who signed in with this phone's nonce: fast for 3 minutes after the button, then every 10 s. */
   function gPoll(wait) {
     clearTimeout(gTimer);

@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-25 (접근 계정 shows and edits a name per account; 접근 계정 screen in the page for the owner; access by Google account; 접근 코드 and APK key removed)
+Last updated: 2026-11-26 (straight into the page after Google sign-in; 접근 계정 shows and edits a name per account; 접근 계정 screen in the page for the owner; access by Google account; 접근 코드 and APK key removed)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -260,8 +260,9 @@ google account. one the account is allowed, always allow the account".
   **In production** (Testing would let only listed test users sign in), home page `https://kiiwoom8.github.io/chwisik/`,
   privacy page `app/www/privacy.html`, authorized domain `kiiwoom8.github.io`; client "chwisik web" (its secret is not
   used anywhere: GIS needs only the ID). Adding a logo would require Google's verification, so there is none.
-  1. The gate (`#gate`) shows one button, a link to `login.html?n=<nonce>` (`&app=1` in the Android app), opened in a
-     new tab; the Android app's WebView hands it to the phone's browser (Capacitor opens other hosts outside, and
+  1. The gate (`#gate`) shows one button, a link to `login.html?n=<nonce>` (`&app=1` in the Android app). On the
+     GitHub Pages page in a browser tab (`gSameTab()`) it opens in the same tab; elsewhere (home-screen app, `/exec`
+     copy, Android app) in a new tab; the Android app's WebView hands it to the phone's browser (Capacitor opens other hosts outside, and
      Google refuses sign-in inside a WebView anyway). The nonce: 24 random signs, `chwisik.gn` in localStorage (kept
      across reloads, new after 5 h).
   2. `login.html` (GitHub Pages) at once sends the tab to Google's account chooser (`accounts.google.com/o/oauth2/v2/auth`,
@@ -271,7 +272,10 @@ google account. one the account is allowed, always allow the account".
      `gLogin(nonce, token)`: Google's tokeninfo endpoint checks it (`aud` = our client, issuer Google,
      `email_verified`, not expired, `nonce` = this nonce, so a token can't be used for another phone) → email (lower case),
      kept as `gl:<nonce>` in the script cache for 6 h. A new account is added as waiting and the owner gets a mail.
-     On GitHub Pages (not the app) it also stores the key in that browser once allowed (Safari → home screen).
+     Not from the app: once allowed it stores the key in that browser (`gPoll` with `chwisik.devOld`) and goes
+     straight to `./` signed in, no button (owner, 2026-11-26); while waiting it goes to `./` too if this browser
+     opened the sign-in (the gate waits there). From the app (`app=1`) it opens the app at once by the launcher intent,
+     with a [취식 앱으로 돌아가기] button as fallback.
   3. The page asks `gPoll(nonce, oldKey)` every 2.5 s for 3 min after the button, then every 10 s, and at once when it
      comes back to the front: `{s: 'none' | 'wait' | 'no'}` with the email, or `{s: 'ok', dev}` → key stored, page boots.
 - **Accounts** (Script Property `ACCOUNTS`, JSON `{email: {s: 'ok' | 'wait' | 'no', t: first seen, a: allowed at, n: note}}`,
