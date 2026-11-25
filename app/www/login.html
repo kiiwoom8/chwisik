@@ -57,11 +57,11 @@
     var b = document.createElement("b"); b.textContent = email;
     $("msg").appendChild(b); $("msg").appendChild(document.createTextNode(" " + rest));
   }
-  function back(label, fromApp) {
+  /** Android app only (a browser goes straight in, enter()): Chrome opens the installed app by its launcher intent. */
+  function backToApp() {
     var a = $("go");
-    // Android app: Chrome opens the installed app (launcher intent); elsewhere: the staff page in this browser
-    a.href = fromApp ? "intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.kiiwoom8.chwisik;end" : "./";
-    a.textContent = label;
+    a.href = "intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=com.kiiwoom8.chwisik;end";
+    a.textContent = "취식 앱으로 돌아가기";
     a.hidden = false;
   }
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -111,7 +111,7 @@
       if (r.s === "ok") {
         if (fromApp) {
           sayWho(r.email, "계정으로 확인했어요. 취식 앱을 여는 중…", "ok");
-          back("취식 앱으로 돌아가기", true);
+          backToApp();
           openApp();
           return;
         }
@@ -132,7 +132,7 @@
         sayWho(r.email, "계정의 허용을 사장님께 요청했어요. 허용되면 취식 앱이 바로 열려요. 이 창은 닫아도 돼요.");
         // the gate in this browser waits for the owner and opens by itself once allowed
         if (!fromApp && sameNonce(n)) { enter(); return; }
-        if (fromApp) { back("취식 앱으로 돌아가기", true); openApp(); }
+        if (fromApp) { backToApp(); openApp(); }
         offer(n, fromApp, "다른 계정으로 로그인");
       }
     }, function (e) {
