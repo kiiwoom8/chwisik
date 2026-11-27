@@ -155,7 +155,23 @@ h1 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.01em; flex
 .ownertag { font-size: 11.5px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
 .accempty { padding: 14px 12px; text-align: center; font-size: 13px; color: var(--muted); }
 .accfail { display: grid; gap: 8px; justify-items: center; padding: 18px 8px; text-align: center; font-size: 13.5px; color: var(--muted); }
-@media (prefers-reduced-motion: reduce) { .sbtn, .arow { transition: none; } }
+/* 새 요청 자동 허용 card on top of 접근 계정 */
+.auto { display: grid; gap: 10px; padding: 12px; border-radius: 12px; background: var(--paper); transition: opacity .15s; }
+.auto.pending { opacity: .55; }
+.autotop { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.autot { font-size: 14.5px; font-weight: 600; line-height: 1.3; }
+.autos { margin-top: 2px; font-size: 12px; line-height: 1.35; color: var(--muted); word-break: keep-all; }
+.auto.on .autos { color: var(--accent); font-weight: 500; }
+.sw { position: relative; flex: none; width: 46px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: var(--rule); cursor: pointer; transition: background .15s; }
+.sw i { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .15s; }
+.sw[aria-checked="true"] { background: var(--accent); }
+.sw[aria-checked="true"] i { transform: translateX(18px); }
+.sw:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.autoh { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.autoh .sbtn { padding: 0 4px; }
+.sbtn.cur { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.autonote { font-size: 12px; line-height: 1.4; color: var(--muted); word-break: keep-all; }
+@media (prefers-reduced-motion: reduce) { .sbtn, .arow, .auto, .sw, .sw i { transition: none; } }
 /* 미등록 / 취식: name filter + 금액합계 card ride in the sticky bar so they stay on screen */
 .pin { display: grid; gap: 8px; }
 .pin .whobar { padding: 0; }
@@ -499,6 +515,7 @@ body.gated { overflow: hidden; }
   <div class="card" role="dialog" aria-modal="true" aria-labelledby="accTitle">
     <div class="acchead"><h2 id="accTitle">접근 계정</h2><button type="button" class="xbtn" id="accX" aria-label="닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
     <p>허용한 Google 계정만 들어와요. 한 번 허용하면 어느 폰에서든 계속 들어와요.</p>
+    <div id="accAuto" hidden></div>
     <form class="accadd" id="accAdd" novalidate>
       <input type="email" id="accEmail" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="254" placeholder="이메일로 미리 허용" aria-label="미리 허용할 Google 계정 이메일">
       <button type="submit" class="primary" id="accAddBtn">허용</button>
@@ -720,7 +737,7 @@ body.gated { overflow: hidden; }
       google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).api(st, fn, args, dev);
     });
     p = p.then(null, function (e) { if (isAccessErr(e)) gate(); throw e; });
-    var write = /^(setTag|saveShift|deleteShift|setPassword|login|addMember|setAccess|setAccName)$/.test(fn);
+    var write = /^(setTag|saveShift|deleteShift|setPassword|login|addMember|setAccess|setAccName|setAutoAllow)$/.test(fn);
     if (write) writesInFlight++;
     // Page code is shared by all stores. Other replies for a store we left are dropped.
     return new Promise(function (resolve, reject) {
@@ -1803,7 +1820,62 @@ body.gated { overflow: hidden; }
     s.appendChild(l);
     return s;
   }
+  /* 새 요청 자동 허용: on = a new account gets in right after its Google sign-in, until ACC.auto.u (server: AUTO_ALLOW).
+     The switch turns it on for 48 h (or off); a length restarts it from now. */
+  var AUTO_H = [12, 24, 48, 168], accTick = 0;
+  function autoLabel(h) { return h >= 168 ? "7일" : h + "시간"; }
+  function autoCfg() { var c = ACC && ACC.auto; return c && c.u > Date.now() ? c : null; }
+  function accUntil(ms) {
+    var d = new Date(ms + 540 * 60000), h = d.getUTCHours(), m = d.getUTCMinutes();
+    return (d.getUTCMonth() + 1) + "/" + d.getUTCDate() + "(" + "일월화수목금토".charAt(d.getUTCDay()) + ") " + (h < 12 ? "오전 " : "오후 ") + (h % 12 || 12) + ":" + ("0" + m).slice(-2);
+  }
+  function accLeft(ms) {
+    var n = Math.max(1, Math.ceil((ms - Date.now()) / 60000));
+    return (n >= 60 ? Math.floor(n / 60) + "시간" + (n < 600 && n % 60 ? " " + (n % 60) + "분" : "") : n + "분") + " 남음";
+  }
+  function renderAuto() {
+    var box = $("accAuto");
+    box.textContent = "";
+    box.hidden = !ACC;
+    if (!ACC) return;
+    var c = autoCfg(), on = !!c, card = mk("div", "auto" + (on ? " on" : "") + (ACC.autoP ? " pending" : ""));
+    var top = mk("div", "autotop"), t = mk("div", "");
+    t.appendChild(mk("div", "autot", "새 요청 자동 허용"));
+    t.appendChild(mk("div", "autos", on ? accUntil(c.u) + "까지 · " + accLeft(c.u) : "꺼짐 · 켜면 새 계정이 로그인하자마자 들어와요"));
+    top.appendChild(t);
+    var sw = mk("button", "sw", "");
+    sw.type = "button"; sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", on ? "true" : "false");
+    sw.setAttribute("aria-label", "새 요청 자동 허용" + (on ? ", " + accUntil(c.u) + "까지" : ""));
+    sw.appendChild(mk("i", ""));
+    sw.addEventListener("click", function () { setAuto(on ? 0 : 48); });
+    top.appendChild(sw);
+    card.appendChild(top);
+    if (on) {
+      var hs = mk("div", "autoh");
+      hs.setAttribute("role", "group"); hs.setAttribute("aria-label", "지금부터 자동 허용할 시간");
+      AUTO_H.forEach(function (h) {
+        var b = sbtn(autoLabel(h), h === c.h ? "cur" : "", function () { setAuto(h); });
+        b.setAttribute("aria-pressed", h === c.h ? "true" : "false");
+        hs.appendChild(b);
+      });
+      card.appendChild(hs);
+      card.appendChild(mk("div", "autonote", "시간을 누르면 지금부터 다시 세요. 모르는 계정은 허용됨에서 끊어 주세요 (끊은 계정은 자동으로 들어오지 못해요)."));
+    }
+    box.appendChild(card);
+  }
+  /** Lazy like the rest: on screen at once (waiting accounts move to 허용됨), then setAutoAllow on the server. */
+  function setAuto(h) {
+    if (!ACC) return;
+    var now = Date.now(), n = 0;
+    ACC.auto = h ? { u: now + h * 3600000, h: h } : null;
+    ACC.autoP = true;
+    if (h) ACC.list.forEach(function (a) { if (a.s === "wait") { a.s = "ok"; a.a = now; a.n = "자동 허용"; a.p = true; n++; } });
+    accSort(ACC.list); accWaitSync(); renderAcc();
+    snack(h ? autoLabel(h) + " 자동 허용" + (n ? " · 기다리던 " + n + "개 허용했어요" : " 켰어요") : "자동 허용 껐어요");
+    accCall("setAutoAllow", [h]);
+  }
   function renderAcc() {
+    renderAuto();
     if (accEd) return;   // a name is being typed: the list shows again when it's done
     var box = $("accList"); box.textContent = "";
     if (!ACC) {
@@ -1878,10 +1950,13 @@ body.gated { overflow: hidden; }
     $("accSheet").hidden = false;
     renderAcc();
     fetchAcc();
+    clearInterval(accTick);
+    accTick = setInterval(function () { if (autoCfg() || (ACC && ACC.auto)) renderAuto(); }, 30000);   // time left; off by itself at the end
     setTimeout(function () { $("accX").focus({ preventScroll: true }); }, 50);
   }
   function closeAcc() {
     if (accEnd) accEnd(true);   // a name being typed is saved
+    clearInterval(accTick);
     $("accSheet").hidden = true;
   }
   $("accItem").addEventListener("click", openAcc);

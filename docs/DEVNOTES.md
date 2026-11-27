@@ -1,6 +1,6 @@
 # Dev notes — 직원 취식 목록
 
-Last updated: 2026-11-26 (the Android app updates itself from GitHub Releases; modern adaptive icon with a themed layer; earlier today: 근무 직접 입력 at dawn goes on yesterday; access by Google account)
+Last updated: 2026-11-28 (새 요청 자동 허용: a timed switch on 접근 계정 lets new Google accounts in right after sign-in; 2026-11-26: the Android app updates itself from GitHub Releases; modern adaptive icon with a themed layer; earlier today: 근무 직접 입력 at dawn goes on yesterday; access by Google account)
 
 Read this first if you are a person or an AI agent about to change the code. Related docs:
 
@@ -213,6 +213,7 @@ Keys marked ● are **per store**: the first store uses the key as written, any 
 | `ACCOUNTS` | `setAccount_` / `delAccount_`: sign-in (`gLogin`), mail link, menu 접근 계정, the page's 접근 계정 screen (`setAccess`) | JSON of Google accounts: `{email: {s: ok / wait / no, t, a, n}}` (see *Access*). |
 | `ACCNAMES` | `noteActor_` (every 취식/폐기 tag, 출근 save / delete made with a device key), `setAccName`, `delAccount_` | JSON of the names shown on 접근 계정: `{email: {c: {전체 이름: [count, last ms]}, nm: the owner's name}}`; at most 8 names counted per account (see *Access*). |
 | `ACCESS_KEY` | `secret_` (first use), menu 모든 폰 다시 로그인하게 하기 | HMAC key of the device keys. Changing it makes every phone sign in again (accounts stay allowed). |
+| `AUTO_ALLOW` | `setAutoAllow` (page 접근 계정 switch) | JSON `{u: until ms, h: hours}`: 새 요청 자동 허용 is on until `u` (see *Access*). Gone or past = off. |
 | `ALLOW_KEY` | `secret_` (first request mail) | HMAC key of the 허용 links in request mails. Changing it voids links already sent. |
 | `ACCESS_OFF` | by hand only | `1` = no access check (emergency, e.g. if the check itself breaks). Phones without a key still see the sign-in screen; any phone with a key gets in. Delete it to turn the check back on. |
 | ● `BGF_SS` | `bgfSsFromLogin_` (not the first store) | JSON of the store's `SS_*` variables, taken from its last login answer |
@@ -311,6 +312,17 @@ google account. one the account is allowed, always allow the account".
   most-used name typed back clears `nm`, so the row follows `u` again. `setAccName(email, name)` is owner-only,
   allows the owner's own email, and refuses an email not in `ACCOUNTS`. 지우기 drops the account's names too. The
   sheet menu 접근 계정 lists the name before each email.
+- **새 요청 자동 허용 (since 2026-11-28).** The owner: "for the next 48 hours, allow every google account request
+  automatically. also, set this behavior to be able to do in a ui so the manager can easily manage new requests", "in
+  that period the new users can access right after google login". Script Property `AUTO_ALLOW` = `{u: until ms, h}`
+  (`autoAllowCfg_()`; past `u` = off, so it ends by itself). While on, `gLogin` allows a new or waiting account at once
+  (note `자동 허용`), so `login.html` gets `ok` and goes straight in like any allowed account; `gPoll` allows a waiting
+  one too. A **cut** account stays cut. The owner gets a `[직원 취식 목록] 자동 허용: <email>` mail (no allow link; same
+  20-a-day cap). `setAutoAllow(hours)` (owner only) sets it from now and allows every account waiting at that moment.
+  Page: a card on top of 접근 계정: **새 요청 자동 허용** with a switch (on = 48 h; the subline shows `11/30(월) 오전 6:00까지 ·
+  47시간 남음`, refreshed every 30 s while the sheet is open), then 12시간 / 24시간 / 48시간 / 7일 (restart from now; the
+  current length highlighted) and a note to cut unknown accounts. Lazy like the rest (`setAuto`). The sheet menu 접근
+  계정 shows the end time while it is on.
 - **When someone leaves**: 더보기 → 접근 계정 → [끊기] on their account, or menu 접근 계정 → their number (끊김). Their phones are out at once; nobody else is touched.
   **모든 폰 다시 로그인하게 하기** makes a new `ACCESS_KEY`: every phone must sign in again (allowed accounts get straight
   back in).
@@ -421,7 +433,8 @@ The page calls the server with `run(fn, …args)`, always for its store. On the 
 | `login(full, pw)` | returns `{token}`; accepts the developer password too |
 | `setPassword(full, token, newPw)` | `newPw=''` removes it; returns `{token, members}` |
 | `refreshNow()` | live import if the last one was ≥ 50 s ago; returns `{label, error, off, added}` |
-| `getAccounts()` | owner key only: `{owner, own: {nm, u}, list: [{e, s: 'wait' / 'ok' / 'no', t, a, n, nm, u}]}`, waiting first, then allowed (newest allowed first), then cut; the owner is not in `list`; `nm` = the owner's name for the account, `u` = the name it saved with most |
+| `getAccounts()` | owner key only: `{owner, own: {nm, u}, auto: {u, h} or null, list: [{e, s: 'wait' / 'ok' / 'no', t, a, n, nm, u}]}`, waiting first, then allowed (newest allowed first), then cut; the owner is not in `list`; `nm` = the owner's name for the account, `u` = the name it saved with most |
+| `setAutoAllow(hours)` | owner key only: `hours` = 12 / 24 / 48 / 168 turns 새 요청 자동 허용 on for that long from now and allows every waiting account (note `자동 허용`); `0` = off; returns `getAccounts()` |
 | `setAccess(email, s)` | owner key only: `s` = `'ok'` (allow; an unknown email = allowed ahead of time, note `미리 허용`; a waiting one gets `앱에서 허용`), `'no'` (cut), `'del'` (remove from the list); refuses the owner's own email and a bad address; returns `getAccounts()` |
 | `setAccName(email, name)` | owner key only: the name shown for an account (the owner's own too), up to 20 letters; `''` = follow the most-used name again; returns `getAccounts()` |
 

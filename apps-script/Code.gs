@@ -1115,7 +1115,11 @@ function gLogin(n, cred) {
   var email = idTokenEmail_(cred, String(n));
   CacheService.getScriptCache().put('gl:' + n, email, 21600);
   var s = accountState_(email);
-  if (!s) { setAccount_(email, 'wait'); s = 'wait'; notifyOwner_(email); }
+  if (autoAllow_() && (!s || s === 'wait')) {   // 자동 허용 window: in at once (a cut account stays cut)
+    setAccount_(email, 'ok', '자동 허용');
+    if (!s) notifyOwner_(email, true);
+    s = 'ok';
+  } else if (!s) { setAccount_(email, 'wait'); s = 'wait'; notifyOwner_(email); }
   return { s: s, email: email };
 }
 /** The page, every few seconds after opening LOGIN_PAGE: {s: 'none'} (no sign-in yet) | 'wait' | 'no' | 'ok' + dev. */
@@ -1123,6 +1127,7 @@ function gPoll(n, old) {
   var email = NONCE_RE_.test(String(n || '')) ? CacheService.getScriptCache().get('gl:' + n) : null;
   if (!email) return { s: 'none' };
   var s = accountState_(email);
+  if (s === 'wait' && autoAllow_()) { setAccount_(email, 'ok', '자동 허용'); s = 'ok'; }
   if (s === 'wait' && oldDevOk_(old) && Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd') <= ACCESS_OLD_UNTIL) {
     setAccount_(email, 'ok', '접근 코드 쓰던 폰');
     s = 'ok';
@@ -1130,13 +1135,19 @@ function gPoll(n, old) {
   return s === 'ok' ? { s: 'ok', email: email, dev: accDev_(email) } : { s: s || 'wait', email: email };
 }
 function allowSig_(email) { return b64_(Utilities.computeHmacSha256Signature('allow|' + email, secret_('ALLOW_KEY'))).slice(0, 32); }
-/** Mail to the owner with a 허용 link (at most 20 a day). */
-function notifyOwner_(email) {
+/** Mail to the owner with a 허용 link (at most 20 a day); auto = let in by 자동 허용, the mail only tells. */
+function notifyOwner_(email, auto) {
   var cache = CacheService.getScriptCache(), sent = Number(cache.get('glMail') || 0);
   if (sent >= 20) return;
   cache.put('glMail', String(sent + 1), 86400);
   var link = EXEC_URL + '?allow=' + encodeURIComponent(email) + '&s=' + allowSig_(email);
   try {
+    if (auto) {
+      MailApp.sendEmail(ownerEmail_(), '[직원 취식 목록] 자동 허용: ' + email,
+        email + ' 계정이 취식 앱에 들어왔어요. 새 요청 자동 허용이 켜져 있어서 바로 허용했어요 (' + autoUntilText_() + '까지).\n\n' +
+        '모르는 계정이면 취식 앱의 더보기 > 접근 계정 에서 [끊기]를 누르세요. 자동 허용도 거기서 끌 수 있어요.');
+      return;
+    }
     MailApp.sendEmail(ownerEmail_(), '[직원 취식 목록] 접근 요청: ' + email,
       email + ' 계정이 취식 앱에 들어오려고 해요.\n\n아는 사람이면 아래 링크에서 [허용]을 누르세요. 한 번 허용하면 그 계정은 어느 폰에서든 계속 들어와요.\n' +
       link + '\n\n모르는 계정이면 그냥 두세요 (들어오지 못해요). 취식 앱의 더보기 > 접근 계정, 시트 메뉴 취식 관리 > 접근 계정 에서도 허용하고 끊을 수 있어요.');
@@ -1177,7 +1188,7 @@ function getAccounts() {
     return { e: e, s: a.s, t: a.t || 0, a: a.a || 0, n: a.n || '', nm: n.nm, u: n.u };
   });
   list.sort(function (x, y) { return rank[x.s] - rank[y.s] || (y.s === 'ok' ? y.a - x.a : y.t - x.t) || (x.e < y.e ? -1 : 1); });
-  return { owner: own, own: nm(own), list: list };
+  return { owner: own, own: nm(own), list: list, auto: autoAllowCfg_() };
 }
 /** s: 'ok' (허용; a new email = allowed ahead of time), 'no' (끊기: its phones stop at once), 'del' (지우기 from the list). */
 function setAccess(email, s) {
@@ -1207,6 +1218,43 @@ function setAccName(email, name) {
   });
   return getAccounts();
 }
+/* 새 요청 자동 허용 (owner, 2026-11-28: "for the next 48 hours, allow every google account request automatically ...
+ * in that period the new users can access right after google login"). Script Property AUTO_ALLOW = {u: until ms, h: hours
+ * chosen}; while now < u a new or waiting account is allowed on its Google sign-in (note 자동 허용), so login.html goes
+ * straight in. A cut account stays cut. Turning it on also allows every account waiting now. Ends by itself at u. */
+var AUTO_HOURS_ = [12, 24, 48, 168];
+function autoAllowCfg_() {
+  var c;
+  try { c = JSON.parse(gget_('AUTO_ALLOW') || 'null'); } catch (e) { c = null; }
+  return c && Number(c.u) > Date.now() ? { u: Number(c.u), h: Number(c.h) || 0 } : null;
+}
+function autoAllow_() { return !!autoAllowCfg_(); }
+function autoUntilText_() {
+  var c = autoAllowCfg_();
+  return c ? Utilities.formatDate(new Date(c.u), 'Asia/Seoul', 'M/d HH:mm') : '';
+}
+/** hours: one of AUTO_HOURS_ (that long from now) or 0 (off). On: every waiting account is allowed too. Returns getAccounts(). */
+function setAutoAllow(hours) {
+  ownerOnly_();
+  var h = Number(hours) || 0;
+  if (h && AUTO_HOURS_.indexOf(h) < 0) throw new Error('알 수 없는 시간이에요.');
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    if (!h) gdel_('AUTO_ALLOW');
+    else {
+      var now = Date.now(), acc, n = 0;
+      gset_('AUTO_ALLOW', JSON.stringify({ u: now + h * 3600000, h: h }));
+      try { acc = JSON.parse(ps_().getProperty('ACCOUNTS') || '{}') || {}; } catch (e) { acc = {}; }
+      Object.keys(acc).forEach(function (e) { if (acc[e].s === 'wait') { acc[e].s = 'ok'; acc[e].a = now; acc[e].n = '자동 허용'; n++; } });
+      if (n) gset_('ACCOUNTS', JSON.stringify(acc));
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  return getAccounts();
+}
+
 /* Names on the 접근 계정 screen: Script Property ACCNAMES = {email: {c: {전체 이름: [count, last ms]}, nm: owner's name}}.
  * Every 취식/폐기 tag and 출근 save or delete counts the name it was made with for the caller's account; the screen
  * shows the owner's name for the account, else the name it used most (accName_). */
@@ -1280,6 +1328,7 @@ function menuAccounts() {
     return (i + 1) + '. ' + (nm ? nm + ' ' : '') + e + ' - ' + L[a.s] + ' (' + day(a.s === 'ok' ? a.a : a.t) + (a.n ? ', ' + a.n : '') + ')';
   }).join('\n') : '아직 들어온 계정이 없어요.') +
     '\n\n사장님 계정(' + ownerEmail_() + ')은 늘 들어와요.' +
+    (autoAllow_() ? '\n새 요청 자동 허용: ' + autoUntilText_() + '까지 (끄기: 취식 앱 더보기 > 접근 계정)' : '') +
     '\n\n번호를 적으면 허용 <-> 끊기가 바뀌어요 (기다림은 허용으로). 이메일을 적으면 그 계정을 미리 허용해요.';
   var r = ui.prompt('접근 계정', text, ui.ButtonSet.OK_CANCEL);
   if (r.getSelectedButton() !== ui.Button.OK) return;
@@ -1309,7 +1358,7 @@ function apiFns_() {
     getBoot: getBoot, getInit: getInit, getMonth: getMonth, setTag: setTag, addMember: addMember,
     saveShift: saveShift, deleteShift: deleteShift,
     login: login, setPassword: setPassword, refreshNow: refreshNow, getPage: getPage, gLogin: gLogin, gPoll: gPoll,
-    getAccounts: getAccounts, setAccess: setAccess, setAccName: setAccName
+    getAccounts: getAccounts, setAccess: setAccess, setAccName: setAccName, setAutoAllow: setAutoAllow
   };
 }
 function doPost(e) {
