@@ -94,7 +94,7 @@ Added 2026-11-16. The list is `STORES` at the top of `Code.gs`; the import code 
 
 **One thing crosses stores: 근무 시간.** The same person (same **full name**) can work in 2 or 3 stores, so the 월별 합계 tab's 근무 시간 table adds up every store's shifts per person (owner, 2026-11-16). `getMonth` therefore carries the other stores' shifts of that month (`others`), and a store's data version includes the other stores' shift versions (`SVER`), so a shift saved in 두왕 reaches an open 둘리 page. 취식 / 폐기 totals stay per store.
 
-**Page.** The title is the store name; with 2+ stores it is a button that opens `점포 바꾸기`. A phone that never chose (and has no name remembered from before stores) is asked `어느 점포인가요?` once. Switching keeps a separate name / password token / cached list per store; the name used in the store you came from is taken over when that name is on the new store's 직원 list (a name with a password asks for it).
+**Page.** The title is the store name; with 2+ stores it is a button that opens `점포 바꾸기`. A phone that never chose (and has no name remembered from before stores) is asked `어느 점포인가요?` once. The list puts the store the phone is on first, the others in 가나다 order (first time: plain 가나다, so 두왕점 before 둘리점; owner 2026-11-28: no store should look preferred). Switching keeps a separate name / password token / cached list per store; the name used in the store you came from is taken over when that name is on the new store's 직원 list (a name with a password asks for it).
 
 ### Adding a CU store
 

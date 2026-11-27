@@ -1980,7 +1980,13 @@ body.gated { overflow: hidden; }
     var box = $("storeList"); box.textContent = "";
     $("stTitle").textContent = must ? "어느 점포인가요?" : "점포 바꾸기";
     $("stText").textContent = must ? "일하는 점포를 골라 주세요. 이 폰에 기억돼요." : "다른 점포의 목록과 출근일지를 볼 수 있어요. 이름은 점포마다 따로 기억돼요.";
-    S.stores.forEach(function (st) {
+    // Order (owner, 2026-11-28): the store this phone is on comes first, so neither store is always on top;
+    // the rest (and the first-time list) in 가나다 order, which puts 두왕점 before 둘리점.
+    var list = S.stores.slice().sort(function (a, b) {
+      if (!must && (a.id === sid()) !== (b.id === sid())) return a.id === sid() ? -1 : 1;
+      return String(a.name).localeCompare(String(b.name), "ko");
+    });
+    list.forEach(function (st) {
       var cur = !must && st.id === sid();
       var b = mk("button", cur ? "cur" : ""); b.type = "button";
       b.appendChild(mk("span", "", st.name));
