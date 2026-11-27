@@ -264,7 +264,7 @@ function octApply_() {
     return { tagged: tagged, missing: missing, shifts: rows.length };
   });
   p.setProperty('OCT_APPLY', '1');
-  bumpVersion_();
+  bumpVersion_(true);
   logImport_('2026-10 (10월 취식·근무 넣기)', '', res.tagged, 'OK · 취식 ' + res.tagged + '/' + OCT_TAGS.length + '건, 근무 ' + res.shifts + '/' + OCT_SHIFTS.length + '건' +
     (res.missing.length ? ' · 못 찾은 키 ' + res.missing.length + '개: ' + res.missing.slice(0, 5).join(', ') : ''));
 }
@@ -322,7 +322,7 @@ function octApply2_() {
     return { tagged: tagged, missing: missing };
   });
   p.setProperty('OCT_APPLY2', '1');
-  bumpVersion_();
+  bumpVersion_(true);
   logImport_('2026-10 (10월 남은 품목 = ' + OCT_LEE + ' 취식)', '', res.tagged, 'OK · 취식 ' + res.tagged + '/' + OCT_TAGS_LEE.length + '건' +
     (res.missing.length ? ' · 못 찾은 키 ' + res.missing.length + '개: ' + res.missing.slice(0, 5).join(', ') : ''));
 }

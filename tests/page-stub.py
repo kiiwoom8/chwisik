@@ -52,11 +52,20 @@ stub = r'''
     var who = i % 5 === 0 ? "김성휘" : i % 5 === 1 ? "전병훈" : "";
     DB["25377"].rows.push([i + 2, "k" + i, t, names[i % 8], 1 + i % 2, 1200, 1200 * (1 + i % 2), 2000, who ? (i % 2 ? "취식" : "폐기") : "", who, who, dd, "", i % 11 === 0 ? "저회전" : ""]);
   }
-  for (var j = 0; j < 9; j++) DB["31949"].rows.push([j + 2, "w" + j, d(j % 3) + " 10:0" + j + ":00", names[j % 8], 1, 900, 900, 1500, "", "", "", d(j % 3), "", ""]);
+  for (var j = 0; j < 9; j++) { var wj = j < 4 ? "김성휘" : j < 6 ? "박두왕" : ""; DB["31949"].rows.push([j + 2, "w" + j, d(j % 3) + " 10:0" + j + ":00", names[j % 8], 1, 900, 900, 1500, wj ? (j % 3 ? "취식" : "폐기") : "", wj, wj, d(j % 3), "", ""]); }
+  function eatOf(rows) {   // 서버 monthTotals_ 와 같은 방식: [[이름, 폐기 수량, 폐기 원가, 취식 수량, 취식 원가]], todo
+    var by = {}, todo = [0, 0];
+    rows.forEach(function (r) {
+      if (!r[8]) { if (!r[13]) { todo[0] += r[4]; todo[1] += r[6]; } return; }
+      var o = by[r[9]] = by[r[9]] || [r[9], 0, 0, 0, 0];
+      if (r[8] === "취식") { o[3] += r[4]; o[4] += r[6]; } else { o[1] += r[4]; o[2] += r[6]; }
+    });
+    return { rows: Object.keys(by).map(function (k) { return by[k]; }), todo: todo };
+  }
   function month(st, m) {
     var o = DB[st];
     var others = STORES.filter(function (x) { return x.id !== st; }).map(function (x) {
-      return { id: x.id, short: x.short, shifts: DB[x.id].shifts.filter(function (s) { return s[2].slice(0, 7) === m; }).map(function (s) { return [s[2], s[3], s[4], s[5]]; }) };
+      return { id: x.id, short: x.short, shifts: DB[x.id].shifts.filter(function (s) { return s[2].slice(0, 7) === m; }).map(function (s) { return [s[2], s[3], s[4], s[5]]; }), eat: m === mon ? eatOf(DB[x.id].rows) : { rows: [], todo: [0, 0] } };
     });
     var ok = m === mon, closed = !ok && Q.get("closed") ? { at: mon + "-02 00:01", rows: [["김성휘", 3, 3600, 5, 6000], ["전병훈", 1, 1200, 2, 2400]], todo: [4, 4800] } : null;
     return { version: String(o.ver), store: st, month: m, rows: ok ? o.rows : [], cancels: [], closed: closed, shifts: o.shifts.filter(function (s) { return s[2].slice(0, 7) === m; }), usual: { "*": ["08:00", "13:00"] }, members: o.members, others: others };

@@ -415,7 +415,7 @@ function onEdit(e) {
       if (![SH_ITEMS, SH_MEMBERS, SH_SHIFTS, SH_CLOSE].some(function (b) { return sheetName_(b, st) === name; })) return;
       var v = nextVer_(st);
       pset_('VER', v, st);
-      if (name === sheetName_(SH_SHIFTS, st)) pset_('SVER', v, st);
+      if (name !== sheetName_(SH_MEMBERS, st)) pset_('SVER', v, st);
     });
   } catch (x) {}
 }
@@ -519,7 +519,7 @@ function appendItems_(items) {
       });
     if (rows.length) {
       sh.getRange(n + 2, 1, rows.length, NCOL).setValues(rows);
-      bumpVersion_();
+      bumpVersion_(true);
     }
     return rows.length;
   } finally {
@@ -1407,14 +1407,15 @@ function getPage(knownHash) {
  * Data version of the current store: VER changes on every write / import (the page polls with it, and the
  * month cache is keyed by it). Sheet writes are flushed BEFORE the new version is set, so anyone who sees
  * the new version reads the new data (and never caches the old data under the new version).
- * SVER = the same for 출근일지 only: other stores add it to their version, because a month's answer
- * carries every store's shifts (근무 시간 is summed per person across stores).
+ * SVER = the same for what other stores show too (출근일지, 폐기목록, 월별 마감; not 직원): other stores add it
+ * to their version, because a month's answer carries every store's shifts and 취식 / 폐기 totals
+ * (근무 시간 and 직원별 취식 are summed per person across stores). shared = true for those writes.
  */
-function bumpVersion_(shifts) {
+function bumpVersion_(shared) {
   SpreadsheetApp.flush();
   var v = nextVer_();
   pset_('VER', v);
-  if (shifts) pset_('SVER', v);
+  if (shared) pset_('SVER', v);
   MEM_ = {};
   return v;
 }
@@ -1733,7 +1734,7 @@ function closeMonth_(month) {
     var sh = closeSheet_(), w = CLOSE_HEADERS.length;
     if (old.length) sh.getRange(2, 1, old.length, w).clearContent();
     sh.getRange(2, 1, all.length, w).setValues(all);
-    bumpVersion_();
+    bumpVersion_(true);
     return month + ' 마감 (' + at + '): ' + names.length + '명 · 취식 원가 ' + t.tot.ew.toLocaleString() + '원 · 폐기 원가 ' + t.tot.vw.toLocaleString() + '원 · 미등록 ' + t.todo.w.toLocaleString() + '원';
   });
 }
@@ -1772,9 +1773,11 @@ function readClose_(month) {
 }
 
 /**
- * The month's shifts of every OTHER store: [{ id, short, shifts: [[date, memberFull, start, end], …] }].
- * The page adds them to 근무 시간 (월별 합계): the same person (same full name) can work in 2 or 3 stores,
- * and the monthly hours are one total per person.
+ * The month of every OTHER store: [{ id, short, shifts: [[date, memberFull, start, end], …], eat }].
+ * The page adds them to 근무 시간 and 직원별 취식 (월별 합계): the same person (same full name) can work in
+ * 2 or 3 stores, and the monthly hours and 취식 are one total per person.
+ * eat = { rows: [[memberFull, 폐기 수량, 폐기 원가, 취식 수량, 취식 원가]], todo: [미등록 수량, 원가] }: that store's
+ * 월별 마감 numbers once the month is closed there, else its lines added up now (monthTotals_).
  */
 function otherShifts_(month) {
   var cur = store_();
@@ -1785,8 +1788,23 @@ function otherShifts_(month) {
       list = inStore_(st, readShifts_).filter(function (s) { return s.date.slice(0, 7) === month; })
         .map(function (s) { return [s.date, s.member, s.start, s.end]; });
     } catch (e) {}
-    return { id: st.id, short: st.short, shifts: list };
+    var eat = { rows: [], todo: [0, 0] };
+    try { eat = inStore_(st, function () { return storeEat_(month); }); } catch (e) {}
+    return { id: st.id, short: st.short, shifts: list, eat: eat };
   });
+}
+/** This store's 직원별 폐기 / 취식 of a month (otherShifts_ eat shape), kept in the cache per SVER. */
+function storeEat_(month) {
+  var ck = 'eat|' + store_().id + '|' + month + '|' + (pget_('SVER') || '0'), c = CacheService.getScriptCache();
+  try { var hit = JSON.parse(c.get(ck) || 'null'); if (hit) return hit; } catch (e) {}
+  var out = month <= pget_('CLOSED') ? readClose_(month) : null;
+  if (out) out = { rows: out.rows, todo: out.todo };
+  else {
+    var t = monthTotals_(monthLines_(month).rows);
+    out = { rows: Object.keys(t.by).map(function (k) { var o = t.by[k]; return [k, o.vn, o.vw, o.en, o.ew]; }), todo: [t.todo.n, t.todo.w] };
+  }
+  try { c.put(ck, JSON.stringify(out), MONTH_CACHE_S); } catch (e) {}
+  return out;
 }
 
 /**
@@ -1862,7 +1880,7 @@ function setTag(rowHint, key, type, memberFull, month, note, me, token) {
       sh.getRange(1, C.NOTE).setValue(HEADERS[C.NOTE - 1]).setFontWeight('bold');
     }
     sh.getRange(row, C.NOTE).setValue(note);
-    bumpVersion_();
+    bumpVersion_(true);
   });
   noteActor_(actor.full);
   return getMonth(month || '', '');

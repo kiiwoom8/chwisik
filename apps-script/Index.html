@@ -294,11 +294,15 @@ tr.meRow td:first-child { color: var(--accent); font-weight: 700; }
 .fmenu .mi:focus-visible:not([aria-checked="true"]) { background: var(--band); }
 .fmenu { min-width: 156px; top: calc(100% + 6px); z-index: 7; }
 .fmenu .mi { min-height: 44px; padding: 6px 10px; }
+.fmenu .fgroup { display: grid; gap: 2px; }
+.fmenu .fgname { padding: 6px 10px 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.fmenu .fsep { height: 1px; margin: 2px 6px; background: var(--rule); }
 .fmenu .mi b { font-size: 14px; }
 .fmenu .mi .ck { width: 16px; height: 16px; flex: none; color: var(--accent); visibility: hidden; }
 .fmenu .mi[aria-checked="true"] .ck { visibility: visible; }
 /* 근무 시간: 여러 점포에서 일한 사람은 이름 아래에 점포별 시간 */
 td .bystore { display: block; white-space: normal; font-size: 11.5px; font-weight: 400; color: var(--muted); line-height: 1.35; }
+td .bystore .bs1 { white-space: nowrap; }
 
 .sheet { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; justify-content: center; }
 .sheet .card { background: var(--sheet); width: min(560px, 100%); border-radius: 16px 16px 0 0; padding: 18px max(16px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 12px; max-height: 85vh; overflow-y: auto; }
@@ -553,6 +557,8 @@ body.gated { overflow: hidden; }
   var SUM_OPTS = { eat: "취식", all: "폐기 + 취식" };
   var K_HOURSVIEW = "chwisik.hoursView";   // 근무 시간 표 보기: "all" (모든 점포 합계, default) or "here" (지금 점포만); per phone, all stores
   S.hoursView = lsGet(K_HOURSVIEW) === "here" ? "here" : "all";
+  var K_EATSTORE = "chwisik.eatStore";   // 직원별 표 점포: "all" (모든 점포 합계, default) or "here" (지금 점포만); per phone, all stores
+  S.eatStore = lsGet(K_EATSTORE) === "here" ? "here" : "all";
   // 월별 합계 표 정렬: { 표 id: { h: 머리글 이름, d: "asc" | "desc" } }, 이 폰에만. 없거나 깨졌으면 표마다 기본 정렬
   var K_SUMSORT = "chwisik.sumSort";
   function sumSort() { try { var o = JSON.parse(lsGet(K_SUMSORT) || "{}"); return o && typeof o === "object" ? o : {}; } catch (e) { return {}; } }
@@ -1301,62 +1307,106 @@ body.gated { overflow: hidden; }
 
   function renderSum() {
     var box = $("sum"); box.textContent = "";
-    var by = {}, tot = { en: 0, ew: 0, vn: 0, vw: 0 }, todo = { n: 0, w: 0 }, who = curWho(), cl = S.closed;
-    function add(k, vn, vw, en, ew) {
-      var o = by[k] = by[k] || { en: 0, ew: 0, vn: 0, vw: 0 };
-      o.vn += vn; o.vw += vw; o.en += en; o.ew += ew; tot.vn += vn; tot.vw += vw; tot.en += en; tot.ew += ew;
+    var who = curWho(), cl = S.closed, cs = curStore(), here = cs ? cs.short : "", multi = (S.others || []).length > 0;
+    var STORE_OPTS = { all: "모든 점포", here: here || "이 점포" };
+    // 직원별 폐기 / 취식: 근무 시간처럼 같은 사람(같은 전체 이름)의 모든 점포 숫자를 합침 (기본). 지금 점포만 보기도 있음.
+    // 각 점포의 마감된 달은 그 점포의 월별 마감 숫자 (서버가 보냄), 아니면 지금 줄을 더한 숫자
+    var by, tot, todo, stOrder, away;
+    function sumPeople() {
+      var mine = multi && S.eatStore === "here";
+      by = {}; tot = { en: 0, ew: 0, vn: 0, vw: 0 }; todo = { n: 0, w: 0 }; stOrder = [here]; away = false;
+      function add(k, vn, vw, en, ew, st) {
+        var o = by[k] = by[k] || { en: 0, ew: 0, vn: 0, vw: 0, st: {} }, p = o.st[st] = o.st[st] || { e: 0 };
+        o.vn += vn; o.vw += vw; o.en += en; o.ew += ew; tot.vn += vn; tot.vw += vw; tot.en += en; tot.ew += ew;
+        p.e += ew;
+      }
+      if (cl) {
+        // 마감된 달: 달이 끝날 때 적어 둔 숫자 (그 뒤 취소·등록이 바뀌어도 그대로)
+        todo.n = cl.todo[0]; todo.w = cl.todo[1];
+        cl.rows.forEach(function (c) { if (!who || c[0] === who) add(c[0], c[1], c[2], c[3], c[4], here); });
+      } else S.rows.forEach(function (r) {
+        if (!r[8]) { if (!r[13]) { todo.n += r[4]; todo.w += r[6]; } return; }
+        if (who && r[9] !== who) return;
+        if (r[8] === "취식") add(r[9] || "(이름 없음)", 0, 0, r[4], r[6], here); else add(r[9] || "(이름 없음)", r[4], r[6], 0, 0, here);
+      });
+      (mine ? [] : S.others || []).forEach(function (o) {
+        var e = o.eat; if (!e) return;
+        stOrder.push(o.short);
+        if (e.todo) { todo.n += e.todo[0] || 0; todo.w += e.todo[1] || 0; }
+        (e.rows || []).forEach(function (c) {   // [memberFull, 폐기 수량, 폐기 원가, 취식 수량, 취식 원가]
+          if (who && c[0] !== who) return;
+          add(c[0], c[1], c[2], c[3], c[4], o.short); away = true;
+        });
+      });
+      return mine;
     }
-    if (cl) {
-      // 마감된 달: 달이 끝날 때 적어 둔 숫자 (그 뒤 취소·등록이 바뀌어도 그대로)
-      todo.n = cl.todo[0]; todo.w = cl.todo[1];
-      cl.rows.forEach(function (c) { if (!who || c[0] === who) add(c[0], c[1], c[2], c[3], c[4]); });
-    } else S.rows.forEach(function (r) {
-      if (!r[8]) { if (!r[13]) { todo.n += r[4]; todo.w += r[6]; } return; }
-      if (who && r[9] !== who) return;
-      if (r[8] === "취식") add(r[9] || "(이름 없음)", 0, 0, r[4], r[6]); else add(r[9] || "(이름 없음)", r[4], r[6], 0, 0);
-    });
     var title = S.month.replace("-", "년 ") + "월 ";
     var closedNote = cl ? " · " + closedDay(cl.at) + " 마감한 숫자예요 (그 뒤로는 안 바뀌어요)" : "";
     // 직원별 표: 취식 보기 = 취식 원가가 많은 사람부터 (취식이 없는 사람은 빼고), 폐기 + 취식 보기 = 둘을 더한 원가가 많은 사람부터. 같으면 이름 순
     function eatTable() {
-      var all = S.sumView === "all";
+      var mine = sumPeople(), all = S.sumView === "all";
+      // 다른 점포 숫자가 있는 사람은 이름 아래에 점포별 취식 원가. 취식 보기(3열)에서만: 5열 표는 이름 칸이 좁아 360 px를 넘음
+      function nameCell(k) {
+        if (all) return k;
+        var st = by[k].st, parts = stOrder.filter(function (x) { return st[x] && st[x].e; });
+        if (parts.length < 2 && (!parts.length || parts[0] === here)) return k;   // 이 점포 숫자만 있는 사람은 이름만
+        var f = document.createDocumentFragment();
+        f.appendChild(document.createTextNode(k));
+        var line = mk("span", "bystore");   // 점포 하나는 한 줄로 (줄이 바뀌면 점포 사이에서)
+        parts.forEach(function (x, i) { if (i) line.appendChild(document.createTextNode(" · ")); line.appendChild(mk("span", "bs1", x + " " + fmt(st[x].e))); });
+        f.appendChild(line);
+        return f;
+      }
+      var scope = mine ? " · " + STORE_OPTS.here + " 숫자만" : away ? " · 여러 점포 숫자를 사람별로 합쳤어요" : "";
       var names = Object.keys(by).filter(function (k) { return all || by[k].en || by[k].ew; }).sort(function (a, b) {
         var x = by[a], y = by[b];
         return (all ? (y.ew + y.vw) - (x.ew + x.vw) || y.ew - x.ew : y.ew - x.ew || (y.ew + y.vw) - (x.ew + x.vw)) || a.localeCompare(b, "ko");
       });
       var t = all
         ? table(title + "직원별 폐기 / 취식", ["직원", "폐기 수량", "폐기 원가", "취식 수량", "취식 원가"],
-            names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.vn), fmt(o.vw), fmt(o.en), fmt(o.ew)], keys: [k, o.vn, o.vw, o.en, o.ew] }; }),
+            names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [nameCell(k), fmt(o.vn), fmt(o.vw), fmt(o.en), fmt(o.ew)], keys: [k, o.vn, o.vw, o.en, o.ew] }; }),
             ["합계", fmt(tot.vn), fmt(tot.vw), fmt(tot.en), fmt(tot.ew)],
-            "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식·폐기에는 저회전도 들어가요" + closedNote,
+            "미등록 폐기 " + fmt(todo.n) + "개 · " + fmt(todo.w) + "원 (원가 기준) · 취식·폐기에는 저회전도 들어가요" + scope + closedNote,
             { id: "people", col: -1, dir: "desc" })   // 기본 = 폐기 + 취식 원가 순 (names 순서): 열이 따로 없어서 삼각형은 모두 옅게
         : table(title + "직원별 취식", ["직원", "취식 수량", "취식 원가"],
-            names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [k, fmt(o.en), fmt(o.ew)], keys: [k, o.en, o.ew] }; }),
+            names.map(function (k) { var o = by[k]; return { me: k === S.me, cells: [nameCell(k), fmt(o.en), fmt(o.ew)], keys: [k, o.en, o.ew] }; }),
             ["합계", fmt(tot.en), fmt(tot.ew)],
-            "원가 기준 · 취식에는 저회전도 들어가요" + closedNote,
+            "원가 기준 · 취식에는 저회전도 들어가요" + scope + closedNote,
             { id: "people", col: 2, dir: "desc" });
       t.querySelector("tfoot td:last-child").classList.add("hot");  // 취식 원가 합계는 빨간색으로 강조
       return t;
     }
     // 제목 줄 오른쪽 끝의 작은 필터 버튼: 누르면 바로 아래에 메뉴 (직원별 표 = [취식] [폐기 + 취식], 근무 시간 = [모든 점포] [지금 점포])
-    // f = { opts: { 값: 이름 }, cur: 지금 값, label: 메뉴 이름, pick: function (값) }
+    // f = { opts: { 값: 이름 }, cur: 지금 값, label: 메뉴 이름, pick: function (값) }, 또는 한 메뉴에 여러 묶음:
+    // { label, groups: [{ name: 묶음 이름, opts, cur, pick }, …] } (버튼 글자 = 묶음마다 지금 값을 " · "로 이음)
     function withFilter(t, f) {
+      var groups = f.groups || [f];
       var head = t.querySelector(".sumhead"), fw = mk("div", "fwrap"), btn = mk("button", "fchip"), menu = mk("div", "moremenu fmenu");
       head.classList.add("hasf");
       btn.type = "button"; btn.setAttribute("aria-haspopup", "menu"); btn.setAttribute("aria-expanded", "false");
-      btn.setAttribute("aria-label", "보기: " + f.opts[f.cur]);
+      var curText = groups.map(function (g) { return g.opts[g.cur]; }).join(" · ");
+      btn.setAttribute("aria-label", "보기: " + curText);
       // 선 아이콘 (깔때기) · 지금 보기 · 아래 화살표. 테두리·채움 없는 버튼, 누를 때만 옅은 배경
       btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 5h17l-6.5 7.5v5.5l-4 2v-7.5z"/></svg>';
-      btn.appendChild(mk("span", "", f.opts[f.cur]));
+      btn.appendChild(mk("span", "", curText));
       btn.insertAdjacentHTML("beforeend", '<svg class="fchev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 9.5l5.5 5.5 5.5-5.5"/></svg>');
       menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", f.label); menu.hidden = true;
-      Object.keys(f.opts).forEach(function (v) {
-        var it = mk("button", "mi"); it.type = "button"; it.setAttribute("role", "menuitemradio"); it.setAttribute("data-v", v);
-        it.setAttribute("aria-checked", v === f.cur ? "true" : "false");
-        it.appendChild(mk("b", "", f.opts[v]));
-        it.insertAdjacentHTML("beforeend", '<svg class="ck" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>');
-        it.onclick = function () { closeSumMenu(true); if (v !== f.cur) f.pick(v); };
-        menu.appendChild(it);
+      groups.forEach(function (g, gi) {
+        var box = menu;
+        if (groups.length > 1) {
+          box = mk("div", "fgroup"); box.setAttribute("role", "group"); box.setAttribute("aria-label", g.name);
+          if (gi) menu.appendChild(mk("div", "fsep"));
+          box.appendChild(mk("div", "fgname", g.name)).setAttribute("aria-hidden", "true");
+          menu.appendChild(box);
+        }
+        Object.keys(g.opts).forEach(function (v) {
+          var it = mk("button", "mi"); it.type = "button"; it.setAttribute("role", "menuitemradio"); it.setAttribute("data-v", v);
+          it.setAttribute("aria-checked", v === g.cur ? "true" : "false");
+          it.appendChild(mk("b", "", g.opts[v]));
+          it.insertAdjacentHTML("beforeend", '<svg class="ck" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>');
+          it.onclick = function () { closeSumMenu(true); if (v !== g.cur) g.pick(v); };
+          box.appendChild(it);
+        });
       });
       menu.onkeydown = function (e) {   // ↑ ↓ 로 메뉴 안에서 움직이기
         if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -1372,10 +1422,11 @@ body.gated { overflow: hidden; }
       return t;
     }
     function eatFiltered() {
-      return withFilter(eatTable(), { opts: SUM_OPTS, cur: S.sumView, label: "직원별 표 보기", pick: function (v) {
-        S.sumView = v; lsSet(K_SUMVIEW, v);
-        var nt = eatFiltered(); eat.replaceWith(nt); eat = nt; nt.querySelector(".fchip").focus({ preventScroll: true });
-      } });
+      function redo() { var nt = eatFiltered(); eat.replaceWith(nt); eat = nt; nt.querySelector(".fchip").focus({ preventScroll: true }); }
+      var view = { name: "보기", opts: SUM_OPTS, cur: S.sumView, pick: function (v) { S.sumView = v; lsSet(K_SUMVIEW, v); redo(); } };
+      if (!multi) return withFilter(eatTable(), { opts: view.opts, cur: view.cur, label: "직원별 표 보기", pick: view.pick });
+      return withFilter(eatTable(), { label: "직원별 표 보기", groups: [view,
+        { name: "점포", opts: STORE_OPTS, cur: S.eatStore, pick: function (v) { S.eatStore = v; lsSet(K_EATSTORE, v); redo(); } }] });
     }
     SF = null;
     var eat = eatFiltered();
@@ -1383,8 +1434,7 @@ body.gated { overflow: hidden; }
 
     // 근무 시간: 같은 사람(같은 전체 이름)이 여러 점포에서 일할 수 있어서, 기본은 모든 점포의 시간을 사람별로 합침.
     // 제목 줄 필터로 [모든 점포] / [지금 점포] (점포가 하나뿐이면 필터 없음)
-    var cs = curStore(), here = cs ? cs.short : "", multi = (S.others || []).length > 0;
-    var HOURS_OPTS = { all: "모든 점포", here: here || "이 점포" };
+    var HOURS_OPTS = STORE_OPTS;
     function hoursTable() {
       var mine = multi && S.hoursView === "here";
       var nowM = nowMin(), hb = {}, totM = 0, openN = 0, stOrder = [here], away = false;

@@ -66,8 +66,14 @@ exec("onEdit({})");   // a bad event does nothing
 // ----- E. tagging stays in its store -----
 doc.getSheetByName('두왕점 폐기목록').data.push(['900-1', day(1), day(1) + ' 11:00:00', '도시락', 'c2', '간편식', 1, 3000, 3000, 4500, 4500, '900', '', '', '', '', mon, '', '']);
 exec("onEdit({ range: { getSheet: function () { return { getName: function () { return '두왕점 폐기목록'; } }; } } })");
+const vE = exec("api('25377', 'getMonth', ['" + mon + "', ''])");
+ok('E 두왕 untagged line is 두왕 미등록 in 둘리 others', vE.others[0].eat.rows.length === 0 && vE.others[0].eat.todo[0] === 1 && vE.others[0].eat.todo[1] === 3000, vE.others[0].eat);
 r = exec("api('31949', 'setTag', [2, '900-1', '취식', '김성휘', '" + mon + "', '', '김성휘', ''])");
 ok('E tag written in 두왕 only', r.rows[0][8] === '취식' && doc.getSheetByName('두왕점 폐기목록').data[1][12] === '취식' && items.data[1][12] === '', [r.rows[0], items.data[1]]);
+let rE = exec("api('25377', 'getMonth', ['" + mon + "', '" + vE.version + "'])");
+ok('E 둘리 version moved with the 두왕 tag; 두왕 취식 in others', rE && rE.others[0].eat.rows.length === 1 && JSON.stringify(rE.others[0].eat.rows[0]) === JSON.stringify(['김성휘', 0, 0, 1, 3000]) && rE.others[0].eat.todo[0] === 0, rE && rE.others[0].eat);
+exec("api('31949', 'addMember', ['박두왕2'])");
+ok('E 두왕 member change still keeps 둘리 version', exec("api('25377', 'getMonth', ['" + mon + "', '" + rE.version + "'])") === null);
 
 // a sheet deleted by hand comes back
 M.sheets.splice(M.sheets.findIndex(x => x.name === '두왕점 월별 합계'), 1);
